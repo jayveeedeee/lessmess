@@ -1,0 +1,50 @@
+{{define "boardFragment"}}
+{{range .Columns}}
+<div class="column">
+  <h3><span class="pill status-{{.Status | statusClass}}">{{.Status}}</span> <span class="count">{{len .Tasks}}</span></h3>
+  <div class="cards" data-status="{{.Status}}">{{range .Tasks}}
+    <div class="card" data-task="{{.ID}}">
+      <a class="card-title"
+         hx-get="{{$.BoardURL}}/tasks/{{base .Href}}"
+         hx-headers='{"Accept": "text/html"}'
+         hx-target="#detail"
+         hx-swap="innerHTML">{{.Title}}</a>
+      <div class="card-meta"><span class="chip">{{.ID}}</span><span>{{.Updated}}</span></div>
+    </div>{{end}}</div>
+</div>
+{{end}}
+{{end}}
+
+{{define "taskDetail"}}
+<div class="modal">
+  <div class="modal-head">
+    <span class="chip">{{.Task.ID}}</span>
+    {{if .Status}}<span class="pill status-{{.Status | statusClass}}">{{.Status}}</span>{{end}}
+    <span class="title">{{.Task.Title}}</span>
+    <button type="button" class="modal-close" data-close-detail aria-label="Close">✕</button>
+  </div>
+  <div class="modal-body prose">{{markdown .Body}}</div>
+</div>
+{{end}}
+
+{{define "planDetail"}}
+<div class="modal">
+  <div class="modal-head">
+    <span class="chip">{{.ID}}</span>
+    <span class="title">Plan</span>
+    <button type="button" class="modal-close" data-close-detail aria-label="Close">✕</button>
+  </div>
+  <div class="modal-body prose">{{markdown .Body}}</div>
+</div>
+{{end}}
+
+{{define "banner"}}
+{{if .Violations}}
+<div class="banner-inner">
+  <strong>Validation violations:</strong>
+  <ul>
+    {{range .Violations}}<li>{{.}}</li>{{end}}
+  </ul>
+</div>
+{{end}}
+{{end}}

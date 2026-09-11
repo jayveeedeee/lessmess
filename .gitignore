@@ -1,0 +1,10 @@
+# Tooling state (see AGENTS.md, "Tooling state")
+.tasktracker/
+
+# Local build artifact
+tasktracker
+
+# Ad-hoc debug screenshots (canonical reference: changes/2026-09-11-1/ui-reference.png)
+ui.PNG
+overlap.png
+mine.png

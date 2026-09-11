@@ -1,0 +1,23 @@
+{{define "content"}}
+<section class="board-head">
+  <h2>{{.Data.ID}}</h2>
+  <span class="pill status-{{.Data.Overall | statusClass}}">{{.Data.Overall}}</span>
+  <button type="button" class="btn-ghost"
+          hx-get="/changes/{{.Data.ID}}/plan"
+          hx-target="#detail"
+          hx-swap="innerHTML">Plan</button>
+  <form class="inline-form"
+        hx-post="/changes/{{.Data.ID}}/tasks" hx-swap="none">
+    <input type="text" name="title" placeholder="New task title" required>
+    <button type="submit">Add task</button>
+  </form>
+</section>
+{{if .Data.Error}}
+<div class="error-box">{{.Data.Error}}</div>
+{{else}}
+<div id="board" class="board" data-change="{{.Data.ID}}">
+{{template "boardFragment" .Data}}
+</div>
+{{end}}
+<div id="detail" hidden></div>
+{{end}}

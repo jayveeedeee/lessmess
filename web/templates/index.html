@@ -1,0 +1,35 @@
+{{define "content"}}
+<section class="changes">
+  <div class="section-head">
+    <h2>Changes</h2>
+    <form class="inline-form"
+          hx-post="/changes" hx-swap="none">
+      <input type="text" name="title" placeholder="New change title" required>
+      <input type="text" name="prefix" placeholder="Prefix" size="5">
+      <button type="submit">New change</button>
+    </form>
+  </div>
+  <table class="change-table-wrap change-table">
+    <thead>
+      <tr><th>Change</th><th>Title</th><th>Prefix</th><th>Status</th><th>Tasks</th><th>Updated</th><th></th></tr>
+    </thead>
+    <tbody>
+      {{range .Data.Changes}}
+      <tr>
+        <td><a href="/changes/{{.ID}}">{{.ID}}</a></td>
+        <td>{{.Title}}</td>
+        <td>{{.Prefix}}</td>
+        <td><span class="pill status-{{.Status | statusClass}}">{{.Status}}</span></td>
+        <td>{{.Tasks}}</td>
+        <td>{{.Updated}}</td>
+        <td><button type="button" class="btn-ghost"
+                hx-get="/changes/{{.ID}}/plan"
+                hx-target="#detail"
+                hx-swap="innerHTML">Plan</button></td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+</section>
+<div id="detail" hidden></div>
+{{end}}
