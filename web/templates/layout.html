@@ -9,10 +9,17 @@
 document.documentElement.dataset.theme = localStorage.getItem("tt-theme") || "dark";
 </script>
 <title>{{.Title}} · tasktracker</title>
-<link rel="stylesheet" href="/static/app.css?v=9">
+<link rel="stylesheet" href="/static/app.css?v={{.AssetsV}}">
+{{if eq .Page "board"}}
+<link rel="stylesheet" href="/static/xterm.min.css?v=1">
+{{end}}
 <script src="/static/htmx.min.js?v=1" defer></script>
 <script src="/static/Sortable.min.js?v=1" defer></script>
-<script src="/static/app.js?v=3" defer></script>
+{{if eq .Page "board"}}
+<script src="/static/xterm.min.js?v=1" defer></script>
+<script src="/static/xterm-addon-fit.min.js?v=1" defer></script>
+{{end}}
+<script src="/static/app.js?v={{.AssetsV}}" defer></script>
 </head>
 <body data-page="{{.Page}}">
 <header>

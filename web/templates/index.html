@@ -2,11 +2,9 @@
 <section class="changes">
   <div class="section-head">
     <h2>Changes</h2>
-    <form class="inline-form"
-          hx-post="/changes" hx-swap="none">
-      <input type="text" name="title" placeholder="New change title" required>
-      <input type="text" name="prefix" placeholder="Prefix" size="5">
-      <button type="submit">New change</button>
+    <form class="inline-form form-accent"
+          hx-post="/changes/session" hx-swap="none">
+      <button type="submit" class="btn-accent">New change session</button>
     </form>
   </div>
   <table class="change-table-wrap change-table">

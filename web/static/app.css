@@ -190,6 +190,9 @@ button:hover { background: var(--slate-hover); }
 }
 .btn-ghost:hover { background: var(--surface-2); color: var(--text); border-color: var(--muted); }
 
+.btn-accent { background: var(--accent); }
+.btn-accent:hover { background: var(--accent-hover); }
+
 /* --- index (change list) --------------------------------------------------- */
 
 .change-table-wrap {
@@ -458,4 +461,84 @@ body[data-page="board"] .board {
   border-radius: 2px;
   padding: 0.8rem 1rem;
   font-size: 0.88rem;
+}
+
+/* --- sessions panel --------------------------------------------------------- */
+
+.sessions-panel {
+  background: var(--surface);
+  border-radius: 2px;
+  padding: 0.75rem 1rem 1rem;
+  margin-bottom: 1rem;
+}
+.sessions-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.6rem;
+}
+.sessions-head h3 { font-size: 0.82rem; font-weight: 650; margin: 0; }
+.sessions-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.session-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.45rem 0.6rem;
+  background: var(--surface-2);
+  border-radius: 2px;
+}
+.session-title { flex: 1; font-size: 0.85rem; }
+.session-meta { color: var(--muted); font-size: 0.72rem; }
+.session-actions { display: flex; gap: 0.35rem; }
+.session-empty { color: var(--muted); font-size: 0.85rem; padding: 0.3rem 0.1rem; }
+
+/* --- terminal window ---------------------------------------------------------- */
+
+#terminal-overlay[hidden] { display: none; }
+#terminal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  background: var(--backdrop);
+  backdrop-filter: blur(3px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  animation: fade-in 0.13s ease;
+}
+.terminal-window {
+  width: min(1000px, 100%);
+  height: min(85vh, 800px);
+  background: #141414;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  box-shadow: var(--shadow-lg);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.terminal-head {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.45rem 0.75rem;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+.terminal-head .title { flex: 1; font-size: 0.85rem; font-weight: 600; }
+#terminal-container { flex: 1; min-height: 0; padding: 0.35rem; }
+.terminal-status {
+  padding: 0.35rem 0.75rem;
+  background: var(--surface);
+  color: var(--st-blocked-fg);
+  font-size: 0.78rem;
+  border-top: 1px solid var(--border);
 }

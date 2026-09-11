@@ -1,10 +1,13 @@
 package server
 
 import (
+	"hash/fnv"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"tasktracker/internal/model"
 )
 
 func htmlGet(t *testing.T, h http.Handler, path string, hx bool) *httptest.ResponseRecorder {
@@ -17,6 +20,22 @@ func htmlGet(t *testing.T, h http.Handler, path string, hx bool) *httptest.Respo
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, r)
 	return w
+}
+
+func TestAssetsVersionStableAndSensitive(t *testing.T) {
+	v1 := assetsVersion()
+	v2 := assetsVersion()
+	if v1 == "" || v1 != v2 {
+		t.Fatalf("unstable or empty version: %q vs %q", v1, v2)
+	}
+	// Content sensitivity: hash of different content differs.
+	h1 := fnv.New32a()
+	h1.Write([]byte("a"))
+	h2 := fnv.New32a()
+	h2.Write([]byte("b"))
+	if h1.Sum32() == h2.Sum32() {
+		t.Fatal("fnv not content-sensitive in test")
+	}
 }
 
 func TestIndexHTML(t *testing.T) {
@@ -41,10 +60,34 @@ func TestBoardHTML(t *testing.T) {
 	}
 	body := w.Body.String()
 	for _, want := range []string{"Not started", "In progress", "Blocked", "Done", "Cancelled",
-		"First", "Second", "data-task=\"FIX-00\"", `data-change="2026-09-10-0"`} {
+		"First", "Second", "data-task=\"FIX-00\"", `data-change="2026-09-10-0"`,
+		`sessions-btn`, `sessions-panel`, `terminal-overlay`, `xterm.min.js`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("board HTML missing %q", want)
 		}
+	}
+}
+
+func TestBoardLifecycleButtons(t *testing.T) {
+	st, _ := fixtureStore(t)
+	h := New(st).Handler()
+	w := htmlGet(t, h, "/changes/2026-09-10-0", false)
+	body := w.Body.String()
+	if !strings.Contains(body, `id="close-change-btn"`) || strings.Contains(body, `id="reopen-btn"`) {
+		t.Errorf("In progress board should show Close change only")
+	}
+	if !strings.Contains(body, `id="commit-btn"`) {
+		t.Errorf("missing Commit button")
+	}
+
+	// After closing, the board offers Reopen instead.
+	if err := st.SetChangeStatus("2026-09-10-0", model.OverallDone); err != nil {
+		t.Fatal(err)
+	}
+	w = htmlGet(t, h, "/changes/2026-09-10-0", false)
+	body = w.Body.String()
+	if !strings.Contains(body, `id="reopen-btn"`) || strings.Contains(body, `id="close-change-btn"`) {
+		t.Errorf("Done board should show Reopen only")
 	}
 }
 

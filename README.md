@@ -58,6 +58,40 @@ directory). One process serves one repository.
 - Everything is plain markdown; inspect or undo any change with your editor
   (or git, once the repository is under version control).
 
+## opencode integration
+
+If an [opencode](https://opencode.ai) V2 background service is running,
+tasktracker connects to it automatically (discovery via
+`opencode2 service status`, credentials from
+`~/.config/opencode/service.json` — never sent to the browser; all service
+calls are made server-side).
+
+- **Sessions panel** on each board: create, list, open, and unlink multiple
+  opencode sessions per change. Mappings persist in
+  `.tasktracker/sessions.json` (gitignored tooling state).
+- **Embedded terminal**: opening a session renders the live opencode TUI in
+  the browser (xterm.js). tasktracker spawns `opencode2 --session <id>` in
+  its own PTY and bridges it over a WebSocket; the session persists in the
+  opencode service, so reconnecting resumes it.
+- **New change session** (index page): scaffolds a change, creates and
+  primes an opencode session, and opens the board with the terminal
+  attached. The agent works the `changes/` workflow; the board updates live.
+
+### Security posture of agent sessions
+
+`opencode.json` in this repository pre-approves agent permissions so change
+sessions run unattended: broad `allow` **inside this project**, with denies
+for external directories, `.env` files, and `git push`. This means an agent
+can edit files and run shell commands in this repo without per-action
+prompts — only run this on a repository you are comfortable letting an agent
+work in autonomously. The embedded terminal and the service API are
+localhost-only, and the opencode service password is never exposed to the
+browser (injected server-side).
+
+If the service is unreachable, tasktracker starts normally without the
+integration (a warning is logged).
+
+
 ## Development
 
 ```sh

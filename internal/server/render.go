@@ -2,6 +2,8 @@ package server
 
 import (
 	"bytes"
+	"fmt"
+	"hash/fnv"
 	"html/template"
 	"io/fs"
 	"net/http"
@@ -39,10 +41,25 @@ type renderer struct {
 	index   *template.Template
 	board   *template.Template
 	partial *template.Template
+	assetsV string
 }
 
 func mustParse(files ...string) *template.Template {
 	return template.Must(template.New("page").Funcs(templateFuncs).ParseFS(web.FS, files...))
+}
+
+// assetsVersion returns a short content hash of the app-owned static
+// assets, used for cache-busting (?v=) so browsers never run stale JS/CSS
+// under the immutable cache policy. Vendored pinned libraries keep their
+// own fixed versions.
+func assetsVersion() string {
+	h := fnv.New32a()
+	for _, name := range []string{"static/app.css", "static/app.js", "static/xterm.min.css", "static/xterm.min.js", "static/xterm-addon-fit.min.js"} {
+		if b, err := fs.ReadFile(web.FS, name); err == nil {
+			h.Write(b)
+		}
+	}
+	return fmt.Sprintf("%x", h.Sum32())
 }
 
 func newRenderer() *renderer {
@@ -50,11 +67,16 @@ func newRenderer() *renderer {
 		index:   mustParse("templates/layout.html", "templates/index.html"),
 		board:   mustParse("templates/layout.html", "templates/board.html", "templates/partials.html"),
 		partial: mustParse("templates/partials.html"),
+		assetsV: assetsVersion(),
 	}
 }
 
 func (r *renderer) render(w http.ResponseWriter, tmpl *template.Template, name string, data any) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if pd, ok := data.(pageData); ok {
+		pd.AssetsV = r.assetsV
+		data = pd
+	}
 	if err := tmpl.ExecuteTemplate(w, name, data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
@@ -63,9 +85,10 @@ func (r *renderer) render(w http.ResponseWriter, tmpl *template.Template, name s
 // --- view data ---
 
 type pageData struct {
-	Title string
-	Page  string
-	Data  any
+	Title   string
+	Page    string
+	Data    any
+	AssetsV string
 }
 
 type indexView struct {

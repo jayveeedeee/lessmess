@@ -309,6 +309,52 @@ func TestCreateChangeGapRule(t *testing.T) {
 	}
 }
 
+func TestSetChangeStatus(t *testing.T) {
+	s, dir := openFixture(t)
+
+	if err := s.SetChangeStatus("2026-09-10-0", model.OverallDone); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	// Per-change ledger updated.
+	l, err := model.ParseChangeLedger("l", mustRead(t, filepath.Join(dir, "changes", "2026-09-10-0", "ledger.md")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if l.Overall != model.OverallDone || l.LastUpdated != today() {
+		t.Fatalf("ledger overall = %q updated = %q", l.Overall, l.LastUpdated)
+	}
+	// Root ledger row updated.
+	root, err := model.ParseRootLedger("r", mustRead(t, filepath.Join(dir, "changes", "ledger.md")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if root.Rows[0].Status != model.OverallDone || root.Rows[0].Updated != today() {
+		t.Fatalf("root row = %+v", root.Rows[0])
+	}
+	// Everything still validates.
+	if v := s.Validate(); len(v) != 0 {
+		t.Fatalf("violations after close: %v", v)
+	}
+
+	// Reopen round trip.
+	if err := s.SetChangeStatus("2026-09-10-0", model.OverallInProgress); err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	l2, _ := model.ParseChangeLedger("l", mustRead(t, filepath.Join(dir, "changes", "2026-09-10-0", "ledger.md")))
+	root2, _ := model.ParseRootLedger("r", mustRead(t, filepath.Join(dir, "changes", "ledger.md")))
+	if l2.Overall != model.OverallInProgress || root2.Rows[0].Status != model.OverallInProgress {
+		t.Fatalf("after reopen: ledger %q root %q", l2.Overall, root2.Rows[0].Status)
+	}
+	if v := s.Validate(); len(v) != 0 {
+		t.Fatalf("violations after reopen: %v", v)
+	}
+
+	// Unknown change.
+	if err := s.SetChangeStatus("2099-01-01-9", model.OverallDone); err != ErrNotFound {
+		t.Fatalf("unknown: err = %v", err)
+	}
+}
+
 func TestWatchEvent(t *testing.T) {
 	s, dir := openFixture(t)
 	ctx, cancel := context.WithCancel(context.Background())

@@ -419,6 +419,48 @@ func (s *Store) CreateChange(title, prefix, date string) (string, error) {
 	return id, nil
 }
 
+// SetChangeStatus updates a change's overall status in both the per-change
+// ledger and the root-ledger row (close → Done, reopen → In progress).
+func (s *Store) SetChangeStatus(changeID string, status model.OverallStatus) error {
+	if !status.Valid() {
+		return fmt.Errorf("%w: invalid overall status %q", ErrInvalid, string(status))
+	}
+	c, err := s.Change(changeID)
+	if err != nil {
+		return err
+	}
+	l, err := s.freshLedger(c)
+	if err != nil {
+		return err
+	}
+	l.SetOverall(status, today())
+	if err := s.writeLedger(c, l); err != nil {
+		return err
+	}
+
+	rootPath := filepath.Join(s.ChangesDir, "ledger.md")
+	rootData, err := os.ReadFile(rootPath)
+	if err != nil {
+		return err
+	}
+	root, err := model.ParseRootLedger("changes/ledger.md", rootData)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalid, err)
+	}
+	if err := root.Update(changeID, status, today()); err != nil {
+		if errors.Is(err, model.ErrChangeNotFound) {
+			return ErrNotFound
+		}
+		return err
+	}
+	if err := model.WriteFileAtomic(rootPath, root.Content(), 0o644); err != nil {
+		return err
+	}
+	s.Reload()
+	s.notify(Event{Kind: "write", Path: "ledger.md"})
+	return nil
+}
+
 // TaskFile returns the parsed task file for a change, reading from disk.
 func (s *Store) TaskFile(changeID, href string) (*model.TaskFile, error) {
 	c, err := s.Change(changeID)

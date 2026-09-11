@@ -220,9 +220,10 @@ Recommended overall statuses are `Planned`, `In progress`, `Blocked`, `Done`, an
 5. When a blocker is resolved, return the task to `In progress` and record the resolution.
 6. Mark a task `Done` only after its documented verification and completion criteria pass. Record concise verification evidence.
 7. If verification fails, keep the task `In progress` or mark it `Blocked`; do not mark it `Done` based solely on implementation being written.
-8. Mark the overall change `Done` only when every non-cancelled task is `Done`, all change-level acceptance criteria pass, and no required work remains.
-9. When cancelling a task or change, record the reason and any resulting scope adjustment.
-10. Update ledger state in the same working change as the implementation it describes so status does not drift from the repository.
+8. Only the user closes a change. When every non-cancelled task is `Done`, all change-level acceptance criteria pass, and no required work remains, agents leave the overall status `In progress` and report the change ready for close-out. Agents must never set the overall status to `Done` themselves; the user closes the change explicitly (via the board's Close button or a direct instruction).
+9. The user may reopen a closed change (`Done` → `In progress`); agents then resume work from the ledger state. Close and reopen transitions are user actions and are recorded in both ledgers.
+10. When cancelling a task or change, record the reason and any resulting scope adjustment.
+11. Update ledger state in the same working change as the implementation it describes so status does not drift from the repository.
 
 ### Dependencies and execution order
 
@@ -257,13 +258,13 @@ Tools (servers, validators, UIs) keep their own state in a `.tasktracker/` direc
 
 ### Verification and handoff
 
-Before reporting a change complete:
+When all tasks are complete, before reporting a change ready for close-out:
 
 1. Run the tests and checks documented by each task.
 2. Confirm the change-level acceptance criteria in `plan.md`.
 3. Update every completed task row and record verification evidence.
-4. Update the overall ledger status and date.
+4. Update the overall ledger's last-updated date, leaving the status `In progress` (only the user sets `Done`).
 5. Ensure `plan.md`, `ledger.md`, and task files agree about scope and completion.
-6. Report the change directory, implemented outcome, verification performed, and any remaining risks or follow-up tasks.
+6. Report the change directory, implemented outcome, verification performed, and any remaining risks or follow-up tasks — and state that the change is ready for the user to close.
 
 If implementation stops before completion, leave the ledger in the accurate current state and make the next executable step clear in the relevant task notes.

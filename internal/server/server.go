@@ -8,11 +8,14 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"tasktracker/internal/model"
+	"tasktracker/internal/opencode"
 	"tasktracker/internal/store"
+	"tasktracker/internal/terminal"
 )
 
 // Server routes requests to the store.
@@ -20,11 +23,25 @@ type Server struct {
 	st   *store.Store
 	mux  *http.ServeMux
 	rend *renderer
+	term *terminal.Manager
+	// SpawnCommand builds the command run in a PTY for a session ID.
+	// Overridable in tests.
+	SpawnCommand func(sessionID string) (string, []string)
+
+	oc       *opencode.Client // nil disables the opencode integration
+	sessions *mapping
+	mapErr   error
 }
 
 // New builds the route table.
 func New(st *store.Store) *Server {
-	s := &Server{st: st, rend: newRenderer()}
+	s := &Server{st: st, rend: newRenderer(), term: terminal.NewManager()}
+	s.SpawnCommand = func(sessionID string) (string, []string) {
+		return "opencode2", []string{"--session", sessionID}
+	}
+	m, err := loadMapping(filepath.Join(st.Dir, ".tasktracker", "sessions.json"))
+	s.sessions, s.mapErr = m, err
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", s.index)
 	mux.HandleFunc("GET /changes/{id}", s.board)
@@ -32,15 +49,29 @@ func New(st *store.Store) *Server {
 	mux.HandleFunc("GET /changes/{id}/tasks/{file}", s.taskDetail)
 	mux.HandleFunc("POST /changes/{id}/tasks", s.createTask)
 	mux.HandleFunc("POST /changes/{id}/move", s.moveTask)
+	mux.HandleFunc("POST /changes/{id}/close", s.closeChange)
+	mux.HandleFunc("POST /changes/{id}/reopen", s.reopenChange)
+	mux.HandleFunc("POST /changes/{id}/commit", s.commitChange)
 	mux.HandleFunc("POST /changes/{$}", s.createChange)
+	mux.HandleFunc("POST /changes/session", s.createChangeWithSession)
 	mux.HandleFunc("GET /events", s.events)
 	mux.HandleFunc("GET /api/validate", s.validate)
+	mux.HandleFunc("GET /terminal/ws", s.terminalWS)
+	mux.HandleFunc("GET /changes/{id}/sessions", s.listChangeSessions)
+	mux.HandleFunc("POST /changes/{id}/sessions", s.createChangeSession)
+	mux.HandleFunc("DELETE /changes/{id}/sessions/{sessionID}", s.unlinkChangeSession)
 	if sh, err := staticHandler(); err == nil {
 		mux.Handle("GET /static/", sh)
 	}
 	s.mux = mux
 	return s
 }
+
+// SetOpencode attaches the opencode client (nil disables the integration).
+func (s *Server) SetOpencode(c *opencode.Client) { s.oc = c }
+
+// Close releases resources (terminal PTYs).
+func (s *Server) Close() { s.term.CloseAll() }
 
 // Handler returns the root http.Handler.
 func (s *Server) Handler() http.Handler { return s.mux }

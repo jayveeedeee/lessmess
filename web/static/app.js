@@ -129,6 +129,231 @@
     }
   }
 
+  // --- sessions panel + terminal ----------------------------------------------
+
+  function changeID() {
+    var b = boardEl();
+    return b ? b.getAttribute("data-change") : null;
+  }
+
+  function loadSessions() {
+    fetch("/changes/" + changeID() + "/sessions", { headers: { Accept: "application/json" } })
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        var ul = document.getElementById("sessions-list");
+        if (!ul) return;
+        ul.innerHTML = "";
+        var sessions = j.sessions || [];
+        if (!sessions.length) {
+          var empty = document.createElement("li");
+          empty.className = "session-empty";
+          empty.textContent = "No sessions yet — start one.";
+          ul.appendChild(empty);
+          return;
+        }
+        sessions.forEach(function (s) {
+          var li = document.createElement("li");
+          li.className = "session-item";
+          var title = document.createElement("span");
+          title.className = "session-title";
+          title.textContent = s.title;
+          var meta = document.createElement("span");
+          meta.className = "session-meta";
+          meta.textContent = (s.created || "").slice(0, 10);
+          var actions = document.createElement("span");
+          actions.className = "session-actions";
+          var openBtn = document.createElement("button");
+          openBtn.className = "btn-ghost";
+          openBtn.textContent = "Open";
+          openBtn.addEventListener("click", function () { openTerminal(s.session, s.title); });
+          var unBtn = document.createElement("button");
+          unBtn.className = "btn-ghost";
+          unBtn.textContent = "✕";
+          unBtn.title = "Unlink from change (session stays in opencode)";
+          unBtn.addEventListener("click", function () {
+            fetch("/changes/" + changeID() + "/sessions/" + s.session, { method: "DELETE" })
+              .then(function (r) { if (!r.ok) throw 0; loadSessions(); })
+              .catch(function () { alert("Unlink failed"); });
+          });
+          actions.appendChild(openBtn);
+          actions.appendChild(unBtn);
+          li.appendChild(title);
+          li.appendChild(meta);
+          li.appendChild(actions);
+          ul.appendChild(li);
+        });
+      })
+      .catch(function () {});
+  }
+
+  function initSessions() {
+    var btn = document.getElementById("sessions-btn");
+    if (!btn) return;
+    btn.addEventListener("click", function () {
+      var p = document.getElementById("sessions-panel");
+      p.hidden = !p.hidden;
+      if (!p.hidden) loadSessions();
+    });
+    var nb = document.getElementById("new-session-btn");
+    if (nb) {
+      nb.addEventListener("click", function () {
+        fetch("/changes/" + changeID() + "/sessions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: "{}",
+        })
+          .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.statusText); return j; }); })
+          .then(function (s) { loadSessions(); openTerminal(s.session, s.title); })
+          .catch(function (e) { alert("Create session failed: " + e.message); });
+      });
+    }
+  }
+
+  var tstate = { term: null, ws: null, ro: null };
+
+  function openTerminal(sessionID, title) {
+    closeTerminal();
+    var overlay = document.getElementById("terminal-overlay");
+    overlay.hidden = false;
+    document.getElementById("terminal-session").textContent = sessionID;
+    document.getElementById("terminal-title").textContent = title || "";
+    var status = document.getElementById("terminal-status");
+    status.hidden = true;
+    var container = document.getElementById("terminal-container");
+    container.innerHTML = "";
+
+    var term = new Terminal({
+      fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+      fontSize: 13,
+      cursorBlink: true,
+      theme: {
+        background: "#141414",
+        foreground: "#e8e6e3",
+        cursor: "#e8641f",
+        selectionBackground: "#3a3a3a",
+      },
+    });
+    var fit = new FitAddon.FitAddon();
+    term.loadAddon(fit);
+    term.open(container);
+    fit.fit();
+
+    var proto = location.protocol === "https:" ? "wss" : "ws";
+    var ws = new WebSocket(
+      proto + "://" + location.host + "/terminal/ws?session=" +
+        encodeURIComponent(sessionID) + "&cols=" + term.cols + "&rows=" + term.rows
+    );
+    ws.binaryType = "arraybuffer";
+    ws.onmessage = function (e) {
+      term.write(typeof e.data === "string" ? e.data : new Uint8Array(e.data));
+    };
+    ws.onclose = function () {
+      status.textContent = "disconnected — the opencode session persists; reopen to resume";
+      status.hidden = false;
+    };
+    term.onData(function (d) {
+      if (ws.readyState === 1) ws.send(d);
+    });
+
+    var ro = new ResizeObserver(function () {
+      fit.fit();
+      if (ws.readyState === 1) {
+        ws.send(JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows }));
+      }
+    });
+    ro.observe(container);
+
+    tstate = { term: term, ws: ws, ro: ro };
+  }
+
+  function closeTerminal() {
+    if (tstate.ro) tstate.ro.disconnect();
+    if (tstate.ws && tstate.ws.readyState <= 1) tstate.ws.close();
+    if (tstate.term) tstate.term.dispose();
+    tstate = { term: null, ws: null, ro: null };
+    var overlay = document.getElementById("terminal-overlay");
+    if (overlay) overlay.hidden = true;
+  }
+
+  function terminalOpen() {
+    var ov = document.getElementById("terminal-overlay");
+    return ov && !ov.hidden;
+  }
+
+  // Auto-open the terminal when arriving from the new-change-session flow
+  // (/changes/{id}?session={sid}).
+  function autoOpenSession() {
+    if (page !== "board") return;
+    var sid = new URLSearchParams(location.search).get("session");
+    if (!sid) return;
+    history.replaceState(null, "", location.pathname);
+    fetch("/changes/" + changeID() + "/sessions", { headers: { Accept: "application/json" } })
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        var s = (j.sessions || []).find(function (x) { return x.session === sid; });
+        openTerminal(sid, s ? s.title : sid);
+      })
+      .catch(function () { openTerminal(sid, sid); });
+  }
+
+  document.addEventListener("click", function (e) {
+    if (e.target.closest("[data-close-terminal]")) { closeTerminal(); return; }
+    var ov = document.getElementById("terminal-overlay");
+    if (ov && !ov.hidden && e.target === ov) closeTerminal();
+  });
+
+  // --- lifecycle buttons ---------------------------------------------------
+
+  function countOpenTasks() {
+    var n = 0;
+    document.querySelectorAll("#board .cards").forEach(function (col) {
+      var st = col.getAttribute("data-status");
+      if (st !== "Done" && st !== "Cancelled") {
+        n += col.querySelectorAll(".card").length;
+      }
+    });
+    return n;
+  }
+
+  function postLifecycle(action) {
+    fetch("/changes/" + changeID() + "/" + action, {
+      method: "POST",
+      headers: { Accept: "application/json" },
+    })
+      .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.statusText); return j; }); })
+      .then(function () { location.reload(); }) // status pill lives outside the board fragment
+      .catch(function (e) { alert(action + " failed: " + e.message); });
+  }
+
+  function initLifecycle() {
+    var closeBtn = document.getElementById("close-change-btn");
+    if (closeBtn) {
+      closeBtn.addEventListener("click", function () {
+        var open = countOpenTasks();
+        if (open > 0 && !confirm(open + " task(s) are not Done or Cancelled — close the change anyway?")) {
+          return;
+        }
+        postLifecycle("close");
+      });
+    }
+    var reopenBtn = document.getElementById("reopen-btn");
+    if (reopenBtn) {
+      reopenBtn.addEventListener("click", function () { postLifecycle("reopen"); });
+    }
+    var commitBtn = document.getElementById("commit-btn");
+    if (commitBtn) {
+      commitBtn.addEventListener("click", function () {
+        fetch("/changes/" + changeID() + "/commit", {
+          method: "POST",
+          headers: { Accept: "application/json" },
+        })
+          .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.statusText); return j; }); })
+          .then(function (j) { openTerminal(j.session, changeID() + " — git commit"); })
+          .catch(function (e) { alert("Commit failed: " + e.message); });
+      });
+    }
+  }
+
   // --- detail modal -----------------------------------------------------------
 
   function closeDetail() {
@@ -143,7 +368,9 @@
   });
 
   document.addEventListener("keydown", function (e) {
-    if (e.key === "Escape") closeDetail();
+    if (e.key !== "Escape") return;
+    if (terminalOpen()) { closeTerminal(); return; }
+    closeDetail();
   });
 
   document.addEventListener("htmx:afterSwap", function (e) {
@@ -155,6 +382,9 @@
   document.addEventListener("DOMContentLoaded", function () {
     initTheme();
     initSortable();
+    initSessions();
+    initLifecycle();
     checkValidation();
+    autoOpenSession();
   });
 })();
