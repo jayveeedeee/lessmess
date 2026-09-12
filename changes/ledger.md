@@ -22,4 +22,4 @@ One row per change directory. This file is authoritative for change existence, t
 | [2026-09-12-14](2026-09-12-14/plan.md) | Rename app to lessmess | REN | — | Done | 2026-09-12 | 2026-09-12 |
 | [2026-09-12-15](2026-09-12-15/plan.md) | User-gated Test status before Done | TST | — | Done | 2026-09-12 | 2026-09-13 |
 | [2026-09-13-0](2026-09-13-0/plan.md) | Commit-all button on changes page | CMT | — | Done | 2026-09-13 | 2026-09-13 |
-| [2026-09-13-1](2026-09-13-1/plan.md) | Embedded terminal improvements | TUI | — | In progress | 2026-09-13 | 2026-09-13 |
+| [2026-09-13-1](2026-09-13-1/plan.md) | Embedded terminal improvements | TUI | — | Done | 2026-09-13 | 2026-09-13 |
