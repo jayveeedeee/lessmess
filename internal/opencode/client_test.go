@@ -199,3 +199,36 @@ func TestLiveSmoke(t *testing.T) {
 		t.Fatalf("DeleteSession: %v", err)
 	}
 }
+
+func TestWaitDoneRetriesTransportTimeout(t *testing.T) {
+	var calls int
+	c, _ := fakeServer(t, "opencode", "secret", func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if calls < 3 {
+			time.Sleep(300 * time.Millisecond) // forces transport timeout
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+	c.hc.Timeout = 100 * time.Millisecond
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := c.WaitDone(ctx, "ses_x"); err != nil {
+		t.Fatalf("WaitDone: %v", err)
+	}
+	if calls < 2 {
+		t.Errorf("expected retries after transport timeout, got %d call(s)", calls)
+	}
+}
+
+func TestWaitDoneCtxExpiryReportsBusy(t *testing.T) {
+	c, _ := fakeServer(t, "opencode", "secret", func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(300 * time.Millisecond) // session never goes idle in time
+		w.WriteHeader(http.StatusNoContent)
+	})
+	c.hc.Timeout = 100 * time.Millisecond
+	ctx, cancel := context.WithTimeout(context.Background(), 400*time.Millisecond)
+	defer cancel()
+	if err := c.WaitDone(ctx, "ses_x"); err == nil {
+		t.Fatal("expected error when ctx expires before the session idles")
+	}
+}

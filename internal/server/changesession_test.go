@@ -3,121 +3,16 @@ package server
 import (
 	"encoding/json"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 )
 
-func TestChangeSessionFlow(t *testing.T) {
-	var prompted struct {
-		session string
-		text    string
-	}
-	s := mappingServer(t, func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.Method == http.MethodPost && r.URL.Path == "/api/session":
-			w.Write([]byte(`{"data":{"id":"ses_flow","title":"t","location":{"directory":"/x"}}}`))
-		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/prompt"):
-			var body map[string]string
-			json.NewDecoder(r.Body).Decode(&body)
-			prompted.session = strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/session/"), "/prompt")
-			prompted.text = body["text"]
-			w.Write([]byte(`{"data":{}}`))
-		default:
-			w.WriteHeader(http.StatusNotFound)
-		}
-	})
-
-	w := do(t, s.Handler(), "POST", "/changes/session", `{"title":"Flow objective","prefix":"FL"}`)
-	if w.Code != 201 {
-		t.Fatalf("code = %d body = %s", w.Code, w.Body)
-	}
-	var resp map[string]string
-	json.Unmarshal(w.Body.Bytes(), &resp)
-	changeID := resp["change"]
-	if changeID == "" || resp["session"] != "ses_flow" {
-		t.Fatalf("resp = %v", resp)
-	}
-
-	// Change scaffold exists and is reachable.
-	if w := do(t, s.Handler(), "GET", "/changes/"+changeID, ""); w.Code != 200 {
-		t.Fatalf("new board: code = %d", w.Code)
-	}
-	// Session mapped.
-	entries := s.sessions.list(changeID)
-	if len(entries) != 1 || entries[0].Session != "ses_flow" {
-		t.Fatalf("mapping = %+v", entries)
-	}
-	// Prompt was sent to the right session and references the change.
-	if prompted.session != "ses_flow" {
-		t.Fatalf("prompted session = %q", prompted.session)
-	}
-	if !strings.Contains(prompted.text, changeID) || !strings.Contains(prompted.text, "Flow objective") || !strings.Contains(prompted.text, "AGENTS.md") {
-		t.Fatalf("prompt text = %q", prompted.text)
-	}
-}
-
-func TestChangeSessionHXRedirect(t *testing.T) {
-	s := mappingServer(t, func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasSuffix(r.URL.Path, "/prompt") {
-			w.Write([]byte(`{"data":{}}`))
-			return
-		}
-		w.Write([]byte(`{"data":{"id":"ses_hx","title":"t","location":{"directory":"/x"}}}`))
-	})
-	r, _ := http.NewRequest("POST", "/changes/session", strings.NewReader("title=HX+thing&prefix=HX"))
-	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	r.Header.Set("HX-Request", "true")
-	w := httptest.NewRecorder()
-	s.Handler().ServeHTTP(w, r)
-	if w.Code != 200 {
-		t.Fatalf("code = %d body = %s", w.Code, w.Body)
-	}
-	redir := w.Header().Get("HX-Redirect")
-	if !strings.HasPrefix(redir, "/changes/") || !strings.Contains(redir, "?session=ses_hx") {
-		t.Fatalf("HX-Redirect = %q", redir)
-	}
-}
-
-func TestChangeSessionNoService(t *testing.T) {
-	s := mappingServer(t, nil)
-	w := do(t, s.Handler(), "POST", "/changes/session", `{"title":"x"}`)
-	if w.Code != http.StatusServiceUnavailable {
-		t.Fatalf("code = %d, want 503", w.Code)
-	}
-}
-
-func TestChangeSessionCreateFailsKeepsChange(t *testing.T) {
-	s := mappingServer(t, func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte(`{"_tag":"UnknownError","message":"boom"}`))
-	})
-	w := do(t, s.Handler(), "POST", "/changes/session", `{"title":"Keepme"}`)
-	if w.Code != http.StatusBadGateway {
-		t.Fatalf("code = %d body = %s", w.Code, w.Body)
-	}
-	var resp map[string]string
-	json.Unmarshal(w.Body.Bytes(), &resp)
-	// The change was created despite the session failure.
-	if resp["change"] == "" {
-		t.Fatalf("resp = %v", resp)
-	}
-	if w := do(t, s.Handler(), "GET", "/changes/"+resp["change"], ""); w.Code != 200 {
-		t.Fatalf("change not kept: code = %d", w.Code)
-	}
-	if len(s.sessions.list(resp["change"])) != 0 {
-		t.Fatal("no session should be mapped on failure")
-	}
-}
-
-func TestChangeSessionPlaceholderTitle(t *testing.T) {
+func TestDiscussionSession(t *testing.T) {
 	var promptedText string
 	s := mappingServer(t, func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodPost && r.URL.Path == "/api/session":
-			var body map[string]any
-			json.NewDecoder(r.Body).Decode(&body)
-			w.Write([]byte(`{"data":{"id":"ses_ph","title":"t","location":{"directory":"/x"}}}`))
+			w.Write([]byte(`{"data":{"id":"ses_disc","title":"t","location":{"directory":"/x"}}}`))
 		case strings.HasSuffix(r.URL.Path, "/prompt"):
 			var body map[string]string
 			json.NewDecoder(r.Body).Decode(&body)
@@ -127,57 +22,182 @@ func TestChangeSessionPlaceholderTitle(t *testing.T) {
 			w.WriteHeader(http.StatusNotFound)
 		}
 	})
+	s.PublicBase = "127.0.0.1:9090"
 
 	w := do(t, s.Handler(), "POST", "/changes/session", `{}`)
 	if w.Code != 201 {
 		t.Fatalf("code = %d body = %s", w.Code, w.Body)
 	}
-	var resp map[string]string
+	var resp sessionResponse
 	json.Unmarshal(w.Body.Bytes(), &resp)
-	changeID := resp["change"]
-	if changeID == "" || resp["session"] != "ses_ph" {
-		t.Fatalf("resp = %v", resp)
+	if resp.Session != "ses_disc" {
+		t.Fatalf("resp = %+v", resp)
 	}
 
-	// Scaffold used a placeholder title and an empty prefix.
-	root, err := s.st.Root()
-	if err != nil {
-		t.Fatal(err)
-	}
-	var row *struct{ Title, Prefix string }
-	for _, r := range root.Rows {
-		if r.Change == changeID {
-			row = &struct{ Title, Prefix string }{r.Title, r.Prefix}
-		}
-	}
-	if row == nil {
-		t.Fatal("root row missing")
-	}
-	if !strings.HasPrefix(row.Title, "untitled-") {
-		t.Fatalf("title = %q, want untitled-*", row.Title)
-	}
-	if row.Prefix != "—" {
-		t.Fatalf("prefix = %q, want —", row.Prefix)
+	// Mapped to the unassigned bucket.
+	if got := s.sessions.listUnassigned(); len(got) != 1 || got[0].Session != "ses_disc" {
+		t.Fatalf("unassigned = %+v", got)
 	}
 
-	// Prompt carries the titling/prefix/rename instructions with the session ID.
-	for _, want := range []string{"placeholder", "task-ID prefix", "opencode2 api post /api/session/ses_ph/rename", changeID} {
+	// Prompt: discussion-only + exact scaffold call with injected base and session ID.
+	for _, want := range []string{
+		"AGENTS.md",
+		"DO NOT modify the repository",
+		"EXPLICITLY agrees",
+		"curl -s -X POST http://127.0.0.1:9090/changes/scaffold",
+		`"session":"ses_disc"`,
+		"task-ID prefix",
+	} {
 		if !strings.Contains(promptedText, want) {
 			t.Errorf("prompt missing %q:\n%s", want, promptedText)
 		}
 	}
 }
 
-func TestPlaceholderTitleFormat(t *testing.T) {
-	seen := map[string]bool{}
-	for i := 0; i < 10; i++ {
-		ti := placeholderTitle()
-		if !strings.HasPrefix(ti, "untitled-") {
-			t.Fatalf("title = %q", ti)
-		}
-		seen[ti] = true
+func TestDiscussionSessionNoService(t *testing.T) {
+	s := mappingServer(t, nil)
+	w := do(t, s.Handler(), "POST", "/changes/session", `{}`)
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("code = %d, want 503", w.Code)
 	}
-	if len(seen) < 2 {
-		t.Fatalf("placeholder titles not varying: %v", seen)
+}
+
+func TestScaffoldFlow(t *testing.T) {
+	var renamedTo string
+	s := mappingServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/rename") {
+			var body map[string]string
+			json.NewDecoder(r.Body).Decode(&body)
+			renamedTo = body["title"]
+			w.Write([]byte(`{"data":{}}`))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	})
+	if err := s.sessions.addUnassigned(SessionEntry{Session: "ses_sc", Title: "disc", Created: "x"}); err != nil {
+		t.Fatal(err)
+	}
+
+	w := do(t, s.Handler(), "POST", "/changes/scaffold", `{"title":"Build the thing","prefix":"BT","session":"ses_sc"}`)
+	if w.Code != 201 {
+		t.Fatalf("code = %d body = %s", w.Code, w.Body)
+	}
+	var resp map[string]string
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	changeID := resp["change"]
+	if changeID == "" {
+		t.Fatalf("resp = %v", resp)
+	}
+
+	// Change exists and root row carries title + prefix.
+	if w := do(t, s.Handler(), "GET", "/changes/"+changeID, ""); w.Code != 200 {
+		t.Fatalf("board: code = %d", w.Code)
+	}
+	root, err := s.st.Root()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found bool
+	for _, r := range root.Rows {
+		if r.Change == changeID {
+			found = true
+			if r.Title != "Build the thing" || r.Prefix != "BT" {
+				t.Fatalf("root row = %+v", r)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("root row missing for scaffolded change")
+	}
+
+	// Session renamed and mapping moved out of the bucket.
+	if renamedTo != changeID+" — Build the thing" {
+		t.Fatalf("renamedTo = %q", renamedTo)
+	}
+	if len(s.sessions.listUnassigned()) != 0 {
+		t.Fatal("bucket not emptied")
+	}
+	if got := s.sessions.list(changeID); len(got) != 1 || got[0].Session != "ses_sc" {
+		t.Fatalf("change sessions = %+v", got)
+	}
+
+	// The produced change validates clean.
+	if v := s.st.Validate(); len(v) != 0 {
+		t.Fatalf("violations after scaffold: %v", v)
+	}
+}
+
+func TestScaffoldValidation(t *testing.T) {
+	s := mappingServer(t, func(w http.ResponseWriter, r *http.Request) {})
+	for body, want := range map[string]int{
+		`{"title":"","session":"ses_x"}`:                       422,
+		`{"title":"a|b","session":"ses_x"}`:                    422,
+		`{"title":"x","prefix":"abc","session":"ses_x"}`:       422,
+		`{"title":"x","prefix":"TOOLONG","session":"ses_x"}`:   422,
+		`{"title":"x","session":"nope"}`:                       422,
+		`{"title":"x","prefix":"OK","session":"ses_ok"}`:       201,
+		`{"title":"y","prefix":"","session":"ses_ok2"}`:        201,
+	} {
+		if w := do(t, s.Handler(), "POST", "/changes/scaffold", body); w.Code != want {
+			t.Errorf("%s → %d, want %d", body, w.Code, want)
+		}
+	}
+}
+
+func TestScaffoldIdempotentMove(t *testing.T) {
+	s := mappingServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"data":{}}`))
+	})
+	// Session is NOT in the unassigned bucket (retry or external session).
+	w := do(t, s.Handler(), "POST", "/changes/scaffold", `{"title":"Direct link","prefix":"DL","session":"ses_ext"}`)
+	if w.Code != 201 {
+		t.Fatalf("code = %d body = %s", w.Code, w.Body)
+	}
+	var resp map[string]string
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	if got := s.sessions.list(resp["change"]); len(got) != 1 || got[0].Session != "ses_ext" {
+		t.Fatalf("change sessions = %+v", got)
+	}
+}
+
+func TestScaffoldBoundSessionRefused(t *testing.T) {
+	s := mappingServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"data":{}}`))
+	})
+	// Session already belongs to an existing change.
+	if err := s.sessions.add("2026-09-10-0", SessionEntry{Session: "ses_bound", Title: "t", Created: "x"}); err != nil {
+		t.Fatal(err)
+	}
+	rootBefore, err := s.st.Root()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	w := do(t, s.Handler(), "POST", "/changes/scaffold", `{"title":"Sneaky new change","prefix":"SN","session":"ses_bound"}`)
+	if w.Code != http.StatusConflict {
+		t.Fatalf("code = %d, want 409; body = %s", w.Code, w.Body)
+	}
+	var resp map[string]string
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp["change"] != "2026-09-10-0" {
+		t.Fatalf("resp = %v", resp)
+	}
+	if !strings.Contains(resp["error"], "continue the work within that change") {
+		t.Fatalf("error not agent-redirecting: %v", resp["error"])
+	}
+
+	// Nothing created; mapping untouched.
+	rootAfter, err := s.st.Root()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rootAfter.Rows) != len(rootBefore.Rows) {
+		t.Fatalf("root rows grew: %d → %d", len(rootBefore.Rows), len(rootAfter.Rows))
+	}
+	if got := s.sessions.list("2026-09-10-0"); len(got) != 1 || got[0].Session != "ses_bound" {
+		t.Fatalf("change sessions = %+v", got)
+	}
+	if v := s.st.Validate(); len(v) != 0 {
+		t.Fatalf("violations after refused scaffold: %v", v)
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"tasktracker/internal/model"
@@ -18,6 +19,7 @@ func (s *Server) closeChange(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	slog.Info("change closed", "id", id)
+	s.enqueueDocsRefresh(id) // best-effort; logs its own errors
 	writeJSON(w, http.StatusOK, map[string]string{"ok": "true", "status": string(model.OverallDone)})
 }
 
@@ -70,6 +72,26 @@ func (s *Server) commitChange(w http.ResponseWriter, r *http.Request) {
 	}
 	slog.Info("commit session created", "change", id, "session", sess.ID)
 	writeJSON(w, http.StatusCreated, map[string]string{"session": sess.ID})
+}
+
+// commitStatus handles GET /changes/{id}/commit-status?session={sid}: report
+// whether the given session is still busy. A short server-side wait maps
+// "returns quickly" to done and "times out" to busy.
+func (s *Server) commitStatus(w http.ResponseWriter, r *http.Request) {
+	sessionID := r.URL.Query().Get("session")
+	if !strings.HasPrefix(sessionID, "ses_") {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "valid ses_ session id required"})
+		return
+	}
+	if s.oc == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "opencode service unavailable"})
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+	defer cancel()
+	err := s.oc.WaitDone(ctx, sessionID)
+	done := err == nil
+	writeJSON(w, http.StatusOK, map[string]bool{"done": done})
 }
 
 // reopenChange handles POST /changes/{id}/reopen: the user reopens a closed change.

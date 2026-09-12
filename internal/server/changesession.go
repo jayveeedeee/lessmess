@@ -5,66 +5,54 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"math/rand"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 )
 
-var (
-	placeholderAdjectives = []string{"amber", "brisk", "crimson", "dusky", "ember", "faint", "golden", "hollow", "ivory", "jade", "keen", "lunar", "misty", "nimble", "onyx", "pale", "quiet", "rusty", "silent", "teal", "umber", "velvet", "wild", "zephyr"}
-	placeholderNouns      = []string{"adder", "basin", "cedar", "delta", "elm", "falcon", "grove", "heron", "isle", "juniper", "kite", "lark", "mesa", "newt", "otter", "pine", "quail", "ridge", "sparrow", "tern", "urchin", "viper", "wren", "yew"}
-)
+var prefixRe = regexp.MustCompile(`^[A-Z0-9]{2,4}$`)
 
-// placeholderTitle returns a random stand-in title the agent will replace.
-func placeholderTitle() string {
-	r := rand.New(rand.NewSource(time.Now().UnixNano()))
-	return fmt.Sprintf("untitled-%s-%s",
-		placeholderAdjectives[r.Intn(len(placeholderAdjectives))],
-		placeholderNouns[r.Intn(len(placeholderNouns))])
+// discussionPrompt builds the message for a pre-scaffold discussion session.
+// The agent discusses the objective and, only with the user's explicit
+// approval, fires the deterministic scaffold trigger with the agreed
+// title/prefix. The API base URL and the session's own ID are injected.
+func discussionPrompt(apiBase, sessionID string) string {
+	return fmt.Sprintf(`You are a planning assistant for a repository that uses the change-management workflow defined in AGENTS.md.
+
+1. Discuss with the user what they want to build: objective, context, scope, and design options. Ask questions; help them decide.
+2. DO NOT modify the repository in any way — no change directories, no edits, no scaffolds. Discussion only.
+3. When the user EXPLICITLY agrees to start the work, choose a concise change title and a 2–4 letter uppercase task-ID prefix, then scaffold the change by running exactly this (replacing <title> and <prefix>):
+
+curl -s -X POST %[1]s/changes/scaffold -H 'Content-Type: application/json' -d '{"title":"<title>","prefix":"<prefix>","session":"%[2]s"}'
+
+This call creates the change directory, registers your title and prefix, renames this session, and links it to the new change. Report the returned change ID to the user.
+4. Then refine changes/<id>/plan.md and break the work into verifiable tasks per AGENTS.md (task files plus matching ledger rows), keeping the user in the loop before any implementation.`, apiBase, sessionID)
 }
 
-// primePrompt builds the first message sent to a freshly scaffolded
-// change session. The agent assigns the real title/prefix/session name
-// once it knows the objective.
-func primePrompt(changeID, title, sessionID string) string {
-	return fmt.Sprintf(`You are starting a new change in this repository: change %[1]s (currently a placeholder titled %[2]q).
+// changePrompt builds the prime message for a session bound to an existing
+// change: everything requested in the conversation is work on that change,
+// and scaffolding a new change from it is forbidden.
+func changePrompt(changeID string) string {
+	return fmt.Sprintf(`You are a change execution assistant for a repository that uses the change-management workflow defined in AGENTS.md. This session is permanently bound to change %[1]s.
 
-The user will tell you the objective in this conversation. Once you know it, do all of the following:
-
-1. Choose a concise change title and apply it in changes/%[1]s/plan.md (document title and H1) and in the root ledger changes/ledger.md (this change's Title cell).
-2. Choose a 2–4 letter uppercase task-ID prefix and register it in the root ledger's ID prefix cell for this change (replace the —).
-3. Rename this opencode session to "%[1]s — <title>" by running: opencode2 api post /api/session/%[3]s/rename --data '{"title":"<title>"}'
-4. Refine changes/%[1]s/plan.md (objective, context, scope, design decisions, acceptance criteria) and break it into verifiable tasks under changes/%[1]s/tasks/ with matching rows in changes/%[1]s/ledger.md, following AGENTS.md exactly.
-5. Present the refined plan to the user before implementing anything.`, changeID, title, sessionID)
+1. Read changes/%[1]s/plan.md and changes/%[1]s/ledger.md first — they hold the authoritative scope, design, and task status for this change.
+2. Everything the user asks for in this conversation is work on THIS change: refine changes/%[1]s/plan.md, add or update task files and ledger rows under its existing task-ID prefix, and keep ledger statuses current per AGENTS.md.
+3. NEVER create a new change directory and NEVER call the /changes/scaffold endpoint. If the user asks for genuinely unrelated work, explain that it belongs in a separate change and ask them to start a new discussion from the index page.`, changeID)
 }
 
-type changeSessionRequest struct {
-	Title  string `json:"title"`
-	Prefix string `json:"prefix"`
-}
-
-// createChangeWithSession handles POST /changes/session: scaffold a change,
-// create + prime an opencode session, link it, and redirect to the board.
-func (s *Server) createChangeWithSession(w http.ResponseWriter, r *http.Request) {
-	var req changeSessionRequest
-	if isJSON(r) {
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad JSON body"})
-			return
-		}
-	} else {
-		if err := r.ParseForm(); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad form body"})
-			return
-		}
-		req.Title = r.FormValue("title")
-		req.Prefix = r.FormValue("prefix")
+// apiBase returns the tasktracker base URL used in agent-facing prompts.
+func (s *Server) apiBase() string {
+	if s.PublicBase != "" {
+		return "http://" + s.PublicBase
 	}
-	title := strings.TrimSpace(req.Title)
-	if title == "" {
-		title = placeholderTitle()
-	}
+	return "http://127.0.0.1:8080"
+}
+
+// createDiscussionSession handles POST /changes/session: create a
+// discussion-only opencode session (no repository writes) and map it to the
+// unassigned bucket.
+func (s *Server) createDiscussionSession(w http.ResponseWriter, r *http.Request) {
 	if s.oc == nil {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "opencode service unavailable"})
 		return
@@ -73,38 +61,114 @@ func (s *Server) createChangeWithSession(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "session mapping unreadable: " + s.mapErr.Error()})
 		return
 	}
+	var req createSessionRequest
+	if isJSON(r) {
+		_ = json.NewDecoder(r.Body).Decode(&req)
+	} else {
+		_ = r.ParseForm()
+		req.Title = r.FormValue("title")
+	}
+	title := strings.TrimSpace(req.Title)
+	if title == "" {
+		title = "New change discussion"
+	}
 
-	id, err := s.st.CreateChange(title, req.Prefix, time.Now().Format("2006-01-02"))
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+	sess, err := s.oc.CreateSession(ctx, title, s.st.Dir)
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "create opencode session: " + err.Error()})
+		return
+	}
+	if err := s.oc.Prompt(ctx, sess.ID, discussionPrompt(s.apiBase(), sess.ID)); err != nil {
+		_ = s.oc.DeleteSession(context.Background(), sess.ID)
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "prime discussion session: " + err.Error()})
+		return
+	}
+	entry := SessionEntry{Session: sess.ID, Title: title, Created: time.Now().Format(time.RFC3339)}
+	if err := s.sessions.addUnassigned(entry); err != nil {
+		slog.Error("mapping add", "err", err)
+		_ = s.oc.DeleteSession(context.Background(), sess.ID)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "persist mapping: " + err.Error()})
+		return
+	}
+	slog.Info("discussion session created", "session", sess.ID)
+	writeJSON(w, http.StatusCreated, sessionResponse{Session: entry.Session, Title: entry.Title, Created: entry.Created, Live: true})
+}
+
+// scaffoldRequest is the body of POST /changes/scaffold, the deterministic
+// trigger the discussion agent calls after explicit user approval.
+type scaffoldRequest struct {
+	Title   string `json:"title"`
+	Prefix  string `json:"prefix"`
+	Session string `json:"session"`
+}
+
+// scaffoldChange handles POST /changes/scaffold: build the change with the
+// agreed title/prefix, rename the session, and move it to the change.
+func (s *Server) scaffoldChange(w http.ResponseWriter, r *http.Request) {
+	var req scaffoldRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad JSON body"})
+		return
+	}
+	req.Title = strings.TrimSpace(req.Title)
+	if req.Title == "" || strings.Contains(req.Title, "|") {
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "title must be non-empty and contain no |"})
+		return
+	}
+	if req.Prefix != "" && !prefixRe.MatchString(req.Prefix) {
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "prefix must be 2–4 uppercase letters/digits or empty"})
+		return
+	}
+	if !strings.HasPrefix(req.Session, "ses_") {
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "valid ses_ session id required"})
+		return
+	}
+	if s.mapErr != nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "session mapping unreadable: " + s.mapErr.Error()})
+		return
+	}
+
+	// A session already bound to a change can never scaffold a new one: all
+	// of its work belongs to that change. The message is agent-facing so a
+	// misled agent self-corrects.
+	if bound, ok := s.sessions.changeOf(req.Session); ok {
+		slog.Warn("scaffold refused: session already bound", "session", req.Session, "change", bound)
+		writeJSON(w, http.StatusConflict, map[string]string{
+			"change": bound,
+			"error":  "session already bound to change " + bound + "; continue the work within that change (refine plan.md, add task files and ledger rows) — do not scaffold a new change",
+		})
+		return
+	}
+
+	id, err := s.st.CreateChange(req.Title, req.Prefix, time.Now().Format("2006-01-02"))
 	if err != nil {
 		writeErr(w, err)
 		return
 	}
-	slog.Info("create change (session flow)", "id", id, "title", title)
+	slog.Info("change scaffolded via API trigger", "id", id, "title", req.Title, "prefix", req.Prefix, "session", req.Session)
 
-	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
-	defer cancel()
-
-	sess, err := s.oc.CreateSession(ctx, id+" — "+title, s.st.Dir)
-	if err != nil {
-		writeJSON(w, http.StatusBadGateway, map[string]string{"change": id, "error": "change created, but session failed: " + err.Error()})
-		return
+	// Rename the session server-side (best effort) and move the mapping.
+	if s.oc != nil {
+		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+		if err := s.oc.RenameSession(ctx, req.Session, id+" — "+req.Title); err != nil {
+			slog.Warn("session rename failed", "session", req.Session, "err", err)
+		}
+		cancel()
 	}
-	entry := SessionEntry{Session: sess.ID, Title: sess.Title, Created: time.Now().Format(time.RFC3339)}
-	if err := s.sessions.add(id, entry); err != nil {
+	moved, err := s.sessions.moveToChange(req.Session, id)
+	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"change": id, "error": "persist mapping: " + err.Error()})
 		return
 	}
-	if err := s.oc.Prompt(ctx, sess.ID, primePrompt(id, title, sess.ID)); err != nil {
-		slog.Warn("prime prompt failed", "session", sess.ID, "err", err)
-		writeJSON(w, http.StatusBadGateway, map[string]string{"change": id, "session": sess.ID, "error": "session created, but priming failed: " + err.Error()})
-		return
+	if !moved {
+		// Idempotent for retries; also covers sessions created outside the flow.
+		slog.Warn("session not in unassigned bucket; linking directly", "session", req.Session, "change", id)
+		if s.oc != nil {
+			title := id + " — " + req.Title
+			_ = s.sessions.add(id, SessionEntry{Session: req.Session, Title: title, Created: time.Now().Format(time.RFC3339)})
+		}
 	}
-	slog.Info("session created and primed", "change", id, "session", sess.ID)
-
-	if isHX(r) {
-		w.Header().Set("HX-Redirect", "/changes/"+id+"?session="+sess.ID)
-		w.WriteHeader(http.StatusOK)
-		return
-	}
-	writeJSON(w, http.StatusCreated, map[string]string{"change": id, "session": sess.ID})
+	writeJSON(w, http.StatusCreated, map[string]string{"change": id, "session": req.Session, "title": req.Title})
 }

@@ -5,7 +5,9 @@ package opencode
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -244,4 +246,40 @@ func (c *Client) DeleteSession(ctx context.Context, id string) error {
 // Prompt sends a text message to a session.
 func (c *Client) Prompt(ctx context.Context, id, text string) error {
 	return c.do(ctx, http.MethodPost, "/api/session/"+id+"/prompt", map[string]string{"text": text}, nil)
+}
+
+// WaitDone blocks until the session is idle (POST wait returns 204) or
+// ctx expires. A nil return means the session is done/idle. The service's
+// wait endpoint blocks server-side, often longer than the HTTP client's own
+// 30s cap; those transport-level timeouts are retried until ctx expires.
+func (c *Client) WaitDone(ctx context.Context, id string) error {
+	for {
+		err := c.do(ctx, http.MethodPost, "/api/session/"+id+"/wait", nil, nil)
+		if err == nil {
+			return nil
+		}
+		if ctx.Err() != nil {
+			return err // caller's ctx expired: session still busy (or dead)
+		}
+		if !isTimeoutErr(err) {
+			return err
+		}
+		// Transport timeout: the wait is still pending server-side; re-issue.
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(500 * time.Millisecond):
+		}
+	}
+}
+
+// isTimeoutErr reports whether err is a transport-level timeout (the HTTP
+// client's own cap or a net timeout), as opposed to a server error. It must
+// look through the fmt wrapping in do, so os.IsTimeout is insufficient.
+func isTimeoutErr(err error) bool {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	var ne net.Error
+	return errors.As(err, &ne) && ne.Timeout()
 }

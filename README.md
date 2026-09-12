@@ -23,6 +23,12 @@ tasktracker serve [--host 127.0.0.1] [--port 8080] [--dir .]
 
 # Check the changes/ tree against the AGENTS.md validation contract
 tasktracker validate [--dir .]
+
+# Bootstrap an uninitialized directory as a workflow repository
+tasktracker init [--dir .]
+
+# Initial run-through that seeds the repo docs (see below)
+tasktracker docs seed [--dry-run] [--budget N] [--dir .]
 ```
 
 `--dir` points at a repository root containing `changes/` (default: current
@@ -49,12 +55,17 @@ directory). One process serves one repository.
 
 - Binds `127.0.0.1` by default; **no authentication** — it is a local
   single-user tool. Do not expose it on a network interface.
-- All file writes are atomic (temp file + rename) and constrained to the
-  `changes/` tree.
-- The server only **creates and updates** files — it never deletes anything.
+- All file writes are atomic (temp file + rename). Change-workflow writes are
+  constrained to the `changes/` tree; docs-system writes are additionally
+  confined to the marker sections of `STRUCTURE.md`/`AGENTS.md` in covered
+  directories, verified after every LLM pass with rollback on violation.
+- The server only **creates and updates** files. The single exception: rolling
+  back a docs LLM pass removes a file that pass created (restoring the
+  pre-pass state).
 - Writes to a file that fails validation are refused, so the tool cannot
   corrupt canonical data. External edits are never clobbered: every write is
-  applied to the latest on-disk content.
+  applied to the latest on-disk content, and doc writes preserve all bytes
+  outside the markers.
 - Everything is plain markdown; inspect or undo any change with your editor
   (or git, once the repository is under version control).
 
@@ -91,6 +102,63 @@ browser (injected server-side).
 If the service is unreachable, tasktracker starts normally without the
 integration (a warning is logged).
 
+## Repo docs management
+
+Beyond the change workflow, tasktracker bootstraps and maintains agent-facing
+docs across a repository — so an agent entering any folder cold gets a map and
+the local learnings. Two files per covered folder:
+
+- **`STRUCTURE.md`** — a machine-owned navigation map (entries, purposes,
+  child rollups, freshness metadata). Regenerated wholesale, deterministically;
+  never hand-edit inside its `<!-- tasktracker:begin/end -->` markers.
+- **`AGENTS.md`** — curated learnings and instructions for that area. Refined
+  and appended, never regenerated; everything outside the markers is
+  human/agent-authored and preserved byte-for-byte.
+
+Coverage is configured by a committed [`agentsdocs.json`](agentsdocs.json)
+(include/exclude globs; hidden dirs and `changes/` are never covered). Without
+it, the whole subsystem is inert. `tasktracker init` writes it along with a
+root `AGENTS.md` carrying the canonical workflow instructions, the `changes/`
+skeleton, `.gitignore` handling, and a starter `opencode.json`.
+
+- **Seed**: `tasktracker docs seed` walks the tree bottom-up, writes
+  `STRUCTURE.md` skeletons, then runs one unattended opencode session per
+  directory to fill purposes and write first-pass `AGENTS.md` learnings.
+  Resumable (`.tasktracker/docs-seed.json`), budget-capped (`--budget`),
+  dry-runnable; offline it writes skeletons only.
+- **Refresh**: closing a change computes the touched folders from its tasks'
+  "Files affected" and enqueues a serialized doc-gardener job — one unattended
+  session updates those folders' docs, with each new learning citing the
+  change ID. If the service is down, folders are flagged stale and reconciled
+  by the next run or `POST /docs/refresh`.
+- **Confinement**: after every LLM pass the server verifies that only the
+  marker sections changed (bytes outside are compared; freshness hashes must
+  match) and rolls back violations.
+- **Visibility**: docs findings surface in a header **notification bell** (badge
+  counts findings; red if any are errors). The bell opens a modal listing them
+  grouped by severity, with a **Refresh stale docs** button that reconciles
+  every stale directory (queue-stale and hash-stale alike) as one manual
+  gardener job — findings and the explorer tree update live as it finishes.
+  `tasktracker validate` reports the same findings (warnings; structural
+  corruption is an error). The red banner remains for `changes/` violations.
+
+### Project explorer
+
+The **`/explorer`** page (linked in the header) is a master/detail browser
+for those docs. The left pane is a compact directories-only tree with guide
+lines; clicking a directory loads its purpose and its files with their
+blurbs into the right-hand detail pane (served as an htmx fragment by
+`GET /explorer/detail?dir=…`). It refreshes live — a docs fsnotify watch
+emits SSE events as docs change (e.g. after a gardener run), and the tree
+swaps in place without losing which nodes are expanded or selected, while
+the visible detail refreshes along with it.
+
+Every directory has a **chat button** (tree row or detail header): it
+creates an opencode session scoped to the repository root, primed with that
+directory's STRUCTURE.md and AGENTS.md and instructed to answer questions
+about the directory. Explorer chats are unassigned sessions: they appear in
+the index Discussions list and open in the terminal overlay.
+
 
 ## Development
 
@@ -102,10 +170,11 @@ go test ./...
 Layout:
 
 ```text
-cmd/tasktracker/   CLI entry (serve, validate)
+cmd/tasktracker/   CLI entry (serve, validate, init, docs seed)
 internal/model/    parsers + serializers for the AGENTS.md file formats
 internal/store/    scan, cache, fsnotify watch, validation, safe writes
-internal/server/   HTTP handlers, SSE, template rendering
+internal/server/   HTTP handlers, SSE, template rendering, docs queue + gardener
+internal/docs/     repo docs: coverage config, tree walk, STRUCTURE.md generation, seed
 web/               embedded templates and static assets (see web/static/VENDOR.md)
 ```
 

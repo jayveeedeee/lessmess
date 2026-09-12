@@ -3,7 +3,7 @@
 - Change ID: 2026-09-12-4
 - Plan: [plan.md](plan.md)
 - Branch: main
-- Overall status: In progress
+- Overall status: Done
 - Last updated: 2026-09-12
 
 ## Status definitions
@@ -28,6 +28,7 @@ Row order is display and priority order; top row is highest priority.
 | [LIF-03](tasks/03-lifecycle-buttons.md) | Board lifecycle buttons | Done | LIF-01, LIF-02 | 2026-09-12 | Verified: render tests for both button states; screenshots show Close change (In progress) and Reopen (Done); app.js handlers wired. |
 | [LIF-04](tasks/04-dogfood.md) | Dogfood | Done | LIF-03 | 2026-09-12 | All criteria verified incl. live agent-authored commit (82b0c1f) in throwaway repo; cleanup done; validate OK. |
 | [LIF-05](tasks/05-content-hashed-assets.md) | Content-hashed asset versioning (fix stale JS) | Done | — | 2026-09-12 | Verified: hashed URLs served (?v=32a39467), fresh script has commit handler, unit test passes. |
+| [LIF-06](tasks/06-background-commit-spinner.md) | Background commit with button spinner | Done | — | 2026-09-12 | Verified: wait-blocks-on-busy proven live (15.4s); endpoint + unit tests pass; spinner/poll UI wired; no terminal pop-up. |
 
 ## Decision log
 

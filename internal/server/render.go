@@ -38,10 +38,11 @@ var templateFuncs = template.FuncMap{
 }
 
 type renderer struct {
-	index   *template.Template
-	board   *template.Template
-	partial *template.Template
-	assetsV string
+	index    *template.Template
+	board    *template.Template
+	partial  *template.Template
+	explorer *template.Template
+	assetsV  string
 }
 
 func mustParse(files ...string) *template.Template {
@@ -64,10 +65,11 @@ func assetsVersion() string {
 
 func newRenderer() *renderer {
 	return &renderer{
-		index:   mustParse("templates/layout.html", "templates/index.html"),
-		board:   mustParse("templates/layout.html", "templates/board.html", "templates/partials.html"),
-		partial: mustParse("templates/partials.html"),
-		assetsV: assetsVersion(),
+		index:    mustParse("templates/layout.html", "templates/index.html"),
+		board:    mustParse("templates/layout.html", "templates/board.html", "templates/partials.html"),
+		partial:  mustParse("templates/partials.html", "templates/explorer.html"),
+		explorer: mustParse("templates/layout.html", "templates/explorer.html"),
+		assetsV:  assetsVersion(),
 	}
 }
 

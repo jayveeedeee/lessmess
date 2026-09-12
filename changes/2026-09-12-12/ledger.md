@@ -1,0 +1,33 @@
+# Ledger — 2026-09-12-12
+
+- Change ID: 2026-09-12-12
+- Plan: [plan.md](plan.md)
+- Branch: —
+- Overall status: Planned
+- Last updated: 2026-09-12
+
+## Status definitions
+
+| Status | Meaning |
+| --- | --- |
+| Not started | Work has not begun. |
+| In progress | Implementation or verification is actively underway. |
+| Blocked | Work cannot continue until a documented dependency, decision, approval, or external condition is resolved. |
+| Done | All verification and completion criteria in the task file have passed. |
+| Cancelled | The task was intentionally removed from scope and the reason is recorded. |
+
+## Tasks
+
+Row order is display and priority order; top row is highest priority.
+
+| Task | Title | Status | Depends on | Updated | Notes |
+| --- | --- | --- | --- | --- | --- |
+| [NAV-00](tasks/00-top-menu-active-state.md) | Top menu with active route highlight | Not started | — | 2026-09-12 | — |
+| [NAV-01](tasks/01-flat-bell-icon.md) | Flat SVG bell icon | Not started | — | 2026-09-12 | — |
+| [NAV-02](tasks/02-newest-change-first.md) | Newest change at top of index | Not started | — | 2026-09-12 | — |
+| [NAV-03](tasks/03-continue-session-button.md) | Prominent Continue/Start session button | Not started | — | 2026-09-12 | — |
+| [NAV-04](tasks/04-verify-and-docs.md) | End-to-end verification and README update | Not started | NAV-00, NAV-01, NAV-02, NAV-03 | 2026-09-12 | — |
+
+## Decision log
+
+- 2026-09-12 — Active nav = orange text + 2px underline; Continue button always visible and dual-mode (Continue session / Start session); "last session" = most recently opened, tracked in localStorage per change with fallback to newest created; index sorted by change ID descending. All four from user discussion before scaffold.

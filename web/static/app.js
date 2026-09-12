@@ -65,6 +65,13 @@
       e.detail.elt.reset();
       refreshBoard();
     }
+    if (e.detail.elt.matches('form[hx-post="/changes/session"]')) {
+      try {
+        var j = JSON.parse(e.detail.xhr.responseText);
+        loadDiscussions();
+        openTerminal(j.session, j.title);
+      } catch (_) {}
+    }
   });
 
   // --- SSE live updates ----------------------------------------------------
@@ -74,6 +81,7 @@
     var timer = null;
     es.addEventListener("fs", scheduleRefresh);
     es.addEventListener("write", scheduleRefresh);
+    es.addEventListener("docs", scheduleDocsRefresh);
     function scheduleRefresh() {
       clearTimeout(timer);
       timer = setTimeout(function () {
@@ -84,6 +92,97 @@
     }
   }
 
+  // --- explorer: live tree refresh + directory chat -------------------------
+
+  var docsTimer = null;
+  function scheduleDocsRefresh() {
+    clearTimeout(docsTimer);
+    docsTimer = setTimeout(function () {
+      document.dispatchEvent(new CustomEvent("tt:docs-event"));
+      checkValidation();
+      if (page === "explorer") refreshExplorerTree();
+    }, 200);
+  }
+
+  // Selected directory for the master/detail explorer; root by default.
+  var explorerSelected = ".";
+
+  function refreshExplorerTree() {
+    var box = document.getElementById("explorer-tree");
+    if (!box) return;
+    var open = [];
+    box.querySelectorAll("details[open]").forEach(function (d) {
+      if (d.dataset.rel) open.push(d.dataset.rel);
+    });
+    fetch("/explorer/tree", { headers: { Accept: "text/html" } })
+      .then(function (r) { return r.text(); })
+      .then(function (html) {
+        box.innerHTML = html;
+        if (window.htmx) htmx.process(box); // wire hx-get on the new summaries
+        open.forEach(function (rel) {
+          var d = box.querySelector('details[data-rel="' + CSS.escape(rel) + '"]');
+          if (d) d.open = true;
+        });
+        // Restore the selection, falling back to root if the dir vanished.
+        var sel = box.querySelector('details[data-rel="' + CSS.escape(explorerSelected) + '"] > summary');
+        if (!sel) {
+          explorerSelected = ".";
+          sel = box.querySelector('details[data-rel="."] > summary');
+        }
+        box.querySelectorAll("summary.selected").forEach(function (s) { s.classList.remove("selected"); });
+        if (sel) sel.classList.add("selected");
+        refreshExplorerDetail();
+      })
+      .catch(function () {});
+  }
+
+  function refreshExplorerDetail() {
+    var pane = document.getElementById("explorer-detail");
+    if (!pane) return;
+    fetch("/explorer/detail?dir=" + encodeURIComponent(explorerSelected), { headers: { Accept: "text/html" } })
+      .then(function (r) { return r.text(); })
+      .then(function (html) { pane.innerHTML = html; })
+      .catch(function () {});
+  }
+
+  // Directory selection: htmx fetches the detail itself; we only track state.
+  document.addEventListener("click", function (e) {
+    var sum = e.target.closest(".xtree summary.xdir");
+    if (!sum) return;
+    var det = sum.closest("details");
+    if (!det || !det.dataset.rel) return;
+    explorerSelected = det.dataset.rel;
+    var box = document.getElementById("explorer-tree");
+    if (!box) return;
+    box.querySelectorAll("summary.selected").forEach(function (s) { s.classList.remove("selected"); });
+    sum.classList.add("selected");
+  });
+
+  // Chat lives only in the detail pane header (tree rows have no button).
+  // The handler still runs in the capture phase: harmless, and it keeps any
+  // future hx-get ancestor from also firing on chat clicks.
+  document.addEventListener("click", function (e) {
+    var btn = e.target.closest(".explorer-chat");
+    if (!btn) return;
+    e.preventDefault();
+    e.stopPropagation();
+    btn.disabled = true;
+    fetch("/explorer/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ dir: btn.dataset.dir }),
+    })
+      .then(function (r) {
+        return r.json().then(function (j) {
+          if (!r.ok) throw new Error(j.error || "chat failed");
+          return j;
+        });
+      })
+      .then(function (j) { openTerminal(j.session, j.title); })
+      .catch(function (err) { alert(err.message); })
+      .finally(function () { btn.disabled = false; });
+  }, true);
+
   // --- validation banner ---------------------------------------------------
 
   function checkValidation() {
@@ -91,23 +190,125 @@
       .then(function (r) { return r.json(); })
       .then(function (j) {
         var banner = document.getElementById("banner");
-        if (!banner) return;
-        if (j.violations && j.violations.length) {
-          banner.innerHTML =
-            "<strong>Validation violations:</strong><ul>" +
-            j.violations.map(function (v) {
-              var li = document.createElement("li");
-              li.textContent = v.File + ": rule " + v.Rule + ": " + v.Msg;
-              return li.outerHTML;
-            }).join("") +
-            "</ul>";
-          banner.hidden = false;
-        } else {
-          banner.hidden = true;
+        if (banner) {
+          if (j.violations && j.violations.length) {
+            banner.innerHTML =
+              "<strong>Validation violations:</strong><ul>" +
+              j.violations.map(function (v) {
+                var li = document.createElement("li");
+                li.textContent = v.File + ": rule " + v.Rule + ": " + v.Msg;
+                return li.outerHTML;
+              }).join("") +
+              "</ul>";
+            banner.hidden = false;
+          } else {
+            banner.hidden = true;
+          }
         }
+        latestDocsFindings = j.docs || [];
+        updateNotifBadge();
+        renderNotifList();
       })
       .catch(function () {});
   }
+
+  // --- docs notifications (bell + modal) --------------------------------------
+
+  var latestDocsFindings = [];
+  var refreshRunning = false;
+
+  function updateNotifBadge() {
+    var bell = document.getElementById("notif-bell");
+    var badge = document.getElementById("notif-badge");
+    if (!bell || !badge) return;
+    var n = latestDocsFindings.length;
+    bell.hidden = n === 0;
+    if (n === 0) return;
+    badge.textContent = n;
+    bell.classList.toggle(
+      "err",
+      latestDocsFindings.some(function (f) { return f.severity === "error"; })
+    );
+  }
+
+  function renderNotifList() {
+    var box = document.getElementById("notif-list");
+    if (!box || notifModal().hidden) return;
+    if (!latestDocsFindings.length) {
+      box.innerHTML = '<p class="muted">No docs findings — everything is fresh.</p>';
+      return;
+    }
+    var html = "";
+    [["error", "Docs errors"], ["warning", "Docs warnings"]].forEach(function (g) {
+      var items = latestDocsFindings.filter(function (f) { return f.severity === g[0]; });
+      if (!items.length) return;
+      html += '<h3 class="notif-group ' + g[0] + '">' + g[1] + "</h3><ul>" +
+        items.map(function (f) {
+          var li = document.createElement("li");
+          li.textContent = f.file + ": " + f.msg;
+          return li.outerHTML;
+        }).join("") + "</ul>";
+    });
+    box.innerHTML = html;
+  }
+
+  function notifModal() { return document.getElementById("notif-modal"); }
+
+  function openNotifModal() {
+    notifModal().hidden = false;
+    renderNotifList();
+    checkValidation();
+  }
+
+  function closeNotifModal() { notifModal().hidden = true; }
+
+  (function initNotifs() {
+    var bell = document.getElementById("notif-bell");
+    if (!bell) return;
+    bell.addEventListener("click", openNotifModal);
+    document.querySelector("[data-close-notif]").addEventListener("click", closeNotifModal);
+    notifModal().addEventListener("click", function (e) {
+      if (e.target === notifModal()) closeNotifModal();
+    });
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape" && !notifModal().hidden) closeNotifModal();
+    });
+
+    var btn = document.getElementById("docs-refresh-btn");
+    var status = document.getElementById("notif-refresh-status");
+    btn.addEventListener("click", function () {
+      btn.disabled = true;
+      refreshRunning = true;
+      status.textContent = "Refreshing…";
+      fetch("/docs/refresh", { method: "POST", headers: { Accept: "application/json" } })
+        .then(function (r) { return r.json(); })
+        .then(function (j) {
+          if (j.enqueued) {
+            status.textContent =
+              "Refresh running for " + j.enqueued.length +
+              (j.enqueued.length === 1 ? " directory" : " directories") +
+              " — can take a few minutes; findings update live.";
+          } else {
+            status.textContent = j.status || j.error || "Nothing to do.";
+            btn.disabled = false;
+            refreshRunning = false;
+          }
+        })
+        .catch(function () {
+          status.textContent = "Refresh request failed.";
+          btn.disabled = false;
+          refreshRunning = false;
+        });
+    });
+    // A running refresh likely finished when docs events arrive; re-enable.
+    document.addEventListener("tt:docs-event", function () {
+      if (refreshRunning) {
+        refreshRunning = false;
+        btn.disabled = false;
+        status.textContent = "Docs updated — findings re-checked.";
+      }
+    });
+  })();
 
   // --- theme toggle ---------------------------------------------------------
 
@@ -127,6 +328,58 @@
         applyTheme(next);
       });
     }
+  }
+
+  // --- index discussions list -------------------------------------------------
+
+  function loadDiscussions() {
+    var ul = document.getElementById("discussions-list");
+    if (!ul) return;
+    fetch("/api/discussions", { headers: { Accept: "application/json" } })
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        ul.innerHTML = "";
+        var sessions = j.sessions || [];
+        if (!sessions.length) {
+          var empty = document.createElement("li");
+          empty.className = "session-empty";
+          empty.textContent = "No open discussions — start one with “New change session”.";
+          ul.appendChild(empty);
+          return;
+        }
+        sessions.forEach(function (s) {
+          var li = document.createElement("li");
+          li.className = "session-item";
+          var title = document.createElement("span");
+          title.className = "session-title";
+          title.textContent = s.title;
+          var meta = document.createElement("span");
+          meta.className = "session-meta";
+          meta.textContent = (s.created || "").slice(0, 10);
+          var actions = document.createElement("span");
+          actions.className = "session-actions";
+          var openBtn = document.createElement("button");
+          openBtn.className = "btn-ghost";
+          openBtn.textContent = "Open";
+          openBtn.addEventListener("click", function () { openTerminal(s.session, s.title); });
+          var unBtn = document.createElement("button");
+          unBtn.className = "btn-ghost";
+          unBtn.textContent = "✕";
+          unBtn.title = "Unlink (session stays in opencode)";
+          unBtn.addEventListener("click", function () {
+            fetch("/api/discussions/" + s.session, { method: "DELETE" })
+              .then(function (r) { if (!r.ok) throw 0; loadDiscussions(); })
+              .catch(function () { alert("Unlink failed"); });
+          });
+          actions.appendChild(openBtn);
+          actions.appendChild(unBtn);
+          li.appendChild(title);
+          li.appendChild(meta);
+          li.appendChild(actions);
+          ul.appendChild(li);
+        });
+      })
+      .catch(function () {});
   }
 
   // --- sessions panel + terminal ----------------------------------------------
@@ -343,14 +596,53 @@
     var commitBtn = document.getElementById("commit-btn");
     if (commitBtn) {
       commitBtn.addEventListener("click", function () {
+        if (commitBtn.disabled) return;
+        setCommitBusy(true);
         fetch("/changes/" + changeID() + "/commit", {
           method: "POST",
           headers: { Accept: "application/json" },
         })
           .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.statusText); return j; }); })
-          .then(function (j) { openTerminal(j.session, changeID() + " — git commit"); })
-          .catch(function (e) { alert("Commit failed: " + e.message); });
+          .then(function (j) { pollCommitStatus(j.session, 0); })
+          .catch(function (e) {
+            setCommitBusy(false);
+            alert("Commit failed: " + e.message);
+          });
       });
+    }
+
+    function setCommitBusy(busy) {
+      commitBtn.disabled = busy;
+      if (busy) {
+        commitBtn.dataset.label = commitBtn.textContent;
+        commitBtn.innerHTML = '<span class="spinner" aria-hidden="true"></span> Committing…';
+      } else {
+        commitBtn.textContent = commitBtn.dataset.label || "Commit";
+      }
+    }
+
+    function pollCommitStatus(session, attempts) {
+      if (attempts > 200) { // ~10 minutes max
+        setCommitBusy(false);
+        alert("Commit is taking unusually long — check the session in the Sessions panel.");
+        return;
+      }
+      fetch("/changes/" + changeID() + "/commit-status?session=" + encodeURIComponent(session), {
+        headers: { Accept: "application/json" },
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (j) {
+          if (j.done) {
+            commitBtn.innerHTML = "✓ Committed";
+            setTimeout(function () { setCommitBusy(false); }, 3000);
+          } else {
+            setTimeout(function () { pollCommitStatus(session, attempts + 1); }, 3000);
+          }
+        })
+        .catch(function () {
+          setCommitBusy(false);
+          alert("Lost contact while waiting for the commit — check the Sessions panel.");
+        });
     }
   }
 
@@ -386,5 +678,6 @@
     initLifecycle();
     checkValidation();
     autoOpenSession();
+    loadDiscussions();
   });
 })();

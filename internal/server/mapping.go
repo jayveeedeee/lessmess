@@ -90,6 +90,57 @@ func (m *mapping) remove(change, session string) (bool, error) {
 	return false, nil
 }
 
+// unassignedKey is the reserved mapping key for pre-scaffold discussion sessions.
+const unassignedKey = "_unassigned"
+
+// addUnassigned links a discussion session that has no change yet.
+func (m *mapping) addUnassigned(e SessionEntry) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.data[unassignedKey] = append(m.data[unassignedKey], e)
+	return m.save()
+}
+
+// listUnassigned returns the pre-scaffold discussion sessions.
+func (m *mapping) listUnassigned() []SessionEntry { return m.list(unassignedKey) }
+
+// moveToChange relocates a session from the unassigned bucket to a change.
+// Reports false when the session is not in the bucket (idempotent for retries).
+func (m *mapping) moveToChange(session, changeID string) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	entries := m.data[unassignedKey]
+	for i, e := range entries {
+		if e.Session == session {
+			m.data[unassignedKey] = append(entries[:i], entries[i+1:]...)
+			if len(m.data[unassignedKey]) == 0 {
+				delete(m.data, unassignedKey)
+			}
+			m.data[changeID] = append(m.data[changeID], e)
+			return true, m.save()
+		}
+	}
+	return false, nil
+}
+
+// changeOf reports which change a session is mapped to, if any. The
+// unassigned bucket is not a change.
+func (m *mapping) changeOf(session string) (string, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for change, entries := range m.data {
+		if change == unassignedKey {
+			continue
+		}
+		for _, e := range entries {
+			if e.Session == session {
+				return change, true
+			}
+		}
+	}
+	return "", false
+}
+
 // --- endpoints ---
 
 // sessionResponse is the enriched mapping entry returned to the browser.
@@ -100,17 +151,8 @@ type sessionResponse struct {
 	Live    bool   `json:"live"` // title enriched from the service
 }
 
-func (s *Server) listChangeSessions(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	if _, err := s.st.Change(id); err != nil {
-		writeErr(w, err)
-		return
-	}
-	if s.mapErr != nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "session mapping unreadable: " + s.mapErr.Error()})
-		return
-	}
-	entries := s.sessions.list(id)
+// enrich adds live titles from the service to mapping entries.
+func (s *Server) enrich(r *http.Request, entries []SessionEntry) []sessionResponse {
 	out := make([]sessionResponse, 0, len(entries))
 	for _, e := range entries {
 		resp := sessionResponse{Session: e.Session, Title: e.Title, Created: e.Created}
@@ -124,7 +166,50 @@ func (s *Server) listChangeSessions(w http.ResponseWriter, r *http.Request) {
 		}
 		out = append(out, resp)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"sessions": out})
+	return out
+}
+
+func (s *Server) listChangeSessions(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if _, err := s.st.Change(id); err != nil {
+		writeErr(w, err)
+		return
+	}
+	if s.mapErr != nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "session mapping unreadable: " + s.mapErr.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"sessions": s.enrich(r, s.sessions.list(id))})
+}
+
+// listDiscussions handles GET /api/discussions: unassigned (pre-scaffold) sessions.
+func (s *Server) listDiscussions(w http.ResponseWriter, r *http.Request) {
+	if s.mapErr != nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "session mapping unreadable: " + s.mapErr.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"sessions": s.enrich(r, s.sessions.listUnassigned())})
+}
+
+// unlinkDiscussion handles DELETE /api/discussions/{sessionID}: remove a
+// session from the unassigned bucket (the opencode session itself is kept).
+func (s *Server) unlinkDiscussion(w http.ResponseWriter, r *http.Request) {
+	sessionID := r.PathValue("sessionID")
+	if s.mapErr != nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "session mapping unreadable: " + s.mapErr.Error()})
+		return
+	}
+	found, err := s.sessions.remove(unassignedKey, sessionID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	if !found {
+		writeErr(w, store.ErrNotFound)
+		return
+	}
+	slog.Info("discussion unlinked", "session", sessionID)
+	writeJSON(w, http.StatusOK, map[string]string{"ok": "true"})
 }
 
 type createSessionRequest struct {
@@ -162,6 +247,12 @@ func (s *Server) createChangeSession(w http.ResponseWriter, r *http.Request) {
 	sess, err := s.oc.CreateSession(ctx, title, s.st.Dir)
 	if err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "create opencode session: " + err.Error()})
+		return
+	}
+	if err := s.oc.Prompt(ctx, sess.ID, changePrompt(id)); err != nil {
+		// Don't leak an unbound session: the binding is the whole point.
+		_ = s.oc.DeleteSession(context.Background(), sess.ID)
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "prime change session: " + err.Error()})
 		return
 	}
 	entry := SessionEntry{Session: sess.ID, Title: title, Created: time.Now().Format(time.RFC3339)}

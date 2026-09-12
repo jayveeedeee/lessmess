@@ -1,0 +1,22 @@
+# Agent notes: internal/server
+
+<!-- tasktracker:begin -->
+- Purpose: the HTTP layer over `store.Store` — HTML pages, JSON endpoints, an SSE stream, opencode session management, a PTY terminal, and the docs refresh queue.
+- Key files: `server.go` holds `Server` and the route table; `mapping.go` owns `.tasktracker/sessions.json`; `docsqueue.go` plus `docssession.go` drive doc gardening; `render.go` owns templates and static assets.
+- Handlers branch on helpers `wantsHTML`, `isHX`, and `isJSON`: JSON is the default, with HTML or htmx partials served when requested.
+- Optional integrations are nil-disabled (`s.oc` for opencode, `s.docsQ` for docs); guard handlers and return 503 when they are absent.
+- Tests use fixture stores and fake opencode clients or `DocsRunner`s; keep `SpawnCommand` and `SetDocsRunner` injectable.
+- (manual) The explorer is the docs-system UI: `explorer.go` serves `/explorer` (page), `/explorer/tree` (htmx fragment), `/explorer/detail` (per-directory detail fragment), and `/explorer/chat` (root-scoped opencode session mapped to the unassigned bucket).
+- (2026-09-12-11) `explorerDetail` re-walks the covered tree and locates the requested node with `findExplorerNode` (`"."` is the root); it mirrors `explorerChat`'s validation — `dir` defaults to `.`, 503 when `docsQ` is nil, 422 for uncovered or missing directories, and 404 when the node is absent from the walk.
+- (manual) Explorer chat requires both `s.oc` and `s.docsQ`, validates the requested dir via `cfg.Covered`, and returns 503 when either optional subsystem is absent.
+- (manual) `docswatch.go` watches covered directories with fsnotify, ignores hidden files and our `.tt-` atomic temp files, debounces ~300ms, and rebuilds its watch set after each quiet period so newly covered dirs are picked up.
+- (2026-09-12-7) `closeChange` runs a best-effort docs hook after the status flip and never fails the close; `touched.go` extracts dirs from the first backtick token of each "Files affected" bullet, drops `changes/`, hidden paths, and doc files, then bubbles to the nearest covered ancestor.
+- (2026-09-12-7) `.tasktracker/docs-queue.json` holds pending and stale in one atomic file; the worker drains immediately, a missing runner fails a job straight to stale, and `POST /docs/refresh` enqueues one "manual" job covering the whole stale set.
+- (2026-09-12-7) `docssession.go` does a whole-tree skeleton refresh before one gardener session per job; the confinement check requires out-of-marker bytes to equal the snapshot, the meta hash to match the walked tree hash, no snapshot deletions, and markers on any created `AGENTS.md` — violations restore and flag stale.
+- (2026-09-12-8) The explorer keeps the store docs-free: `docswatch.go` lives in this package and merges its debounced events into `/events` as kind `docs`; the explorer page re-fetches `/explorer/tree` on them while board/index JS ignores them.
+- (2026-09-12-8) `explorerPrompt` embeds the target dir's STRUCTURE.md and AGENTS.md (missing files become "(not present)") and forbids writes; `POST /explorer/chat` runs the session in the repo root, rejects uncovered/nonexistent dirs, and maps the session to the unassigned Discussions bucket.
+- (2026-09-12-9) `POST /docs/refresh` (`docsRefresh` in `docsqueue.go`) enqueues one manual job for the union of `q.staleDirs()` (queue-stale) and `docs.StaleDirs` (hash-stale), deduped and sorted; an empty union returns 200 `nothing to refresh`, and a hash-check error logs and falls back to the queue-stale set rather than failing the request.
+- (2026-09-12-10) Change sessions are primed at creation: `createChangeSession` (`mapping.go`) calls `s.oc.Prompt` with `changePrompt(id)` to bind the session to its change and forbid `/changes/scaffold`; a prime failure deletes the session and returns 502 so no unbound session leaks.
+- (2026-09-12-10) `POST /changes/scaffold` (`scaffoldChange` in `changesession.go`) refuses a session already mapped to a change via `mapping.changeOf` with 409 and a JSON body naming that change. Unassigned sessions still scaffold and move; unmapped sessions still scaffold and direct-link.
+- (2026-09-12-10) Session binding is absolute (no escape hatch) and only applies to newly created sessions — pre-existing sessions are not retro-primed but remain covered by the 409 guard. `changePrompt` lives beside `discussionPrompt` in `changesession.go` even though its only caller is in `mapping.go`, for discoverability.
+<!-- tasktracker:end -->

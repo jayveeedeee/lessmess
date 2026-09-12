@@ -10,27 +10,51 @@ document.documentElement.dataset.theme = localStorage.getItem("tt-theme") || "da
 </script>
 <title>{{.Title}} · tasktracker</title>
 <link rel="stylesheet" href="/static/app.css?v={{.AssetsV}}">
-{{if eq .Page "board"}}
 <link rel="stylesheet" href="/static/xterm.min.css?v=1">
-{{end}}
 <script src="/static/htmx.min.js?v=1" defer></script>
 <script src="/static/Sortable.min.js?v=1" defer></script>
-{{if eq .Page "board"}}
 <script src="/static/xterm.min.js?v=1" defer></script>
 <script src="/static/xterm-addon-fit.min.js?v=1" defer></script>
-{{end}}
 <script src="/static/app.js?v={{.AssetsV}}" defer></script>
 </head>
 <body data-page="{{.Page}}">
 <header>
   <a class="brand" href="/">tasktracker</a>
+  <a class="nav-link" href="/explorer">explorer</a>
   <span class="crumb">{{.Title}}</span>
+  <button id="notif-bell" type="button" title="Docs notifications" aria-label="Docs notifications" hidden>🔔<span id="notif-badge"></span></button>
   <button id="theme-toggle" type="button" title="Toggle theme" aria-label="Toggle theme">☾</button>
 </header>
 <div id="banner" class="banner" hidden></div>
 <main>
 {{template "content" .}}
 </main>
+<div id="terminal-overlay" hidden>
+  <div class="terminal-window">
+    <div class="terminal-head">
+      <span class="chip" id="terminal-session"></span>
+      <span id="terminal-title" class="title"></span>
+      <button type="button" class="modal-close" data-close-terminal aria-label="Close">✕</button>
+    </div>
+    <div id="terminal-container"></div>
+    <div id="terminal-status" class="terminal-status" hidden></div>
+  </div>
+</div>
+<div id="notif-modal" hidden>
+  <div class="modal notif-window">
+    <div class="modal-head">
+      <span class="title">Docs notifications</span>
+      <button type="button" class="modal-close" data-close-notif aria-label="Close">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="notif-list"></div>
+      <div class="notif-actions">
+        <button id="docs-refresh-btn" type="button">Refresh stale docs</button>
+        <span id="notif-refresh-status" class="muted"></span>
+      </div>
+    </div>
+  </div>
+</div>
 </body>
 </html>
 {{end}}

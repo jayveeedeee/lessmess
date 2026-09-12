@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"tasktracker/internal/docs"
 	"tasktracker/internal/model"
 	"tasktracker/internal/opencode"
 	"tasktracker/internal/store"
@@ -27,10 +28,15 @@ type Server struct {
 	// SpawnCommand builds the command run in a PTY for a session ID.
 	// Overridable in tests.
 	SpawnCommand func(sessionID string) (string, []string)
+	// PublicBase is the host:port the server listens on, used in
+	// agent-facing prompts. Set by main; empty falls back to a default.
+	PublicBase string
 
 	oc       *opencode.Client // nil disables the opencode integration
 	sessions *mapping
 	mapErr   error
+	docsQ    *docsQueue   // nil disables the docs system (no agentsdocs.json)
+	docsW    *docsWatcher // nil when docs are disabled or the watcher failed
 }
 
 // New builds the route table.
@@ -42,6 +48,18 @@ func New(st *store.Store) *Server {
 	m, err := loadMapping(filepath.Join(st.Dir, ".tasktracker", "sessions.json"))
 	s.sessions, s.mapErr = m, err
 
+	if cfg, err := docs.LoadConfig(st.Dir); err != nil {
+		slog.Warn("docs config unreadable; docs system disabled", "err", err)
+	} else if cfg != nil {
+		s.docsQ = newDocsQueue(st.Dir, cfg)
+		s.docsQ.start()
+		if dw, err := newDocsWatcher(st.Dir, cfg); err != nil {
+			slog.Warn("docs watcher disabled", "err", err)
+		} else {
+			s.docsW = dw
+		}
+	}
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", s.index)
 	mux.HandleFunc("GET /changes/{id}", s.board)
@@ -52,14 +70,23 @@ func New(st *store.Store) *Server {
 	mux.HandleFunc("POST /changes/{id}/close", s.closeChange)
 	mux.HandleFunc("POST /changes/{id}/reopen", s.reopenChange)
 	mux.HandleFunc("POST /changes/{id}/commit", s.commitChange)
+	mux.HandleFunc("GET /changes/{id}/commit-status", s.commitStatus)
 	mux.HandleFunc("POST /changes/{$}", s.createChange)
-	mux.HandleFunc("POST /changes/session", s.createChangeWithSession)
+	mux.HandleFunc("POST /changes/session", s.createDiscussionSession)
+	mux.HandleFunc("POST /changes/scaffold", s.scaffoldChange)
 	mux.HandleFunc("GET /events", s.events)
 	mux.HandleFunc("GET /api/validate", s.validate)
 	mux.HandleFunc("GET /terminal/ws", s.terminalWS)
 	mux.HandleFunc("GET /changes/{id}/sessions", s.listChangeSessions)
 	mux.HandleFunc("POST /changes/{id}/sessions", s.createChangeSession)
 	mux.HandleFunc("DELETE /changes/{id}/sessions/{sessionID}", s.unlinkChangeSession)
+	mux.HandleFunc("GET /api/discussions", s.listDiscussions)
+	mux.HandleFunc("DELETE /api/discussions/{sessionID}", s.unlinkDiscussion)
+	mux.HandleFunc("POST /docs/refresh", s.docsRefresh)
+	mux.HandleFunc("GET /explorer", s.explorer)
+	mux.HandleFunc("GET /explorer/tree", s.explorerTree)
+	mux.HandleFunc("GET /explorer/detail", s.explorerDetail)
+	mux.HandleFunc("POST /explorer/chat", s.explorerChat)
 	if sh, err := staticHandler(); err == nil {
 		mux.Handle("GET /static/", sh)
 	}
@@ -67,11 +94,25 @@ func New(st *store.Store) *Server {
 	return s
 }
 
-// SetOpencode attaches the opencode client (nil disables the integration).
-func (s *Server) SetOpencode(c *opencode.Client) { s.oc = c }
+// SetOpencode attaches the opencode client (nil disables the integration)
+// and, when the docs system is enabled, the gardener job runner.
+func (s *Server) SetOpencode(c *opencode.Client) {
+	s.oc = c
+	if c != nil && s.docsQ != nil {
+		s.docsQ.setRunner(&gardenerRunner{oc: c, root: s.st.Dir, cfg: s.docsQ.cfg})
+	}
+}
 
-// Close releases resources (terminal PTYs).
-func (s *Server) Close() { s.term.CloseAll() }
+// Close releases resources (terminal PTYs, docs queue worker, docs watcher).
+func (s *Server) Close() {
+	if s.docsQ != nil {
+		s.docsQ.stop()
+	}
+	if s.docsW != nil {
+		_ = s.docsW.Close()
+	}
+	s.term.CloseAll()
+}
 
 // Handler returns the root http.Handler.
 func (s *Server) Handler() http.Handler { return s.mux }
@@ -338,7 +379,15 @@ func (s *Server) validate(w http.ResponseWriter, r *http.Request) {
 	if v == nil {
 		v = []store.Violation{}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"violations": v})
+	var stale map[string]string
+	if s.docsQ != nil {
+		stale = s.docsQ.staleReasons()
+	}
+	df := docs.ValidateDocs(s.st.Dir, stale)
+	if df == nil {
+		df = []docs.Finding{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"violations": v, "docs": df})
 }
 
 func (s *Server) events(w http.ResponseWriter, r *http.Request) {
@@ -353,6 +402,10 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 
 	ch := s.st.Subscribe()
 	defer s.st.Unsubscribe(ch)
+	var docsCh <-chan struct{}
+	if s.docsW != nil {
+		docsCh = s.docsW.Events()
+	}
 
 	heartbeat := time.NewTicker(25 * time.Second)
 	defer heartbeat.Stop()
@@ -368,6 +421,9 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 			return
 		case ev := <-ch:
 			fmt.Fprintf(w, "event: %s\ndata: %s\n\n", ev.Kind, ev.Path)
+			flusher.Flush()
+		case <-docsCh:
+			fmt.Fprint(w, "event: docs\ndata: docs changed\n\n")
 			flusher.Flush()
 		case <-heartbeat.C:
 			fmt.Fprint(w, ": heartbeat\n\n")

@@ -1,0 +1,68 @@
+{{define "content"}}
+<div class="explorer">
+  {{if .Data.Enabled}}
+  <h1>{{.Data.RepoName}}</h1>
+  <p class="explorer-hint">Covered directories per <code>agentsdocs.json</code>. Pick a directory on the left to read its docs; the tree refreshes live as docs change.</p>
+  <div class="explorer-split">
+    <nav id="explorer-tree">
+      {{template "explorerTree" .Data}}
+    </nav>
+    <section id="explorer-detail">
+      {{template "explorerDetail" .Data.Root}}
+    </section>
+  </div>
+  {{else}}
+  <h1>Project explorer</h1>
+  <div class="error-box">
+    <p>The docs system is disabled for this repository: there is no <code>agentsdocs.json</code>.</p>
+    <p>Run <code>tasktracker init</code> to bootstrap the repo and <code>tasktracker docs seed</code> to generate the per-folder docs the explorer renders.</p>
+  </div>
+  {{end}}
+</div>
+{{end}}
+
+{{define "explorerTree"}}
+{{if .Root}}
+<ul class="xtree">
+  {{template "explorerNode" .Root}}
+</ul>
+{{end}}
+{{end}}
+
+{{define "explorerNode"}}
+<li class="xnode">
+  <details data-rel="{{.Rel}}"{{if eq .Rel "."}} open{{end}}>
+    <summary class="xdir{{if eq .Rel "."}} selected{{end}}" hx-get="/explorer/detail?dir={{.Rel}}" hx-target="#explorer-detail" hx-trigger="click">
+      <span class="xdir-name">{{.Name}}/</span>
+    </summary>
+    {{if .Dirs}}
+    <ul>
+      {{range .Dirs}}
+      {{template "explorerNode" .}}
+      {{end}}
+    </ul>
+    {{end}}
+  </details>
+</li>
+{{end}}
+
+{{define "explorerDetail"}}
+<header class="xdetail-head">
+  <div class="xdetail-titles">
+    <h2 class="xdetail-name">{{.Name}}/</h2>
+    <span class="xdetail-rel">{{.Rel}}</span>
+  </div>
+  <button type="button" class="explorer-chat" data-dir="{{.Rel}}" title="Start a chat about this directory">✦ chat</button>
+</header>
+{{if .Purpose}}<p class="xpurpose">{{.Purpose}}</p>{{else}}<p class="xpurpose muted">— no description yet</p>{{end}}
+{{if .Files}}
+<ul class="xdetail-files">
+  {{range .Files}}
+  <li class="xfile">
+    <span class="xfile-name">{{.Name}}</span>
+    {{if .Blurb}}<span class="xblurb">{{.Blurb}}</span>{{else}}<span class="xblurb muted">—</span>{{end}}
+  </li>
+  {{end}}
+</ul>
+{{end}}
+{{end}}

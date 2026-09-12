@@ -12,6 +12,38 @@ import (
 	"tasktracker/internal/opencode"
 )
 
+func TestMappingUnassigned(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".tasktracker", "sessions.json")
+	m, _ := loadMapping(path)
+
+	e := SessionEntry{Session: "ses_d", Title: "disc", Created: "2026-09-12T10:00:00Z"}
+	if err := m.addUnassigned(e); err != nil {
+		t.Fatal(err)
+	}
+	if got := m.listUnassigned(); len(got) != 1 || got[0].Session != "ses_d" {
+		t.Fatalf("unassigned = %+v", got)
+	}
+
+	// Move to a change; persists across reload.
+	moved, err := m.moveToChange("ses_d", "2026-09-12-6")
+	if err != nil || !moved {
+		t.Fatalf("move = %v, %v", moved, err)
+	}
+	m2, _ := loadMapping(path)
+	if len(m2.listUnassigned()) != 0 {
+		t.Fatal("bucket not emptied")
+	}
+	if got := m2.list("2026-09-12-6"); len(got) != 1 || got[0].Session != "ses_d" {
+		t.Fatalf("change sessions = %+v", got)
+	}
+
+	// Idempotent: second move reports false without error.
+	if moved, err := m2.moveToChange("ses_d", "2026-09-12-6"); err != nil || moved {
+		t.Fatalf("re-move = %v, %v", moved, err)
+	}
+}
+
 func TestMappingCRUD(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, ".tasktracker", "sessions.json")
@@ -62,6 +94,24 @@ func TestMappingCorrupt(t *testing.T) {
 	}
 }
 
+func TestMappingChangeOf(t *testing.T) {
+	dir := t.TempDir()
+	m, _ := loadMapping(filepath.Join(dir, ".tasktracker", "sessions.json"))
+	m.addUnassigned(SessionEntry{Session: "ses_d", Title: "d", Created: "x"})
+	m.add("2026-09-10-0", SessionEntry{Session: "ses_a", Title: "a", Created: "x"})
+
+	// Unassigned bucket is not a change.
+	if _, ok := m.changeOf("ses_d"); ok {
+		t.Fatal("unassigned session reported as bound")
+	}
+	if got, ok := m.changeOf("ses_a"); !ok || got != "2026-09-10-0" {
+		t.Fatalf("changeOf = %q, %v", got, ok)
+	}
+	if _, ok := m.changeOf("ses_nope"); ok {
+		t.Fatal("unknown session reported as bound")
+	}
+}
+
 func mappingServer(t *testing.T, ocHandler http.HandlerFunc) *Server {
 	t.Helper()
 	st, _ := fixtureStore(t)
@@ -96,9 +146,17 @@ func TestListSessionsEndpoint(t *testing.T) {
 }
 
 func TestCreateSessionEndpoint(t *testing.T) {
+	var promptedText string
 	s := mappingServer(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/session" && r.Method == http.MethodPost {
 			w.Write([]byte(`{"data":{"id":"ses_new","title":"t","location":{"directory":"/x"}}}`))
+			return
+		}
+		if strings.HasSuffix(r.URL.Path, "/prompt") {
+			var body map[string]string
+			json.NewDecoder(r.Body).Decode(&body)
+			promptedText = body["text"]
+			w.Write([]byte(`{"data":{}}`))
 			return
 		}
 		if r.URL.Path == "/api/session/ses_stored" {
@@ -116,6 +174,20 @@ func TestCreateSessionEndpoint(t *testing.T) {
 	entries := s.sessions.list("2026-09-10-0")
 	if len(entries) != 1 || entries[0].Session != "ses_new" || entries[0].Title != "my session" {
 		t.Fatalf("mapping = %+v", entries)
+	}
+	// Primed with the change-scoped prompt.
+	for _, want := range []string{
+		"bound to change 2026-09-10-0",
+		"changes/2026-09-10-0/plan.md",
+		"changes/2026-09-10-0/ledger.md",
+		"existing task-ID prefix",
+		"NEVER create a new change directory",
+		"/changes/scaffold",
+		"new discussion from the index page",
+	} {
+		if !strings.Contains(promptedText, want) {
+			t.Errorf("prompt missing %q:\n%s", want, promptedText)
+		}
 	}
 	// List enriches from the live service.
 	if err := s.sessions.add("2026-09-10-0", SessionEntry{Session: "ses_stored", Title: "stored", Created: "x"}); err != nil {
@@ -145,6 +217,36 @@ func TestCreateSessionNoService(t *testing.T) {
 	}
 }
 
+func TestCreateSessionPrimeFailure(t *testing.T) {
+	var deleted bool
+	s := mappingServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/session" && r.Method == http.MethodPost {
+			w.Write([]byte(`{"data":{"id":"ses_p","title":"t","location":{"directory":"/x"}}}`))
+			return
+		}
+		if strings.HasSuffix(r.URL.Path, "/prompt") {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		if r.Method == http.MethodDelete && r.URL.Path == "/api/session/ses_p" {
+			deleted = true
+			w.Write([]byte(`{"data":{}}`))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	})
+	w := do(t, s.Handler(), "POST", "/changes/2026-09-10-0/sessions", `{"title":"x"}`)
+	if w.Code != http.StatusBadGateway {
+		t.Fatalf("code = %d, want 502; body = %s", w.Code, w.Body)
+	}
+	if !deleted {
+		t.Fatal("unprimed session was not deleted")
+	}
+	if got := s.sessions.list("2026-09-10-0"); len(got) != 0 {
+		t.Fatalf("mapping = %+v, want empty", got)
+	}
+}
+
 func TestUnlinkSessionEndpoint(t *testing.T) {
 	s := mappingServer(t, nil)
 	s.sessions.add("2026-09-10-0", SessionEntry{Session: "ses_1", Title: "t", Created: "x"})
@@ -163,6 +265,30 @@ func TestUnlinkSessionEndpoint(t *testing.T) {
 	s.Handler().ServeHTTP(w2, req2)
 	if w2.Code != 404 {
 		t.Fatalf("code = %d, want 404", w2.Code)
+	}
+}
+
+func TestListDiscussionsEndpoint(t *testing.T) {
+	s := mappingServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/session/ses_d" {
+			w.Write([]byte(`{"data":{"id":"ses_d","title":"live discussion","location":{"directory":"/x"}}}`))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	})
+	if err := s.sessions.addUnassigned(SessionEntry{Session: "ses_d", Title: "stored", Created: "x"}); err != nil {
+		t.Fatal(err)
+	}
+	w := do(t, s.Handler(), "GET", "/api/discussions", "")
+	if w.Code != 200 {
+		t.Fatalf("code = %d body = %s", w.Code, w.Body)
+	}
+	var resp struct {
+		Sessions []sessionResponse `json:"sessions"`
+	}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	if len(resp.Sessions) != 1 || resp.Sessions[0].Title != "live discussion" || !resp.Sessions[0].Live {
+		t.Fatalf("resp = %+v", resp.Sessions)
 	}
 }
 

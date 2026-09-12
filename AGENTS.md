@@ -256,6 +256,15 @@ The workflow rules are machine-checkable. Tooling (validators, servers) must enf
 
 Tools (servers, validators, UIs) keep their own state in a `.tasktracker/` directory at the repository root, which must be gitignored. Tooling state must never live inside `changes/`; that tree contains only canonical, human/agent-authored data.
 
+### Repository docs (STRUCTURE.md and per-folder AGENTS.md)
+
+tasktracker maintains agent-facing docs in every covered folder (coverage is set by the committed `agentsdocs.json`; hidden dirs and `changes/` are never covered):
+
+- `STRUCTURE.md` is a machine-owned map of the folder's entries, their purposes, and child rollups, plus freshness metadata. It is regenerated wholesale. Never hand-edit inside its `tasktracker:begin` / `tasktracker:end` HTML-comment markers.
+- `AGENTS.md` (in a covered folder) holds curated learnings and instructions for that area. Content outside the markers is human/agent-authored and preserved byte-for-byte; the marker-guarded auto section is machine-maintained (new learnings cite their source change ID, `seed`, or `manual`).
+
+When entering a folder, read its `STRUCTURE.md` for orientation and its `AGENTS.md` for local learnings before editing. Keep both accurate when you change that area (per the update rule above): edit only outside the markers; the doc gardener maintains the auto sections when a change closes.
+
 ### Verification and handoff
 
 When all tasks are complete, before reporting a change ready for close-out:
@@ -268,3 +277,25 @@ When all tasks are complete, before reporting a change ready for close-out:
 6. Report the change directory, implemented outcome, verification performed, and any remaining risks or follow-up tasks — and state that the change is ready for the user to close.
 
 If implementation stops before completion, leave the ledger in the accurate current state and make the next executable step clear in the relevant task notes.
+
+<!-- tasktracker:begin -->
+## Learnings
+
+- (seed) Root holds only entry points and docs: `cmd/` the CLI, `internal/` the packages, `web/` the embedded assets; `changes/` is the canonical workflow tree and `.tasktracker/` is gitignored tooling state.
+- (seed) Build with `CGO_ENABLED=0 go build -o tasktracker ./cmd/tasktracker`; verify with `go vet ./... && go test ./...`; check workflow data with `tasktracker validate`.
+- (seed) Covered folders carry a doc pair: `STRUCTURE.md` (machine-owned inside its markers) and `AGENTS.md` (curated learnings, marker-guarded auto section). Read them when entering a folder; keep them accurate when changing that area.
+- (seed) The workflow text of this file (everything above the markers) is embedded in the binary at `internal/docs/assets/workflow_agents.md` (go:embed); a drift test pins them — update both together (`awk '/^<!-- tasktracker:begin/{exit} {print}' AGENTS.md > internal/docs/assets/workflow_agents.md`).
+- (manual) CLI subcommands are `serve`, `validate`, `init`, and `docs seed`; `--dir` selects the repository root and one process serves one repository.
+- (manual) `agentsdocs.json` controls docs coverage with include and exclude globs; `web/static` is the only exclusion, and hidden dirs plus `changes/` are never covered, so the whole docs subsystem is inert without that file.
+- (manual) Root PNGs are ad-hoc screenshots, not build inputs: `overlap.png` and `mine.png` are gitignored, while `ui.png` is committed.
+- (manual) `opencode.json` pre-approves unattended agent sessions with allow-all inside the project and denies for external directories, `.env` reads, and `git push`.
+- (2026-09-12-7) The docs subsystem is opt-in via a committed root `agentsdocs.json`; closing a change enqueues one serialized gardener job (`.tasktracker/docs-queue.json`) for its touched covered dirs, and the server's `POST /docs/refresh` endpoint reconciles dirs left stale when the opencode service was unavailable.
+- (2026-09-12-7) `tasktracker init` bootstraps a workflow-ready repo (root `AGENTS.md` workflow text, `changes/` skeleton, `.gitignore`, starter `opencode.json`, default `agentsdocs.json`) merge-safely and idempotently; `docs seed` generates the first-pass doc pairs bottom-up and is resumable via `.tasktracker/docs-seed.json`.
+- (2026-09-12-8) `GET /explorer` renders the covered-directory tree straight from the docs system (each node's purpose and entry blurbs come from STRUCTURE.md) and adds a per-directory chat action; it is the UI dogfood of `STRUCTURE.md`/`AGENTS.md` content, so its value tracks docs quality.
+- (2026-09-12-8) The explorer is served by `internal/server/explorer.go` with a live-updating tree (`docs` events on the existing `/events` SSE stream) and tree/chat behavior in `web/static/app.js`; it degrades to guidance when the repo has no `agentsdocs.json`.
+- (2026-09-12-11) The explorer is a master/detail UI: a dirs-only navigation tree on the left and a reading pane on the right loaded per directory from `GET /explorer/detail?dir=<rel>`; selection is client-side state and the directory chat button now lives only in the detail-pane header.
+- (2026-09-12-9) Docs findings now surface in a header notification bell plus modal (hidden at zero, amber normally, red if any error finding) whose "Refresh stale docs" button posts `/docs/refresh`; the red banner is reserved for `changes/` violations. The endpoint enqueues one manual gardener job for the union of queue-stale and hash-stale dirs (empty union reports nothing to refresh), and docs SSE events re-check findings and the explorer tree live.
+- (manual) The root `tasktracker` entry is the local compiled binary from `cmd/tasktracker` (gitignored build output), not a source directory; rebuild it with the documented `go build` command when testing CLI behavior.
+- (manual) `README.md` is the human-facing overview of the same CLI, board, and docs system; update it when user-visible commands, endpoints, or workflows change.
+- (manual) Root `changes/ledger.md` is the change-level index only: each row links to that change's `plan.md`, and per-task status lives solely in the change's own `ledger.md`.
+<!-- tasktracker:end -->

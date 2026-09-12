@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"tasktracker/internal/model"
 )
@@ -72,6 +73,62 @@ func TestCommitEndpoint(t *testing.T) {
 		if !strings.Contains(promptedText, want) {
 			t.Errorf("commit prompt missing %q", want)
 		}
+	}
+}
+
+func TestCommitStatusEndpoint(t *testing.T) {
+	s := mappingServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/wait") {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	})
+	w := do(t, s.Handler(), "GET", "/changes/2026-09-10-0/commit-status?session=ses_x", "")
+	if w.Code != 200 {
+		t.Fatalf("code = %d body = %s", w.Code, w.Body)
+	}
+	var resp map[string]bool
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	if !resp["done"] {
+		t.Fatalf("resp = %v, want done=true on 204", resp)
+	}
+
+	// Bad session id.
+	if w := do(t, s.Handler(), "GET", "/changes/2026-09-10-0/commit-status?session=nope", ""); w.Code != 400 {
+		t.Fatalf("bad session: code = %d", w.Code)
+	}
+}
+
+func TestCommitStatusBusy(t *testing.T) {
+	s := mappingServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/wait") {
+			time.Sleep(5 * time.Second) // session still working; endpoint times out first
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	})
+	start := time.Now()
+	w := do(t, s.Handler(), "GET", "/changes/2026-09-10-0/commit-status?session=ses_x", "")
+	if w.Code != 200 {
+		t.Fatalf("code = %d", w.Code)
+	}
+	if elapsed := time.Since(start); elapsed > 4*time.Second {
+		t.Fatalf("endpoint should time out ~2s, took %v", elapsed)
+	}
+	var resp map[string]bool
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp["done"] {
+		t.Fatalf("resp = %v, want done=false while busy", resp)
+	}
+}
+
+func TestCommitStatusNoService(t *testing.T) {
+	s := mappingServer(t, nil)
+	w := do(t, s.Handler(), "GET", "/changes/2026-09-10-0/commit-status?session=ses_x", "")
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("code = %d, want 503", w.Code)
 	}
 }
 
