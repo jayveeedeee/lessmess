@@ -3,7 +3,7 @@
 - Change ID: 2026-09-13-0
 - Plan: [plan.md](plan.md)
 - Branch: —
-- Overall status: In progress
+- Overall status: Done
 - Last updated: 2026-09-13
 
 ## Status definitions
@@ -23,12 +23,12 @@ Row order is display and priority order; top row is highest priority.
 
 | Task | Title | Status | Depends on | Updated | Notes |
 | --- | --- | --- | --- | --- | --- |
-| [CMT-00](tasks/00-git-status-helper-and-endpoint.md) | Read-only git helper and status endpoint | Test | — | 2026-09-13 | `gitStatus` + `GET /api/git/status`; helper/endpoint tests pass (non-repo, dirty, clean) |
-| [CMT-01](tasks/01-commit-all-endpoint.md) | Repo-wide commit endpoint and prompt | Test | CMT-00 | 2026-09-13 | `POST /api/git/commit` + reused `commitStatus` route; tests: 201 mapped session, 422 clean, 422 non-repo, 503 no oc |
-| [CMT-02](tasks/02-index-button.md) | Index page Commit all button | Test | CMT-00 | 2026-09-13 | Button renders enabled/disabled/hidden per repo state; TestIndexCommitAllButton passes |
-| [CMT-03](tasks/03-commit-modal.md) | Commit modal markup, CSS, and JS flow | Test | CMT-01, CMT-02 | 2026-09-13 | Live smoke test on :9099: button enabled (repo dirty), modal markup served, /api/git/status returns real porcelain list, commit-status 400 on bad id; node --check app.js OK |
-| [CMT-04](tasks/04-verify-and-docs.md) | End-to-end verification and docs updates | Test | CMT-00, CMT-01, CMT-02, CMT-03 | 2026-09-13 | vet+tests+build pass; validate exit 0 (only gardener-owned staleness warnings); README documents the feature |
-| [CMT-05](tasks/05-watcher-chmod-loop.md) | Fix watcher CHMOD loop triggered by git scans | Test | CMT-02 | 2026-09-13 | Watchers now ignore attribute-only CHMOD events; loop dead (0 events per cycle), real writes still notify; TestWatchIgnoresChmod passes |
+| [CMT-00](tasks/00-git-status-helper-and-endpoint.md) | Read-only git helper and status endpoint | Done | — | 2026-09-13 | `gitStatus` + `GET /api/git/status`; helper/endpoint tests pass (non-repo, dirty, clean) |
+| [CMT-01](tasks/01-commit-all-endpoint.md) | Repo-wide commit endpoint and prompt | Done | CMT-00 | 2026-09-13 | `POST /api/git/commit` + reused `commitStatus` route; tests: 201 mapped session, 422 clean, 422 non-repo, 503 no oc |
+| [CMT-02](tasks/02-index-button.md) | Index page Commit all button | Done | CMT-00 | 2026-09-13 | Button renders enabled/disabled/hidden per repo state; TestIndexCommitAllButton passes |
+| [CMT-05](tasks/05-watcher-chmod-loop.md) | Fix watcher CHMOD loop triggered by git scans | Done | CMT-02 | 2026-09-13 | Watchers now ignore attribute-only CHMOD events; loop dead (0 events per cycle), real writes still notify; TestWatchIgnoresChmod passes |
+| [CMT-03](tasks/03-commit-modal.md) | Commit modal markup, CSS, and JS flow | Done | CMT-01, CMT-02 | 2026-09-13 | Live smoke test on :9099: button enabled (repo dirty), modal markup served, /api/git/status returns real porcelain list, commit-status 400 on bad id; node --check app.js OK |
+| [CMT-04](tasks/04-verify-and-docs.md) | End-to-end verification and docs updates | Done | CMT-00, CMT-01, CMT-02, CMT-03 | 2026-09-13 | vet+tests+build pass; validate exit 0 (only gardener-owned staleness warnings); README documents the feature |
 
 ## Decision log
 

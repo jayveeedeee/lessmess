@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -36,7 +37,16 @@ func (s *Server) terminalWS(w http.ResponseWriter, r *http.Request) {
 	}
 	spawn := s.SpawnCommand
 	name, args := spawn(sessionID)
-	t, err := s.term.Spawn(name, args, s.st.Dir, uint16Or(r.URL.Query().Get("cols"), 120), uint16Or(r.URL.Query().Get("rows"), 30))
+	cols, rows := uint16Or(r.URL.Query().Get("cols"), 120), uint16Or(r.URL.Query().Get("rows"), 30)
+	// Embedded sessions get a lessmess-managed CLI config (no tab strip, no
+	// sidebar); any failure falls back to the inherited environment.
+	env := []string(nil)
+	if xdg, err := ensureTUIConfig(s.st.Dir); err != nil {
+		slog.Warn("tui config: spawning with default environment", "err", err)
+	} else {
+		env = xdgEnv(xdg)
+	}
+	t, err := s.term.SpawnWithEnv(name, args, s.st.Dir, cols, rows, env)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return

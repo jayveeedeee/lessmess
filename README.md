@@ -92,6 +92,19 @@ calls are made server-side).
   the browser (xterm.js). lessmess spawns `opencode2 --session <id>` in
   its own PTY and bridges it over a WebSocket; the session persists in the
   opencode service, so reconnecting resumes it.
+- **Chrome-free embedded TUI**: embedded terminals run with a lessmess-managed
+  opencode CLI config — generated per spawn at `.lessmess/xdg/opencode/cli.json`
+  by forcing `tabs.enabled: false` and `session.sidebar: "hide"` on top of your
+  own `~/.config/opencode/cli.json` (theme, keybinds, and plugins carry over;
+  the file itself is only ever read). If generation fails, the terminal falls
+  back to your normal setup with a logged warning. Your standalone `opencode2`
+  is unaffected.
+- **Task panel**: terminals opened on a change board show a lessmess-native
+  panel on the right (~20% width) mirroring the board's tasks grouped by
+  status. It updates live as tasks change (no page reload), clicking a row
+  opens the task detail above the terminal, and a fixed Plan button at the
+  bottom opens the change plan. Unassigned terminals (Discussions, explorer
+  chats) keep the full-width terminal.
 - **New change session** (index page): scaffolds a change, creates and
   primes an opencode session, and opens the board with the terminal
   attached. The agent works the `changes/` workflow; the board updates live.

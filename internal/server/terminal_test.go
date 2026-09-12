@@ -4,11 +4,15 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/coder/websocket"
+
+	"lessmess/internal/store"
 )
 
 func terminalTestServer(t *testing.T) (*httptest.Server, *Server) {
@@ -96,6 +100,76 @@ func TestTerminalWSBadSession(t *testing.T) {
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", resp.StatusCode)
 	}
+}
+
+// wsReadUntil reads WS frames until want appears in the accumulated output.
+func wsReadUntil(t *testing.T, ctx context.Context, conn *websocket.Conn, want string) string {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	var got strings.Builder
+	for time.Now().Before(deadline) && !strings.Contains(got.String(), want) {
+		_, data, err := conn.Read(ctx)
+		if err != nil {
+			t.Fatalf("read: %v (got %q so far)", err, got.String())
+		}
+		got.Write(data)
+	}
+	if !strings.Contains(got.String(), want) {
+		t.Fatalf("no %q received, got %q", want, got.String())
+	}
+	return got.String()
+}
+
+// envEchoSpawn makes the spawned process report its XDG_CONFIG_HOME.
+func envEchoSpawn(sessionID string) (string, []string) {
+	return "sh", []string{"-c", `echo "XDG=$XDG_CONFIG_HOME"; cat`}
+}
+
+func TestTerminalWSInjectsTUIConfigEnv(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir()) // no user cli.json
+	srv, s := terminalTestServer(t)
+	s.SpawnCommand = envEchoSpawn
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	conn, _, err := websocket.Dial(ctx, wsURL(srv, "/terminal/ws?session=ses_test"), nil)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer conn.Close(websocket.StatusNormalClosure, "done")
+
+	want := "XDG=" + filepath.Join(s.st.Dir, store.StateDirName, "xdg")
+	wsReadUntil(t, ctx, conn, want)
+	// The generated config must exist where the child was pointed.
+	if _, err := os.Stat(filepath.Join(s.st.Dir, store.StateDirName, "xdg", "opencode", "cli.json")); err != nil {
+		t.Fatalf("generated cli.json missing: %v", err)
+	}
+}
+
+func TestTerminalWSConfigFailureFallsBack(t *testing.T) {
+	inherited := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", inherited)
+	srv, s := terminalTestServer(t)
+	s.SpawnCommand = envEchoSpawn
+	// Break config generation: .lessmess exists as a file, so MkdirAll fails.
+	if err := os.WriteFile(filepath.Join(s.st.Dir, store.StateDirName), []byte("blocked"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	conn, _, err := websocket.Dial(ctx, wsURL(srv, "/terminal/ws?session=ses_test"), nil)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer conn.Close(websocket.StatusNormalClosure, "done")
+
+	// The terminal still opens, with the inherited (unmodified) environment.
+	wsReadUntil(t, ctx, conn, "XDG="+inherited)
+	if err := conn.Write(ctx, websocket.MessageText, []byte("still-alive")); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	wsReadUntil(t, ctx, conn, "still-alive")
 }
 
 func TestTerminalWSOriginRejected(t *testing.T) {

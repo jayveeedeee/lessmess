@@ -49,10 +49,20 @@ type Manager struct {
 // NewManager builds an empty Manager.
 func NewManager() *Manager { return &Manager{ptys: map[string]*PTY{}} }
 
-// Spawn starts name+args in a new PTY at cwd with the given window size.
+// Spawn starts name+args in a new PTY at cwd with the given window size,
+// inheriting the server process environment.
 func (m *Manager) Spawn(name string, args []string, cwd string, cols, rows uint16) (*PTY, error) {
+	return m.SpawnWithEnv(name, args, cwd, cols, rows, nil)
+}
+
+// SpawnWithEnv is Spawn with an explicit process environment; a nil env
+// inherits the server process environment.
+func (m *Manager) SpawnWithEnv(name string, args []string, cwd string, cols, rows uint16, env []string) (*PTY, error) {
 	cmd := exec.Command(name, args...)
 	cmd.Dir = cwd
+	if env != nil {
+		cmd.Env = env
+	}
 	f, err := pty.StartWithSize(cmd, &pty.Winsize{Cols: cols, Rows: rows})
 	if err != nil {
 		return nil, fmt.Errorf("start pty: %w", err)

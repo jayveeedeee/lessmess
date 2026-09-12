@@ -41,7 +41,10 @@ document.documentElement.dataset.theme = localStorage.getItem("tt-theme") || "da
       <span id="terminal-title" class="title"></span>
       <button type="button" class="modal-close" data-close-terminal aria-label="Close">✕</button>
     </div>
-    <div id="terminal-container"></div>
+    <div class="terminal-body">
+      <div id="terminal-container"></div>
+      <aside id="terminal-tasks" hidden></aside>
+    </div>
     <div id="terminal-status" class="terminal-status" hidden></div>
   </div>
 </div>

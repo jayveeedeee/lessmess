@@ -11,4 +11,6 @@
 - (manual) The docs subsystem is inert unless the target repository has a root `agentsdocs.json`; `docs.LoadConfig` returns nil and consumers no-op, so guard any new code on a non-nil config.
 - (manual) The module is `lessmess`, so every package here imports its siblings as `lessmess/internal/<pkg>`; the binary name and module were renamed from tasktracker, while the workflow file formats and their marker names are unchanged.
 - (manual) `os/exec` use is confined to three packages: `server` (`gitcommit.go`, read-only `git` status/diff for preview), `opencode` (background service status), and `terminal` (PTY); actual commits still happen inside primed opencode sessions, not in Go.
+- (manual) Environment-aware spawning is available via `terminal.Manager.SpawnWithEnv` (a nil env inherits the server environment); `server.terminalWS` uses it to inject a generated `XDG_CONFIG_HOME` for chrome-free embedded TUIs.
+- (manual) `internal/server/tuiconfig.go` merges the user's `~/.config/opencode/cli.json` with forced chrome-free overrides and is best-effort: parse or write failures log a warning and spawn with the inherited environment instead.
 <!-- tasktracker:end -->

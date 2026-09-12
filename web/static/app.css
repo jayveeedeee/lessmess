@@ -391,7 +391,7 @@ body[data-page="board"] .board {
 #detail {
   position: fixed;
   inset: 0;
-  z-index: 20;
+  z-index: 40; /* above the terminal overlay (30) so panel clicks can open it */
   display: flex;
   align-items: center;
   justify-content: center;
@@ -580,7 +580,91 @@ body[data-page="board"] .board {
   border-bottom: 1px solid var(--border);
 }
 .terminal-head .title { flex: 1; font-size: 0.85rem; font-weight: 600; }
-#terminal-container { flex: 1; min-height: 0; padding: 0.35rem; }
+.terminal-body { flex: 1; min-height: 0; display: flex; }
+#terminal-container { flex: 1; min-width: 0; min-height: 0; padding: 0.35rem; }
+
+/* Task panel: lessmess-native column mirroring the board's tasks for change
+   terminals; filled and unhidden by app.js (board pages only). */
+#terminal-tasks[hidden] { display: none; }
+#terminal-tasks {
+  flex: 0 0 20%;
+  min-width: 200px;
+  max-width: 340px;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  font-size: 0.8rem;
+}
+/* Only the scroll region moves; the footer (Plan button) stays fixed at the
+   bottom of the panel so it is never scrolled out of reach. */
+.ttp-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0.55rem 0.6rem;
+}
+.ttp-foot {
+  flex: none;
+  padding: 0.45rem 0.6rem;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+.ttp-plan {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  text-align: center;
+  text-decoration: none;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  border-radius: 3px;
+  padding: 0.32rem 0.7rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.ttp-plan:hover { color: var(--text); border-color: var(--muted); }
+.ttp-head {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  margin-bottom: 0.5rem;
+}
+.ttp-group { margin-bottom: 0.75rem; }
+.ttp-group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+  /* full-bleed status band: cancel the panel's horizontal padding, no
+     margins or borders of its own */
+  margin: 0 -0.6rem 0.25rem;
+  padding: 0.22rem 0.6rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+.ttp-group-head .count { color: inherit; opacity: 0.75; font-size: 0.72rem; }
+.ttp-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  padding: 0.26rem 0.35rem;
+  border-radius: 4px;
+  color: inherit;
+  text-decoration: none;
+  line-height: 1.3;
+  cursor: pointer;
+}
+.ttp-row:hover { background: var(--surface-2); }
+.ttp-row .chip { flex: none; }
+.ttp-row-title { min-width: 0; overflow-wrap: anywhere; }
+.ttp-empty { color: var(--muted); padding: 0.2rem; }
 .terminal-status {
   padding: 0.35rem 0.75rem;
   background: var(--surface);

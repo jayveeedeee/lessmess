@@ -50,7 +50,7 @@
   }
 
   document.addEventListener("htmx:afterSwap", function (e) {
-    if (e.target && e.target.id === "board") initSortable();
+    if (e.target && e.target.id === "board") { initSortable(); syncTerminalTasks(); }
   });
 
   // After a successful htmx form POST (add task), refresh the board.
@@ -525,6 +525,14 @@
     closeTerminal();
     var overlay = document.getElementById("terminal-overlay");
     overlay.hidden = false;
+    // The task panel is for change terminals (board pages) only.
+    var panel = terminalTasksEl();
+    var onBoard = page === "board" && boardEl() && boardEl().dataset.change;
+    if (panel) {
+      panel.hidden = !onBoard;
+      panel.innerHTML = "";
+      if (onBoard) syncTerminalTasks();
+    }
     document.getElementById("terminal-title").textContent = title || "";
     var status = document.getElementById("terminal-status");
     status.hidden = true;
@@ -582,11 +590,69 @@
     tstate = { term: null, ws: null, ro: null };
     var overlay = document.getElementById("terminal-overlay");
     if (overlay) overlay.hidden = true;
+    var panel = terminalTasksEl();
+    if (panel) { panel.hidden = true; panel.innerHTML = ""; }
   }
 
   function terminalOpen() {
     var ov = document.getElementById("terminal-overlay");
     return ov && !ov.hidden;
+  }
+
+  // --- terminal task panel -------------------------------------------------
+
+  function terminalTasksEl() { return document.getElementById("terminal-tasks"); }
+
+  function esc(s) {
+    return String(s).replace(/[&<>"]/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
+    });
+  }
+
+  // Mirrors the statusClass template func in internal/server/render.go.
+  function statusClass(s) { return s.toLowerCase().replace(/ /g, "-"); }
+
+  // The panel mirrors the board DOM (.cards[data-status] / .card[data-task]
+  // from boardFragment), so live updates ride the existing SSE board refresh:
+  // it re-runs on every #board htmx swap and never touches the server itself.
+  function syncTerminalTasks() {
+    var panel = terminalTasksEl();
+    if (!panel || panel.hidden) return;
+    var board = boardEl();
+    var html = '<div class="ttp-scroll"><div class="ttp-head">Tasks</div>';
+    var groups = 0;
+    if (board) {
+      board.querySelectorAll(".cards[data-status]").forEach(function (col) {
+        var cards = col.querySelectorAll(".card");
+        if (!cards.length) return;
+        groups++;
+        var status = col.getAttribute("data-status");
+        html += '<div class="ttp-group"><div class="ttp-group-head status-' +
+          statusClass(status) + '"><span>' + esc(status) + '</span><span class="count">' + cards.length +
+          "</span></div>";
+        cards.forEach(function (card) {
+          var a = card.querySelector(".card-title");
+          var href = a && a.getAttribute("hx-get");
+          if (!href) return;
+          html += '<a class="ttp-row" hx-get="' + esc(href) + '" hx-headers=\'{"Accept": "text/html"}\'' +
+            ' hx-target="#detail" hx-swap="innerHTML"><span class="chip">' +
+            esc(card.getAttribute("data-task") || "") + '</span><span class="ttp-row-title">' +
+            esc(a.textContent) + "</span></a>";
+        });
+        html += "</div>";
+      });
+    }
+    if (!groups) html += '<div class="ttp-empty">No tasks yet.</div>';
+    html += "</div>"; // .ttp-scroll
+    // Fixed footer: open the change plan modal, same request as the board's
+    // Plan button (#detail stacks above the terminal).
+    if (board && board.dataset.change) {
+      html += '<div class="ttp-foot"><a class="ttp-plan" hx-get="/changes/' +
+        encodeURIComponent(board.dataset.change) + '/plan"' +
+        ' hx-target="#detail" hx-swap="innerHTML">Plan</a></div>';
+    }
+    panel.innerHTML = html;
+    if (window.htmx) htmx.process(panel); // wire hx-get on the new rows
   }
 
   // Auto-open the terminal when arriving from the new-change-session flow
@@ -718,6 +784,8 @@
 
   document.addEventListener("keydown", function (e) {
     if (e.key !== "Escape") return;
+    var d = document.getElementById("detail");
+    if (d && !d.hidden) { closeDetail(); return; } // the detail modal stacks above the terminal
     if (terminalOpen()) { closeTerminal(); return; }
     closeDetail();
   });
