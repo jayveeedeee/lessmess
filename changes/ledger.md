@@ -17,4 +17,8 @@ One row per change directory. This file is authoritative for change existence, t
 | [2026-09-12-9](2026-09-12-9/plan.md) | UI docs refresh button | REF | — | Done | 2026-09-12 | 2026-09-12 |
 | [2026-09-12-10](2026-09-12-10/plan.md) | Bind change sessions to their change | BSB | — | Done | 2026-09-12 | 2026-09-12 |
 | [2026-09-12-11](2026-09-12-11/plan.md) | Explorer master-detail redesign | EXD | — | Done | 2026-09-12 | 2026-09-12 |
-| [2026-09-12-12](2026-09-12-12/plan.md) | Top menu and board UI polish | NAV | — | Planned | 2026-09-12 | 2026-09-12 |
+| [2026-09-12-12](2026-09-12-12/plan.md) | Top menu and board UI polish | NAV | — | Done | 2026-09-12 | 2026-09-12 |
+| [2026-09-12-13](2026-09-12-13/plan.md) | Fix gitignore swallowing cmd/tasktracker source | IGN | main | Done | 2026-09-12 | 2026-09-12 |
+| [2026-09-12-14](2026-09-12-14/plan.md) | Rename app to lessmess | REN | — | Done | 2026-09-12 | 2026-09-12 |
+| [2026-09-12-15](2026-09-12-15/plan.md) | User-gated Test status before Done | TST | — | Done | 2026-09-12 | 2026-09-13 |
+| [2026-09-13-0](2026-09-13-0/plan.md) | Commit-all button on changes page | CMT | — | In progress | 2026-09-13 | 2026-09-13 |

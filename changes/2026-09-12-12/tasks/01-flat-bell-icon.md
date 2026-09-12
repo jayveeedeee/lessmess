@@ -59,3 +59,8 @@ that inherits the theme color.
 
 - Emoji rendering varies by platform; inline SVG with `currentColor` is the
   flat, deterministic option.
+- Verified 2026-09-12: classic stroke-bell paths (body + clapper), 18px in a
+  32×32 grid button; badge re-anchored to `top: 0; right: -4px`;
+  `#notif-bell[hidden]` keeps zero-finding hiding intact (bell absent on
+  current finding-free pages). Screenshot-verified against the live CSS in
+  dark and light themes; vet/test green.

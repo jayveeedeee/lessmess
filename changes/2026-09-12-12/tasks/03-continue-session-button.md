@@ -72,3 +72,11 @@ change has none.
 - User picked: always-visible dual-mode button; "last session" = most recently
   opened, tracked client-side in `localStorage` (single-user localhost tool),
   validated against the live list with fallback to newest created.
+- `markOpened` is also called from the panel Open button, New session, and
+  `autoOpenSession`, so any board-context open updates the resume target.
+- Verified 2026-09-12: screenshots show "Continue session" on a has-session
+  board and "Start session" on a no-session board (proves the JS label fetch);
+  a Node vm harness running the real `app.js` with stubbed DOM passed 12/12
+  assertions across the three scenarios (resume last-opened, fallback to
+  newest after unlink, create+open incl. label flip and re-enable); vet/test
+  green (`render_test.go` board-button assertions unaffected).

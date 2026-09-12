@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"tasktracker/internal/docs"
-	"tasktracker/internal/store"
+	"lessmess/internal/docs"
+	"lessmess/internal/store"
 )
 
 func actionsByPath(actions []docs.InitAction) map[string]string {
@@ -109,13 +109,13 @@ func TestInitGitignoreVariants(t *testing.T) {
 			t.Fatalf("action %q, want merged", got)
 		}
 		data, _ := os.ReadFile(filepath.Join(root, ".gitignore"))
-		if string(data) != "node_modules/\n.tasktracker/\n" {
+		if string(data) != "node_modules/\n.lessmess/\n" {
 			t.Errorf("unexpected .gitignore: %q", data)
 		}
 	})
 	t.Run("existing with entry", func(t *testing.T) {
 		root := t.TempDir()
-		if err := os.WriteFile(filepath.Join(root, ".gitignore"), []byte(".tasktracker/\n"), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(root, ".gitignore"), []byte(".lessmess/\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 		actions, err := docs.Init(root)

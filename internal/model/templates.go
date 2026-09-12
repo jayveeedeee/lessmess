@@ -78,6 +78,7 @@ func RenderChangeLedger(id, date string) []byte {
 | Not started | Work has not begun. |
 | In progress | Implementation or verification is actively underway. |
 | Blocked | Work cannot continue until a documented dependency, decision, approval, or external condition is resolved. |
+| Test | Implementation and verification are complete; awaiting user acceptance before Done. |
 | Done | All verification and completion criteria in the task file have passed. |
 | Cancelled | The task was intentionally removed from scope and the reason is recorded. |
 

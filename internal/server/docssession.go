@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"tasktracker/internal/docs"
-	"tasktracker/internal/model"
+	"lessmess/internal/docs"
+	"lessmess/internal/model"
 )
 
 // gardenerRunner executes queued docs jobs with one unattended opencode

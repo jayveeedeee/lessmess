@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"tasktracker/internal/model"
+	"lessmess/internal/model"
 )
 
 // stubSummarizer simulates an agent pass: it fills placeholders in

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"tasktracker/internal/model"
+	"lessmess/internal/model"
 )
 
 // closeChange handles POST /changes/{id}/close: the user closes the change.

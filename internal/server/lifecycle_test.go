@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"tasktracker/internal/model"
+	"lessmess/internal/model"
 )
 
 func TestCloseReopenEndpoints(t *testing.T) {

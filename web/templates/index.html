@@ -2,6 +2,9 @@
 <section class="changes">
   <div class="section-head">
     <h2>Changes</h2>
+    {{if .Data.GitRepo}}
+    <button type="button" class="btn-ghost" id="commit-all-btn"{{if not .Data.GitDirty}} disabled{{end}}>Commit all</button>
+    {{end}}
     <form class="inline-form form-accent"
           hx-post="/changes/session" hx-swap="none">
       <button type="submit" class="btn-accent">New change session</button>
@@ -36,4 +39,20 @@
   <ul id="discussions-list" class="sessions-list"></ul>
 </section>
 <div id="detail" hidden></div>
+<div id="commit-modal" hidden>
+  <div class="modal commit-window">
+    <div class="modal-head">
+      <span class="title">Commit all changes</span>
+      <button type="button" class="modal-close" data-close-commit aria-label="Close">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="commit-file-list"></div>
+      <pre id="commit-stat"></pre>
+      <div class="commit-actions">
+        <button id="commit-confirm-btn" type="button" class="btn-accent">Confirm commit</button>
+        <span id="commit-modal-status" class="muted"></span>
+      </div>
+    </div>
+  </div>
+</div>
 {{end}}

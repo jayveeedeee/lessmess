@@ -1,4 +1,4 @@
-// tasktracker board UI glue: SortableJS drag-and-drop, SSE live refresh,
+// lessmess board UI glue: SortableJS drag-and-drop, SSE live refresh,
 // htmx form follow-ups, validation banner.
 (function () {
   "use strict";
@@ -389,6 +389,20 @@
     return b ? b.getAttribute("data-change") : null;
   }
 
+  // Last-opened session per change (client-side; this is a single-user tool).
+  function lastSessionKey() { return "tt-last-session:" + changeID(); }
+  function markOpened(sessionID) {
+    try { localStorage.setItem(lastSessionKey(), sessionID); } catch (_) {}
+  }
+
+  // fetchSessions calls cb with the change's sessions, or null on error.
+  function fetchSessions(cb) {
+    fetch("/changes/" + changeID() + "/sessions", { headers: { Accept: "application/json" } })
+      .then(function (r) { return r.json(); })
+      .then(function (j) { cb(j.sessions || []); })
+      .catch(function () { cb(null); });
+  }
+
   function loadSessions() {
     fetch("/changes/" + changeID() + "/sessions", { headers: { Accept: "application/json" } })
       .then(function (r) { return r.json(); })
@@ -418,7 +432,7 @@
           var openBtn = document.createElement("button");
           openBtn.className = "btn-ghost";
           openBtn.textContent = "Open";
-          openBtn.addEventListener("click", function () { openTerminal(s.session, s.title); });
+          openBtn.addEventListener("click", function () { markOpened(s.session); openTerminal(s.session, s.title); });
           var unBtn = document.createElement("button");
           unBtn.className = "btn-ghost";
           unBtn.textContent = "✕";
@@ -456,10 +470,53 @@
           body: "{}",
         })
           .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.statusText); return j; }); })
-          .then(function (s) { loadSessions(); openTerminal(s.session, s.title); })
+          .then(function (s) { markOpened(s.session); loadSessions(); openTerminal(s.session, s.title); })
           .catch(function (e) { alert("Create session failed: " + e.message); });
       });
     }
+  }
+
+  // --- continue / start session button ---------------------------------------
+
+  // One-click resume: opens the last-opened session (validated against the
+  // live list, falling back to the newest created), or creates + opens a
+  // session when the change has none.
+  function initContinue() {
+    var btn = document.getElementById("continue-session-btn");
+    if (!btn) return;
+    fetchSessions(function (sessions) {
+      if (sessions) btn.textContent = sessions.length ? "Continue session" : "Start session";
+    });
+    btn.addEventListener("click", function () {
+      if (btn.disabled) return;
+      fetchSessions(function (sessions) {
+        if (!sessions) { alert("Could not load sessions"); return; }
+        if (!sessions.length) { createAndOpen(btn); return; }
+        var stored = null;
+        try { stored = localStorage.getItem(lastSessionKey()); } catch (_) {}
+        var s = sessions.find(function (x) { return x.session === stored; }) || sessions[sessions.length - 1];
+        markOpened(s.session);
+        openTerminal(s.session, s.title);
+      });
+    });
+  }
+
+  function createAndOpen(btn) {
+    btn.disabled = true;
+    fetch("/changes/" + changeID() + "/sessions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: "{}",
+    })
+      .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.statusText); return j; }); })
+      .then(function (s) {
+        markOpened(s.session);
+        btn.textContent = "Continue session";
+        loadSessions();
+        openTerminal(s.session, s.title);
+      })
+      .catch(function (e) { alert("Create session failed: " + e.message); })
+      .finally(function () { btn.disabled = false; });
   }
 
   var tstate = { term: null, ws: null, ro: null };
@@ -468,7 +525,6 @@
     closeTerminal();
     var overlay = document.getElementById("terminal-overlay");
     overlay.hidden = false;
-    document.getElementById("terminal-session").textContent = sessionID;
     document.getElementById("terminal-title").textContent = title || "";
     var status = document.getElementById("terminal-status");
     status.hidden = true;
@@ -544,6 +600,7 @@
       .then(function (r) { return r.json(); })
       .then(function (j) {
         var s = (j.sessions || []).find(function (x) { return x.session === sid; });
+        markOpened(sid);
         openTerminal(sid, s ? s.title : sid);
       })
       .catch(function () { openTerminal(sid, sid); });
@@ -669,13 +726,136 @@
     if (e.target && e.target.id === "detail") e.target.hidden = false;
   });
 
+  // --- commit-all modal (index page) ------------------------------------------
+
+  function initCommitAll() {
+    var btn = document.getElementById("commit-all-btn");
+    var modal = document.getElementById("commit-modal");
+    if (!btn || !modal) return;
+    var list = document.getElementById("commit-file-list");
+    var stat = document.getElementById("commit-stat");
+    var confirmBtn = document.getElementById("commit-confirm-btn");
+    var status = document.getElementById("commit-modal-status");
+    var busy = false;
+
+    function closeModal() {
+      if (busy) return; // commit session runs server-side; keep progress visible
+      modal.hidden = true;
+    }
+
+    btn.addEventListener("click", function () {
+      if (btn.disabled || busy) return;
+      status.textContent = "";
+      confirmBtn.disabled = true;
+      confirmBtn.textContent = "Confirm commit";
+      list.innerHTML = '<p class="muted">Checking…</p>';
+      stat.textContent = "";
+      modal.hidden = false;
+      fetch("/api/git/status", { headers: { Accept: "application/json" } })
+        .then(function (r) { return r.json(); })
+        .then(function (j) {
+          if (!j.repo || !j.changes || !j.changes.length) {
+            list.innerHTML = '<p class="muted">Nothing to commit.</p>';
+            return;
+          }
+          list.innerHTML = "";
+          j.changes.forEach(function (c) {
+            var row = document.createElement("div");
+            row.className = "commit-file";
+            var code = document.createElement("span");
+            code.className = "commit-code";
+            code.textContent = c.code;
+            var path = document.createElement("span");
+            path.className = "commit-path";
+            path.textContent = c.path;
+            row.appendChild(code);
+            row.appendChild(path);
+            if (c.added !== undefined && c.added !== "") {
+              var counts = document.createElement("span");
+              counts.className = "commit-counts";
+              counts.textContent = "+" + c.added + " −" + c.deleted;
+              row.appendChild(counts);
+            }
+            list.appendChild(row);
+          });
+          stat.textContent = j.summary || "";
+          confirmBtn.disabled = false;
+        })
+        .catch(function () {
+          list.innerHTML = '<p class="muted">Could not load git status.</p>';
+        });
+    });
+
+    function setBusy(b) {
+      busy = b;
+      confirmBtn.disabled = b;
+      if (b) {
+        confirmBtn.innerHTML = '<span class="spinner" aria-hidden="true"></span> Committing…';
+        status.textContent = "";
+      } else {
+        confirmBtn.textContent = "Confirm commit";
+      }
+    }
+
+    function poll(session, attempts) {
+      if (attempts > 200) { // ~10 minutes max
+        setBusy(false);
+        status.textContent = "Commit is taking unusually long — check the session in Discussions.";
+        return;
+      }
+      fetch("/api/git/commit-status?session=" + encodeURIComponent(session), {
+        headers: { Accept: "application/json" },
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (j) {
+          if (j.done) {
+            confirmBtn.innerHTML = "✓ Committed";
+            btn.disabled = true; // tree is clean now
+            setTimeout(function () {
+              setBusy(false);
+              modal.hidden = true;
+              loadDiscussions(); // surface the commit session
+            }, 2000);
+          } else {
+            setTimeout(function () { poll(session, attempts + 1); }, 3000);
+          }
+        })
+        .catch(function () {
+          setBusy(false);
+          status.textContent = "Lost contact while waiting for the commit — check the session in Discussions.";
+        });
+    }
+
+    confirmBtn.addEventListener("click", function () {
+      if (confirmBtn.disabled || busy) return;
+      setBusy(true);
+      fetch("/api/git/commit", { method: "POST", headers: { Accept: "application/json" } })
+        .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.statusText); return j; }); })
+        .then(function (j) { poll(j.session, 0); })
+        .catch(function (e) {
+          setBusy(false);
+          status.textContent = e.message; // e.g. 422 "nothing to commit" race
+        });
+    });
+
+    document.querySelector("[data-close-commit]").addEventListener("click", closeModal);
+    modal.addEventListener("click", function (e) {
+      if (e.target === modal) closeModal();
+    });
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape" && !modal.hidden) closeModal();
+    });
+  }
+
   // --- init -----------------------------------------------------------------
 
   document.addEventListener("DOMContentLoaded", function () {
     initTheme();
     initSortable();
     initSessions();
+    initContinue();
     initLifecycle();
+    initCommitAll();
     checkValidation();
     autoOpenSession();
     loadDiscussions();

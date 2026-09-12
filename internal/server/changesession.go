@@ -41,7 +41,7 @@ func changePrompt(changeID string) string {
 3. NEVER create a new change directory and NEVER call the /changes/scaffold endpoint. If the user asks for genuinely unrelated work, explain that it belongs in a separate change and ask them to start a new discussion from the index page.`, changeID)
 }
 
-// apiBase returns the tasktracker base URL used in agent-facing prompts.
+// apiBase returns the lessmess base URL used in agent-facing prompts.
 func (s *Server) apiBase() string {
 	if s.PublicBase != "" {
 		return "http://" + s.PublicBase

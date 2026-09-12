@@ -7,4 +7,5 @@
 - Errors are sentinel-based: unknown change or task IDs return `ErrNotFound`, and writes against unparseable files return `ErrInvalid`. Sequence numbers are never reused (highest existing + 1).
 - `Watch` uses fsnotify with a 150ms debounce and ignores `.tt-` temp files; listeners subscribe via `Subscribe`/`Unsubscribe` and receive `fs` and `write` events.
 - (2026-09-12-7) Docs validation deliberately lives in `internal/docs.ValidateDocs`, not here, despite the original DOC-07 file list; the store stays focused on the `changes/` contract and gains no docs dependency.
+- (manual) `statedir.go` exports `StateDirName` (`.lessmess`) and `MigrateStateDir`, called at CLI startup before `Open`; it renames a legacy `.tasktracker` dir only when `.lessmess` is absent, so an existing current dir always wins and nothing is merged or deleted.
 <!-- tasktracker:end -->

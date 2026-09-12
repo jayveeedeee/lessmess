@@ -1,4 +1,4 @@
-# tasktracker
+# lessmess
 
 A single-binary kanban server for the `changes/` workflow defined in
 [`AGENTS.md`](AGENTS.md). It visualizes a repository's `changes/` tree as a
@@ -9,7 +9,7 @@ the files, never the owner of the data.
 ## Build
 
 ```sh
-CGO_ENABLED=0 go build -o tasktracker ./cmd/tasktracker
+CGO_ENABLED=0 go build -o lessmess ./cmd/lessmess
 ```
 
 Produces one static binary with all web assets embedded; no runtime files or
@@ -19,16 +19,16 @@ Node toolchain required.
 
 ```sh
 # Start the board (http://127.0.0.1:8080)
-tasktracker serve [--host 127.0.0.1] [--port 8080] [--dir .]
+lessmess serve [--host 127.0.0.1] [--port 8080] [--dir .]
 
 # Check the changes/ tree against the AGENTS.md validation contract
-tasktracker validate [--dir .]
+lessmess validate [--dir .]
 
 # Bootstrap an uninitialized directory as a workflow repository
-tasktracker init [--dir .]
+lessmess init [--dir .]
 
 # Initial run-through that seeds the repo docs (see below)
-tasktracker docs seed [--dry-run] [--budget N] [--dir .]
+lessmess docs seed [--dry-run] [--budget N] [--dir .]
 ```
 
 `--dir` points at a repository root containing `changes/` (default: current
@@ -36,10 +36,15 @@ directory). One process serves one repository.
 
 ### The board
 
-- **`/`** — change list, built from the root ledger (`changes/ledger.md`).
-- **`/changes/<id>`** — kanban board with five columns (`Not started`,
-  `In progress`, `Blocked`, `Done`, `Cancelled`); cards are the change
-  ledger's task rows in row order (= priority, per `AGENTS.md`).
+- **Top menu** — Changes and Explorer are always visible in the header; the
+  active route is highlighted.
+- **`/`** — change list, built from the root ledger (`changes/ledger.md`),
+  newest change first.
+- **`/changes/<id>`** — kanban board with six columns (`Not started`,
+  `In progress`, `Blocked`, `Test`, `Done`, `Cancelled`); cards are the change
+  ledger's task rows in row order (= priority, per `AGENTS.md`). Agents stop
+  at `Test` once verification passes; `Done` is user-gated — the user drags
+  the card there or explicitly tells the agent to move it.
 - **Drag a card** between columns or reorder within one: rewrites the task
   table in the change's `ledger.md` (status cell + row order), preserving all
   other file content byte-for-byte.
@@ -72,21 +77,32 @@ directory). One process serves one repository.
 ## opencode integration
 
 If an [opencode](https://opencode.ai) V2 background service is running,
-tasktracker connects to it automatically (discovery via
+lessmess connects to it automatically (discovery via
 `opencode2 service status`, credentials from
 `~/.config/opencode/service.json` — never sent to the browser; all service
 calls are made server-side).
 
 - **Sessions panel** on each board: create, list, open, and unlink multiple
   opencode sessions per change. Mappings persist in
-  `.tasktracker/sessions.json` (gitignored tooling state).
+  `.lessmess/sessions.json` (gitignored tooling state).
+- **Continue session** button on each board: one click resumes the session
+  you last opened for that change — or starts a new one when the change has
+  none.
 - **Embedded terminal**: opening a session renders the live opencode TUI in
-  the browser (xterm.js). tasktracker spawns `opencode2 --session <id>` in
+  the browser (xterm.js). lessmess spawns `opencode2 --session <id>` in
   its own PTY and bridges it over a WebSocket; the session persists in the
   opencode service, so reconnecting resumes it.
 - **New change session** (index page): scaffolds a change, creates and
   primes an opencode session, and opens the board with the terminal
   attached. The agent works the `changes/` workflow; the board updates live.
+- **Commit all** (index page, next to New change session): one click commits
+  every uncommitted change in the repository. The button is disabled when
+  the working tree is clean and hidden outside git repositories. It opens a
+  confirmation modal listing the uncommitted files plus a diffstat (fetched
+  live from `GET /api/git/status`); confirming spawns an opencode session
+  (`POST /api/git/commit`) that writes the commit message and commits — the
+  same rails as the board's per-change Commit: commit only, never push. The
+  session appears under Discussions as "repo — git commit".
 
 ### Security posture of agent sessions
 
@@ -99,12 +115,12 @@ work in autonomously. The embedded terminal and the service API are
 localhost-only, and the opencode service password is never exposed to the
 browser (injected server-side).
 
-If the service is unreachable, tasktracker starts normally without the
+If the service is unreachable, lessmess starts normally without the
 integration (a warning is logged).
 
 ## Repo docs management
 
-Beyond the change workflow, tasktracker bootstraps and maintains agent-facing
+Beyond the change workflow, lessmess bootstraps and maintains agent-facing
 docs across a repository — so an agent entering any folder cold gets a map and
 the local learnings. Two files per covered folder:
 
@@ -117,14 +133,14 @@ the local learnings. Two files per covered folder:
 
 Coverage is configured by a committed [`agentsdocs.json`](agentsdocs.json)
 (include/exclude globs; hidden dirs and `changes/` are never covered). Without
-it, the whole subsystem is inert. `tasktracker init` writes it along with a
+it, the whole subsystem is inert. `lessmess init` writes it along with a
 root `AGENTS.md` carrying the canonical workflow instructions, the `changes/`
 skeleton, `.gitignore` handling, and a starter `opencode.json`.
 
-- **Seed**: `tasktracker docs seed` walks the tree bottom-up, writes
+- **Seed**: `lessmess docs seed` walks the tree bottom-up, writes
   `STRUCTURE.md` skeletons, then runs one unattended opencode session per
   directory to fill purposes and write first-pass `AGENTS.md` learnings.
-  Resumable (`.tasktracker/docs-seed.json`), budget-capped (`--budget`),
+  Resumable (`.lessmess/docs-seed.json`), budget-capped (`--budget`),
   dry-runnable; offline it writes skeletons only.
 - **Refresh**: closing a change computes the touched folders from its tasks'
   "Files affected" and enqueues a serialized doc-gardener job — one unattended
@@ -139,7 +155,7 @@ skeleton, `.gitignore` handling, and a starter `opencode.json`.
   grouped by severity, with a **Refresh stale docs** button that reconciles
   every stale directory (queue-stale and hash-stale alike) as one manual
   gardener job — findings and the explorer tree update live as it finishes.
-  `tasktracker validate` reports the same findings (warnings; structural
+  `lessmess validate` reports the same findings (warnings; structural
   corruption is an error). The red banner remains for `changes/` violations.
 
 ### Project explorer
@@ -170,7 +186,7 @@ go test ./...
 Layout:
 
 ```text
-cmd/tasktracker/   CLI entry (serve, validate, init, docs seed)
+cmd/lessmess/   CLI entry (serve, validate, init, docs seed)
 internal/model/    parsers + serializers for the AGENTS.md file formats
 internal/store/    scan, cache, fsnotify watch, validation, safe writes
 internal/server/   HTTP handlers, SSE, template rendering, docs queue + gardener

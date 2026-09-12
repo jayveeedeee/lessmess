@@ -11,8 +11,8 @@ import (
 	"sync"
 	"time"
 
-	"tasktracker/internal/docs"
-	"tasktracker/internal/model"
+	"lessmess/internal/docs"
+	"lessmess/internal/model"
 )
 
 // DocsJob is one queued doc-gardener unit of work: refresh the doc pairs of
@@ -33,7 +33,7 @@ type DocsRunner interface {
 // docsQueuePath is the queue/stale state file (gitignored tooling state).
 // Pending and stale live in one file so a single atomic write keeps them
 // consistent.
-const docsQueuePath = ".tasktracker/docs-queue.json"
+const docsQueuePath = ".lessmess/docs-queue.json"
 
 type docsQueueState struct {
 	Pending []DocsJob         `json:"pending"`

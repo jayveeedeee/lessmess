@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"tasktracker/internal/docs"
+	"lessmess/internal/docs"
 )
 
 // --- explorer view model ---

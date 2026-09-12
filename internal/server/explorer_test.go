@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"tasktracker/internal/docs"
-	"tasktracker/internal/opencode"
+	"lessmess/internal/docs"
+	"lessmess/internal/opencode"
 )
 
 // explorerServer builds a server over the fixture repo with docs enabled and

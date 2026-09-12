@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"tasktracker/internal/opencode"
+	"lessmess/internal/opencode"
 )
 
 // Summarizer fills in a directory's placeholder purposes/blurbs in

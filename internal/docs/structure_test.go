@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"tasktracker/internal/model"
+	"lessmess/internal/model"
 )
 
 var testMeta = model.DocMeta{Refreshed: "2026-09-12", Source: "seed"}

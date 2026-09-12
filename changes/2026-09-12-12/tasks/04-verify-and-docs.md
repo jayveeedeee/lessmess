@@ -57,3 +57,13 @@ end-to-end against a freshly built binary.
 
 - Remember: a stale server process holding the port can serve old HTML —
   restart before concluding an edit did not take.
+- Verified 2026-09-12: README "The board" + opencode sections updated;
+  `go vet ./...`, `go test ./...`, fresh build, and `tasktracker validate`
+  all green; final live walk on the rebuilt binary confirmed newest-first
+  index, active nav on all three pages, flat bell markup (hidden at zero
+  findings), and the dual-mode button. All acceptance criteria in plan.md
+  confirmed.
+- Caveat learned: `pkill -f "tasktracker serve --port N"` matches the calling
+  shell's own cmdline and kills it — use a pidfile for the temp server.
+- Follow-up for the user: the long-running `:9090` server still runs the old
+  binary in memory; restart it to pick up this UI.

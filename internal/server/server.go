@@ -9,14 +9,16 @@ import (
 	"log/slog"
 	"net/http"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
-	"tasktracker/internal/docs"
-	"tasktracker/internal/model"
-	"tasktracker/internal/opencode"
-	"tasktracker/internal/store"
-	"tasktracker/internal/terminal"
+	"lessmess/internal/docs"
+	"lessmess/internal/model"
+	"lessmess/internal/opencode"
+	"lessmess/internal/store"
+	"lessmess/internal/terminal"
 )
 
 // Server routes requests to the store.
@@ -41,11 +43,14 @@ type Server struct {
 
 // New builds the route table.
 func New(st *store.Store) *Server {
+	if err := store.MigrateStateDir(st.Dir); err != nil {
+		slog.Warn("state dir migration skipped", "err", err)
+	}
 	s := &Server{st: st, rend: newRenderer(), term: terminal.NewManager()}
 	s.SpawnCommand = func(sessionID string) (string, []string) {
 		return "opencode2", []string{"--session", sessionID}
 	}
-	m, err := loadMapping(filepath.Join(st.Dir, ".tasktracker", "sessions.json"))
+	m, err := loadMapping(filepath.Join(st.Dir, store.StateDirName, "sessions.json"))
 	s.sessions, s.mapErr = m, err
 
 	if cfg, err := docs.LoadConfig(st.Dir); err != nil {
@@ -82,6 +87,9 @@ func New(st *store.Store) *Server {
 	mux.HandleFunc("DELETE /changes/{id}/sessions/{sessionID}", s.unlinkChangeSession)
 	mux.HandleFunc("GET /api/discussions", s.listDiscussions)
 	mux.HandleFunc("DELETE /api/discussions/{sessionID}", s.unlinkDiscussion)
+	mux.HandleFunc("GET /api/git/status", s.gitStatusAPI)
+	mux.HandleFunc("POST /api/git/commit", s.commitAll)
+	mux.HandleFunc("GET /api/git/commit-status", s.commitStatus)
 	mux.HandleFunc("POST /docs/refresh", s.docsRefresh)
 	mux.HandleFunc("GET /explorer", s.explorer)
 	mux.HandleFunc("GET /explorer/tree", s.explorerTree)
@@ -173,11 +181,43 @@ func (s *Server) index(w http.ResponseWriter, r *http.Request) {
 		}
 		rows = append(rows, sum)
 	}
+	// Newest change first: date prefixes compare lexicographically, but the
+	// counter is unpadded ("2026-09-12-9" > "2026-09-12-12" as strings), so
+	// compare it numerically.
+	sort.Slice(rows, func(i, j int) bool { return changeIDLess(rows[j].ID, rows[i].ID) })
 	if wantsHTML(r) {
-		s.rend.render(w, s.rend.index, "layout", pageData{Title: "changes", Page: "index", Data: indexView{Changes: rows}})
+		view := indexView{Changes: rows}
+		if gs := gitStatus(s.st.Dir); gs.Repo {
+			view.GitRepo = true
+			view.GitDirty = len(gs.Changes) > 0
+		}
+		s.rend.render(w, s.rend.index, "layout", pageData{Title: "changes", Page: "index", Data: view})
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"changes": rows})
+}
+
+// changeIDLess orders change IDs chronologically: the YYYY-MM-DD prefix
+// compares lexicographically and the unpadded counter numerically.
+func changeIDLess(a, b string) bool {
+	ad, an := splitChangeID(a)
+	bd, bn := splitChangeID(b)
+	if ad != bd {
+		return ad < bd
+	}
+	return an < bn
+}
+
+func splitChangeID(id string) (string, int) {
+	i := strings.LastIndex(id, "-")
+	if i < 0 {
+		return id, 0
+	}
+	n, err := strconv.Atoi(id[i+1:])
+	if err != nil {
+		return id, 0
+	}
+	return id[:i], n
 }
 
 type boardResponse struct {

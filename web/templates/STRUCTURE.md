@@ -3,7 +3,7 @@
 
 <!-- tasktracker-meta: refreshed=2026-09-12 source=manual tree=913f7226500c -->
 
-Go html/template files rendering the tasktracker web UI.
+Go html/template files rendering the lessmess web UI.
 
 ## Entries
 

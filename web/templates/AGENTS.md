@@ -1,7 +1,7 @@
 # web/templates
 
 <!-- tasktracker:begin -->
-- Purpose: Go `html/template` sources for the tasktracker web UI; each file defines named templates rather than serving standalone pages.
+- Purpose: Go `html/template` sources for the lessmess web UI; each file defines named templates rather than serving standalone pages.
 - `layout.html` defines the base `layout` shell and renders the `content` template; page templates (`index.html`, `board.html`) only define `content`.
 - `partials.html` holds shared fragments (`boardFragment`, `taskDetail`, `planDetail`, `banner`) pulled in via `{{template ...}}`, often for htmx-swapped partial responses.
 - Conventions: server data lives under `.Data`, htmx attributes (`hx-get`, `hx-post`, `hx-target`) drive interactivity, and custom funcs like `statusClass`, `base`, and `markdown` are registered by the Go renderer.
@@ -16,4 +16,7 @@
 - (2026-09-12-8) Each tree `<details>` carries `data-rel` so a tree refresh can restore which nodes were open; the `.explorer-chat` button is no longer in tree summaries (removed in 2026-09-12-11), so clicking a row only selects it.
 - (2026-09-12-11) The explorer page is a split shell: `#explorer-tree` holds the dirs-only tree (each `<summary>` carries `hx-get="/explorer/detail?dir={{.Rel}}"` targeting `#explorer-detail`) and `#explorer-detail` starts with root's server-rendered `explorerDetail`; the tree renders no purposes, files, or chat buttons.
 - (2026-09-12-9) `layout.html`'s header carries the docs bell (`#notif-bell` plus `#notif-badge`, hidden until findings exist) and the `#notif-modal` containing `#notif-list`, `#docs-refresh-btn`, and `#notif-refresh-status`; its z-index sits below the terminal overlay, and the shared `banner` partial is now rendered only for `changes/` violations.
+- (2026-09-12-12) `layout.html`'s header is now `brand | .topnav (Changes `/`, Explorer `/explorer`) | #notif-bell | #theme-toggle`; the active item gets `class="active"` from `{{if}}` comparisons on `.Page` (`index`/`board` → Changes, `explorer` → Explorer), the bell is an inline stroke SVG inside `#notif-bell` with `#notif-badge` kept as-is, and the old `.crumb` span/rule were removed (`.Title` still feeds `<title>`).
+- (2026-09-12-12) `board.html` leads `.board-head` with `<button class="btn-accent" id="continue-session-btn">Continue session</button>`; `app.js` fetches the change's sessions on load, flips the label between "Continue session" and "Start session", and reuses the existing `openTerminal`/`POST /changes/{id}/sessions` paths.
+- (2026-09-12-14) `layout.html` is now branded lessmess in `<title>` and its head links `icon.svg`, `favicon.ico`, and `apple-touch-icon.png`; the header `.brand` and the terminal `.terminal-head` both render the 28px `icon.svg` (`aria-label="lessmess home"` / decorative), and the `#terminal-session` chip was removed.
 <!-- tasktracker:end -->

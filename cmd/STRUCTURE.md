@@ -1,7 +1,7 @@
 <!-- tasktracker:begin -->
 # Structure: cmd
 
-<!-- tasktracker-meta: refreshed=2026-09-12 source=seed tree=190cbe486eaf -->
+<!-- tasktracker-meta: refreshed=2026-09-12 source=manual tree=b04dd4854909 -->
 
 Go command entrypoints, with one subdirectory per built program.
 
@@ -9,5 +9,5 @@ Go command entrypoints, with one subdirectory per built program.
 
 | Entry | Purpose |
 | --- | --- |
-| `tasktracker/` | Command-line entrypoint for the tasktracker kanban server and changes/ workflow tooling. |
+| `lessmess/` | Command-line entrypoint for the lessmess kanban server and changes/ workflow tooling. |
 <!-- tasktracker:end -->

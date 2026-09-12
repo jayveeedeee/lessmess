@@ -9,12 +9,12 @@ import (
 	"strings"
 	"testing"
 
-	"tasktracker/internal/opencode"
+	"lessmess/internal/opencode"
 )
 
 func TestMappingUnassigned(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, ".tasktracker", "sessions.json")
+	path := filepath.Join(dir, ".lessmess", "sessions.json")
 	m, _ := loadMapping(path)
 
 	e := SessionEntry{Session: "ses_d", Title: "disc", Created: "2026-09-12T10:00:00Z"}
@@ -46,7 +46,7 @@ func TestMappingUnassigned(t *testing.T) {
 
 func TestMappingCRUD(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, ".tasktracker", "sessions.json")
+	path := filepath.Join(dir, ".lessmess", "sessions.json")
 
 	m, err := loadMapping(path)
 	if err != nil {
@@ -96,7 +96,7 @@ func TestMappingCorrupt(t *testing.T) {
 
 func TestMappingChangeOf(t *testing.T) {
 	dir := t.TempDir()
-	m, _ := loadMapping(filepath.Join(dir, ".tasktracker", "sessions.json"))
+	m, _ := loadMapping(filepath.Join(dir, ".lessmess", "sessions.json"))
 	m.addUnassigned(SessionEntry{Session: "ses_d", Title: "d", Created: "x"})
 	m.add("2026-09-10-0", SessionEntry{Session: "ses_a", Title: "a", Created: "x"})
 
@@ -296,7 +296,7 @@ func TestMappingPathUsesToolingDir(t *testing.T) {
 	st, dir := fixtureStore(t)
 	s := New(st)
 	t.Cleanup(s.Close)
-	if !strings.HasSuffix(s.sessions.path, filepath.Join(".tasktracker", "sessions.json")) {
+	if !strings.HasSuffix(s.sessions.path, filepath.Join(".lessmess", "sessions.json")) {
 		t.Fatalf("path = %s", s.sessions.path)
 	}
 	if !strings.HasPrefix(s.sessions.path, dir) {

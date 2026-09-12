@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"tasktracker/internal/model"
+	"lessmess/internal/model"
 )
 
 // Change is one entry of the changes/ tree.

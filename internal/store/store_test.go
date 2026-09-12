@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"tasktracker/internal/model"
+	"lessmess/internal/model"
 )
 
 // writeFixture builds a minimal valid changes/ tree in dir.
@@ -380,6 +380,45 @@ func TestWatchEvent(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("no fs event within 5s")
+	}
+}
+
+func TestWatchIgnoresChmod(t *testing.T) {
+	s, dir := openFixture(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	if err := s.Watch(ctx); err != nil {
+		t.Fatalf("Watch: %v", err)
+	}
+	ch := s.Subscribe()
+	// Attribute-only touches (chmod, and atime updates from readers such as
+	// git status, which surface as Chmod on macOS) must not notify —
+	// otherwise read-heavy scans retrigger clients forever.
+	p := filepath.Join(dir, "changes", "2026-09-10-0", "tasks", "00-first.md")
+	if err := os.Chmod(p, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case ev := <-ch:
+		t.Fatalf("chmod produced unexpected %q event", ev.Kind)
+	case <-time.After(1 * time.Second):
+	}
+	// A real content write still notifies.
+	f, err := os.OpenFile(p, os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString("\nreal edit\n"); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+	select {
+	case ev := <-ch:
+		if ev.Kind != "fs" {
+			t.Fatalf("event kind = %q", ev.Kind)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("no fs event within 5s after real write")
 	}
 }
 

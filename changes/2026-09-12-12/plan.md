@@ -41,16 +41,20 @@ after daily use:
 ## Target behavior
 
 - Header layout: brand | nav group (**Changes** `/`, **Explorer** `/explorer`)
-  | spacer | crumb | bell | theme toggle. Both nav items are always rendered;
+  | spacer | bell | theme toggle. Both nav items are always rendered;
   the item matching the current page gets accent-orange text plus a 2px orange
   underline. The active class is applied server-side from `pageData.Page`
-  (`index` and `board` both activate **Changes**); no client JS involved.
+  (`index` and `board` both activate **Changes**); no client JS involved. The
+  old `.crumb` page-title text is removed: it duplicated the active menu item
+  (and the board page's `<h2>` change ID).
 - The bell is an inline stroke-style SVG using `currentColor` — flat,
   theme-aware, no new asset files. Badge positioning, click behavior, and
   `hidden` semantics are unchanged.
-- The index change list is sorted newest-first by change ID descending
-  (`YYYY-MM-DD-N` sorts lexicographically = chronologically), applied in the
-  handler so HTML and JSON agree.
+- The index change list is sorted newest-first by change ID, applied in the
+  handler so HTML and JSON agree. IDs are `YYYY-MM-DD-N`: the date prefix
+  compares lexicographically, but the counter is unpadded
+  (`2026-09-12-9` > `2026-09-12-12` as strings), so it is compared
+  numerically.
 - The board header leads with an accent-filled button, clearly more prominent
   than the ghost buttons:
   - change has sessions → **"Continue session"**: one click opens the
@@ -61,7 +65,8 @@ after daily use:
 ## Scope
 
 - `web/templates/layout.html` — restructure the header into a nav group;
-  replace the bell emoji with an inline SVG bell.
+  replace the bell emoji with an inline SVG bell; remove the obsolete `.crumb`
+  page-title span.
 - `web/static/app.css` — nav styles + `.active` underline state; bell sizing/
   centering that preserves `hidden`; prominent-button styling if `btn-accent`
   needs a tweak.
@@ -99,7 +104,9 @@ after daily use:
   is acceptable and avoids mapping schema churn.
 - **Sort by change ID descending** in the handler rather than reversing ledger
   row order: explicit, and robust if the append-mostly ledger is ever edited
-  out of order.
+  out of order. The comparison parses the unpadded numeric suffix — a plain
+  lexicographic descending sort breaks once a date has 10+ changes
+  (`2026-09-12-9` vs `2026-09-12-12`).
 - **Inline SVG for the bell** rather than a unicode glyph or a static file:
   renders identically on every platform, inherits theme color via
   `currentColor`, and keeps `web.go`'s embed list untouched.
@@ -127,3 +134,4 @@ after daily use:
 3. [NAV-02](tasks/02-newest-change-first.md) — Newest change at top of index
 4. [NAV-03](tasks/03-continue-session-button.md) — Prominent Continue/Start session button
 5. [NAV-04](tasks/04-verify-and-docs.md) — End-to-end verification and README update
+6. [NAV-05](tasks/05-remove-header-crumb.md) — Remove obsolete header crumb

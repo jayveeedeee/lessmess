@@ -12,9 +12,9 @@ import (
 
 	"github.com/yuin/goldmark"
 
-	"tasktracker/internal/model"
-	"tasktracker/internal/store"
-	"tasktracker/web"
+	"lessmess/internal/model"
+	"lessmess/internal/store"
+	"lessmess/web"
 )
 
 // --- templates ---
@@ -95,6 +95,10 @@ type pageData struct {
 
 type indexView struct {
 	Changes []changeSummary
+	// GitRepo/GitDirty drive the Commit all button: hidden outside a git
+	// repo, disabled when the tree is clean.
+	GitRepo  bool
+	GitDirty bool
 }
 
 type tmplColumn struct {

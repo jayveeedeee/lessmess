@@ -55,6 +55,12 @@ func (s *Store) Watch(ctx context.Context) error {
 				if !ok {
 					return
 				}
+				// Attribute-only events (atime updates from readers like
+				// git status, or chmod) are not content changes; reacting
+				// to them makes read-heavy scans retrigger the UI forever.
+				if ev.Op&^ fsnotify.Chmod == 0 {
+					continue
+				}
 				// Ignore our own atomic-write temp files.
 				if strings.HasPrefix(filepath.Base(ev.Name), ".tt-") {
 					continue

@@ -4,7 +4,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"tasktracker/internal/model"
+	"lessmess/internal/model"
 )
 
 // DocsContent is one directory's docs content for UI consumption: the

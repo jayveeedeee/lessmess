@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"tasktracker/internal/docs"
-	"tasktracker/internal/model"
-	"tasktracker/internal/opencode"
+	"lessmess/internal/docs"
+	"lessmess/internal/model"
+	"lessmess/internal/opencode"
 )
 
 // fakeSessionClient simulates the opencode service; onPrompt stands in for

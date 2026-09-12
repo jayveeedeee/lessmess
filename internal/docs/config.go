@@ -37,7 +37,7 @@ type Config struct {
 	exc []pattern
 }
 
-// DefaultConfig returns the config written by `tasktracker init`: cover
+// DefaultConfig returns the config written by `lessmess init`: cover
 // everything subject to the built-in exclusions.
 func DefaultConfig() *Config {
 	c := &Config{Include: []string{"**"}, Exclude: []string{}}
@@ -96,7 +96,7 @@ func compileAll(raws []string) ([]pattern, error) {
 // OS-separated, "." for the root) gets the doc pair.
 //
 // The root is always covered when a config exists. Hidden directories (any
-// path segment starting with ".", which includes .git and .tasktracker) and
+// path segment starting with ".", which includes .git and .lessmess) and
 // the changes/ tree are never covered: changes/ holds only canonical
 // workflow data per AGENTS.md.
 func (c *Config) Covered(rel string) bool {

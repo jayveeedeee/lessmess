@@ -12,8 +12,8 @@ import (
 	"sync"
 	"time"
 
-	"tasktracker/internal/model"
-	"tasktracker/internal/store"
+	"lessmess/internal/model"
+	"lessmess/internal/store"
 )
 
 // SessionEntry links one opencode session to a change.
@@ -23,7 +23,7 @@ type SessionEntry struct {
 	Created string `json:"created"`
 }
 
-// mapping is the .tasktracker/sessions.json file (tooling state, gitignored).
+// mapping is the .lessmess/sessions.json file (tooling state, gitignored).
 type mapping struct {
 	path string
 	mu   sync.Mutex

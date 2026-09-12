@@ -1,7 +1,7 @@
 <!-- tasktracker:begin -->
 # Structure: internal/server
 
-<!-- tasktracker-meta: refreshed=2026-09-12 source=manual tree=80ece15f104e -->
+<!-- tasktracker-meta: refreshed=2026-09-13 source=manual tree=23e07ff672e2 -->
 
 HTTP server over the store: HTML pages, JSON endpoints, SSE updates, session mapping, PTY terminal, and the docs refresh queue
 
@@ -19,6 +19,8 @@ HTTP server over the store: HTML pages, JSON endpoints, SSE updates, session map
 | `docswatch_test.go` | Tests for watcher events, temp and hidden ignores, and resync. |
 | `explorer.go` | Explorer page, tree fragment, and directory-scoped chat endpoints. |
 | `explorer_test.go` | Tests for the explorer view, tree rendering, and chat endpoint. |
+| `gitcommit.go` | Read-only git status helper plus repo-wide commit-all endpoints and prompt. |
+| `gitcommit_test.go` | Tests for git status parsing and the repo-wide commit-all flow. |
 | `lifecycle.go` | Close, reopen, commit, and commit-status handlers |
 | `lifecycle_test.go` | Tests for close/reopen and commit endpoints |
 | `mapping.go` | Opencode session-to-change mapping and endpoints |

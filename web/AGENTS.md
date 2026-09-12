@@ -1,7 +1,7 @@
 # web
 
 <!-- tasktracker:begin -->
-- Purpose: Go package holding the tasktracker web UI's embedded assets — `templates/` (html/template sources) and `static/` (CSS, JS, vendored libraries).
+- Purpose: Go package holding the lessmess web UI's embedded assets — `templates/` (html/template sources) and `static/` (CSS, JS, vendored libraries).
 - `web.go` is the whole package: it exposes `FS embed.FS` via `//go:embed templates static`, with no runtime logic of its own.
 - Static assets include app CSS/JS plus vendored htmx, Sortable, and xterm libraries; see `static/VENDOR.md` before updating them.
 - Gotcha: files must exist at build time; adding a new top-level asset directory or file requires updating the `//go:embed` list in `web.go`.
@@ -11,4 +11,7 @@
 - (2026-09-12-8) The explorer's client behavior lives in `static/app.js` (a `docs` SSE listener that refreshes `#explorer-tree` and restores open nodes, plus a delegated `.explorer-chat` click that opens the created session in the terminal overlay) and its tree styling in `static/app.css`; both are under docs-excluded `web/static`.
 - (2026-09-12-11) The explorer is now master/detail: `static/app.js` tracks the selected directory, restores open nodes plus the selection after a tree swap, and re-fetches `#explorer-detail`; tree fragments injected via `innerHTML` must be passed to `htmx.process` so the new `hx-get` summaries are wired, and the chat button moved to the detail header so its propagation guard runs in the capture phase.
 - (2026-09-12-9) The docs notification bell/badge and findings modal are client-rendered in `static/app.js`: `checkValidation` caches docs findings (the banner is now violations-only), the badge re-renders on each check and on the `tt:docs-event` custom event, and the modal's refresh button posts `/docs/refresh` with a busy/result state that re-enables on the next docs SSE event, with styling in `static/app.css` (both under docs-excluded `web/static`).
+- (2026-09-12-12) The shared header is now a `Changes`/`Explorer` topnav whose `.active` orange text+underline is applied server-side from `pageData.Page`, and the docs bell is a flat inline `currentColor` SVG (both `static/app.css`); the board's one-click resume tracks the last-opened session per change in `localStorage` as `tt-last-session:<id>` and falls back to the newest created entry (`static/app.js`). All under docs-excluded `web/static`.
+- (2026-09-12-14) The UI is branded lessmess and carries a new identity: `static/icon.svg` (white "lm" on the `#e8641f` accent) plus generated `icon-512.png`, `favicon.ico` (16/32/48), and `apple-touch-icon.png`, all under docs-excluded `web/static` and linked from `layout.html`.
+- (2026-09-12-15) The `Test` status pill uses `--st-test-bg`/`--st-test-fg` in both the dark and light blocks of `static/app.css` plus a `.status-test` rule; the `statusClass` helper already maps `Test` to `status-test`, and the close-change confirm in `static/app.js` intentionally still warns while `Test` tasks remain unpromoted.
 <!-- tasktracker:end -->

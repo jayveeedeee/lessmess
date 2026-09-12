@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"tasktracker/internal/docs"
+	"lessmess/internal/docs"
 )
 
 // touchedDocsDirs computes the covered directories a change touched, from the

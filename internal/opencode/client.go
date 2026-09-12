@@ -1,5 +1,5 @@
 // Package opencode is a minimal client for the opencode background
-// service HTTP API, covering the endpoints tasktracker needs.
+// service HTTP API, covering the endpoints lessmess needs.
 package opencode
 
 import (

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"tasktracker/internal/docs"
+	"lessmess/internal/docs"
 )
 
 func watcherRepo(t *testing.T) (string, *docs.Config) {

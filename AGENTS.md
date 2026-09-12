@@ -206,7 +206,8 @@ Use these task statuses exactly:
 | Not started | Work has not begun. |
 | In progress | Implementation or verification is actively underway. |
 | Blocked | Work cannot continue until a documented dependency, decision, approval, or external condition is resolved. |
-| Done | All verification and completion criteria in the task file have passed. |
+| Test | Implementation and verification are complete; awaiting user acceptance before Done. |
+| Done | Accepted by the user; agents set this only on explicit user instruction. |
 | Cancelled | The task was intentionally removed from scope and the reason is recorded. |
 
 Recommended overall statuses are `Planned`, `In progress`, `Blocked`, `Done`, and `Cancelled`.
@@ -218,12 +219,13 @@ Recommended overall statuses are `Planned`, `In progress`, `Blocked`, `Done`, an
 3. Before modifying implementation files for a task, change that task to `In progress`, update its date, and set the overall status to `In progress`.
 4. Record material findings, decisions, scope changes, and blockers in the relevant task notes. Summarize important decisions in the ledger decision log.
 5. When a blocker is resolved, return the task to `In progress` and record the resolution.
-6. Mark a task `Done` only after its documented verification and completion criteria pass. Record concise verification evidence.
-7. If verification fails, keep the task `In progress` or mark it `Blocked`; do not mark it `Done` based solely on implementation being written.
-8. Only the user closes a change. When every non-cancelled task is `Done`, all change-level acceptance criteria pass, and no required work remains, agents leave the overall status `In progress` and report the change ready for close-out. Agents must never set the overall status to `Done` themselves; the user closes the change explicitly (via the board's Close button or a direct instruction).
-9. The user may reopen a closed change (`Done` → `In progress`); agents then resume work from the ledger state. Close and reopen transitions are user actions and are recorded in both ledgers.
-10. When cancelling a task or change, record the reason and any resulting scope adjustment.
-11. Update ledger state in the same working change as the implementation it describes so status does not drift from the repository.
+6. Mark a task `Test` only after its documented verification and completion criteria pass. Record concise verification evidence. `Test` means the agent considers the task complete; it awaits user acceptance.
+7. If verification fails, keep the task `In progress` or mark it `Blocked`; do not mark it `Test` based solely on implementation being written.
+8. Only the user moves a task to `Done` — by dragging the card on the board or by explicitly instructing the agent. Agents must never set a task to `Done` on their own initiative, even when all criteria pass.
+9. Only the user closes a change. When every non-cancelled task is `Test` or `Done`, all change-level acceptance criteria pass, and no required work remains, agents leave the overall status `In progress` and report the change ready for close-out. Agents must never set the overall status to `Done` themselves; the user closes the change explicitly (via the board's Close button or a direct instruction).
+10. The user may reopen a closed change (`Done` → `In progress`); agents then resume work from the ledger state. Close and reopen transitions are user actions and are recorded in both ledgers.
+11. When cancelling a task or change, record the reason and any resulting scope adjustment.
+12. Update ledger state in the same working change as the implementation it describes so status does not drift from the repository.
 
 ### Dependencies and execution order
 
@@ -254,11 +256,11 @@ The workflow rules are machine-checkable. Tooling (validators, servers) must enf
 
 ### Tooling state
 
-Tools (servers, validators, UIs) keep their own state in a `.tasktracker/` directory at the repository root, which must be gitignored. Tooling state must never live inside `changes/`; that tree contains only canonical, human/agent-authored data.
+Tools (servers, validators, UIs) keep their own state in a `.lessmess/` directory at the repository root, which must be gitignored. Tooling state must never live inside `changes/`; that tree contains only canonical, human/agent-authored data.
 
 ### Repository docs (STRUCTURE.md and per-folder AGENTS.md)
 
-tasktracker maintains agent-facing docs in every covered folder (coverage is set by the committed `agentsdocs.json`; hidden dirs and `changes/` are never covered):
+lessmess maintains agent-facing docs in every covered folder (coverage is set by the committed `agentsdocs.json`; hidden dirs and `changes/` are never covered):
 
 - `STRUCTURE.md` is a machine-owned map of the folder's entries, their purposes, and child rollups, plus freshness metadata. It is regenerated wholesale. Never hand-edit inside its `tasktracker:begin` / `tasktracker:end` HTML-comment markers.
 - `AGENTS.md` (in a covered folder) holds curated learnings and instructions for that area. Content outside the markers is human/agent-authored and preserved byte-for-byte; the marker-guarded auto section is machine-maintained (new learnings cite their source change ID, `seed`, or `manual`).
@@ -271,31 +273,38 @@ When all tasks are complete, before reporting a change ready for close-out:
 
 1. Run the tests and checks documented by each task.
 2. Confirm the change-level acceptance criteria in `plan.md`.
-3. Update every completed task row and record verification evidence.
+3. Move every completed task to `Test` (unless the user has already accepted it as `Done`) and record verification evidence.
 4. Update the overall ledger's last-updated date, leaving the status `In progress` (only the user sets `Done`).
 5. Ensure `plan.md`, `ledger.md`, and task files agree about scope and completion.
-6. Report the change directory, implemented outcome, verification performed, and any remaining risks or follow-up tasks — and state that the change is ready for the user to close.
+6. Report the change directory, implemented outcome, verification performed, and any remaining risks or follow-up tasks — and state that the change is ready for the user to review (`Test` → `Done`) and close.
 
 If implementation stops before completion, leave the ledger in the accurate current state and make the next executable step clear in the relevant task notes.
 
 <!-- tasktracker:begin -->
 ## Learnings
 
-- (seed) Root holds only entry points and docs: `cmd/` the CLI, `internal/` the packages, `web/` the embedded assets; `changes/` is the canonical workflow tree and `.tasktracker/` is gitignored tooling state.
-- (seed) Build with `CGO_ENABLED=0 go build -o tasktracker ./cmd/tasktracker`; verify with `go vet ./... && go test ./...`; check workflow data with `tasktracker validate`.
+- (seed) Root holds only entry points and docs: `cmd/` the CLI, `internal/` the packages, `web/` the embedded assets; `changes/` is the canonical workflow tree and `.lessmess/` is gitignored tooling state.
+- (seed) Build with `CGO_ENABLED=0 go build -o lessmess ./cmd/lessmess`; verify with `go vet ./... && go test ./...`; check workflow data with `lessmess validate`.
 - (seed) Covered folders carry a doc pair: `STRUCTURE.md` (machine-owned inside its markers) and `AGENTS.md` (curated learnings, marker-guarded auto section). Read them when entering a folder; keep them accurate when changing that area.
 - (seed) The workflow text of this file (everything above the markers) is embedded in the binary at `internal/docs/assets/workflow_agents.md` (go:embed); a drift test pins them — update both together (`awk '/^<!-- tasktracker:begin/{exit} {print}' AGENTS.md > internal/docs/assets/workflow_agents.md`).
 - (manual) CLI subcommands are `serve`, `validate`, `init`, and `docs seed`; `--dir` selects the repository root and one process serves one repository.
 - (manual) `agentsdocs.json` controls docs coverage with include and exclude globs; `web/static` is the only exclusion, and hidden dirs plus `changes/` are never covered, so the whole docs subsystem is inert without that file.
 - (manual) Root PNGs are ad-hoc screenshots, not build inputs: `overlap.png` and `mine.png` are gitignored, while `ui.png` is committed.
 - (manual) `opencode.json` pre-approves unattended agent sessions with allow-all inside the project and denies for external directories, `.env` reads, and `git push`.
-- (2026-09-12-7) The docs subsystem is opt-in via a committed root `agentsdocs.json`; closing a change enqueues one serialized gardener job (`.tasktracker/docs-queue.json`) for its touched covered dirs, and the server's `POST /docs/refresh` endpoint reconciles dirs left stale when the opencode service was unavailable.
-- (2026-09-12-7) `tasktracker init` bootstraps a workflow-ready repo (root `AGENTS.md` workflow text, `changes/` skeleton, `.gitignore`, starter `opencode.json`, default `agentsdocs.json`) merge-safely and idempotently; `docs seed` generates the first-pass doc pairs bottom-up and is resumable via `.tasktracker/docs-seed.json`.
+- (2026-09-12-7) The docs subsystem is opt-in via a committed root `agentsdocs.json`; closing a change enqueues one serialized gardener job (`.lessmess/docs-queue.json`) for its touched covered dirs, and the server's `POST /docs/refresh` endpoint reconciles dirs left stale when the opencode service was unavailable.
+- (2026-09-12-7) `lessmess init` bootstraps a workflow-ready repo (root `AGENTS.md` workflow text, `changes/` skeleton, `.gitignore`, starter `opencode.json`, default `agentsdocs.json`) merge-safely and idempotently; `docs seed` generates the first-pass doc pairs bottom-up and is resumable via `.lessmess/docs-seed.json`.
 - (2026-09-12-8) `GET /explorer` renders the covered-directory tree straight from the docs system (each node's purpose and entry blurbs come from STRUCTURE.md) and adds a per-directory chat action; it is the UI dogfood of `STRUCTURE.md`/`AGENTS.md` content, so its value tracks docs quality.
 - (2026-09-12-8) The explorer is served by `internal/server/explorer.go` with a live-updating tree (`docs` events on the existing `/events` SSE stream) and tree/chat behavior in `web/static/app.js`; it degrades to guidance when the repo has no `agentsdocs.json`.
 - (2026-09-12-11) The explorer is a master/detail UI: a dirs-only navigation tree on the left and a reading pane on the right loaded per directory from `GET /explorer/detail?dir=<rel>`; selection is client-side state and the directory chat button now lives only in the detail-pane header.
 - (2026-09-12-9) Docs findings now surface in a header notification bell plus modal (hidden at zero, amber normally, red if any error finding) whose "Refresh stale docs" button posts `/docs/refresh`; the red banner is reserved for `changes/` violations. The endpoint enqueues one manual gardener job for the union of queue-stale and hash-stale dirs (empty union reports nothing to refresh), and docs SSE events re-check findings and the explorer tree live.
-- (manual) The root `tasktracker` entry is the local compiled binary from `cmd/tasktracker` (gitignored build output), not a source directory; rebuild it with the documented `go build` command when testing CLI behavior.
+- (manual) The root `lessmess` entry is the local compiled binary from `cmd/lessmess` (gitignored build output), not a source directory; rebuild it with the documented `go build` command when testing CLI behavior.
 - (manual) `README.md` is the human-facing overview of the same CLI, board, and docs system; update it when user-visible commands, endpoints, or workflows change.
+- (manual) The project was renamed from tasktracker to lessmess: the module is `lessmess`, the binary builds from `cmd/lessmess`, and tooling state lives in `.lessmess/`; startup calls `store.MigrateStateDir` to rename a legacy `.tasktracker/` dir when `.lessmess/` does not yet exist.
 - (manual) Root `changes/ledger.md` is the change-level index only: each row links to that change's `plan.md`, and per-task status lives solely in the change's own `ledger.md`.
+- (2026-09-12-12) `README.md` documents the board UI affordances introduced here: the header Changes/Explorer menu with a server-applied active-route highlight, the newest-first change list, and the board's one-click Continue/Start session button.
+- (2026-09-12-14) The rename is Tier 1+2 only: module `lessmess`, binary at `cmd/lessmess`, and `.lessmess/` tooling state; the doc-marker syntax (`tasktracker:begin`/`tasktracker:end`), `tt-` frontend prefixes, and the repository folder name stay unchanged.
+- (2026-09-12-14) State migrates automatically: `store.MigrateStateDir` renames a legacy `.tasktracker/` to `.lessmess/` only when the new dir is absent (no merge, no delete), and is called by `serve`, `validate`, and `docs seed` before state access plus defensively in `server.New`.
+- (2026-09-12-14) lessmess's visual identity is `web/static/icon.svg` (white "lm" on the `#e8641f` accent) with generated rasters `icon-512.png`, `favicon.ico` (16/32/48), and `apple-touch-icon.png`; `layout.html` links the favicon set and the header renders the icon as the brand.
+- (2026-09-12-15) The workflow's task vocabulary is now six statuses: `Test` sits between `Blocked` and `Done`, agents stop at `Test` once verification passes, `Done` is user-gated (set only on explicit user instruction or a manual card drag), and close-out readiness is all non-cancelled tasks `Test` or `Done`.
+- (manual) Committing is available two ways: per change from the board and repo-wide via the index page's Commit all flow (`GET /api/git/status` for preview, `POST /api/git/commit` to spawn the session), both documented in `README.md`; the server only reads git for preview and delegates the commit to opencode.
 <!-- tasktracker:end -->

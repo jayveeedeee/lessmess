@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"tasktracker/internal/model"
+	"lessmess/internal/model"
 )
 
 // Placeholder marks a purpose or blurb that still needs a real description,

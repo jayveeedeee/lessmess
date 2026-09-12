@@ -9,7 +9,7 @@ import (
 
 	"github.com/fsnotify/fsnotify"
 
-	"tasktracker/internal/docs"
+	"lessmess/internal/docs"
 )
 
 // docsWatcher watches the covered directories with fsnotify and emits
@@ -118,6 +118,11 @@ func (w *docsWatcher) loop() {
 		case ev, ok := <-w.fsw.Events:
 			if !ok {
 				return
+			}
+			// Attribute-only events (atime updates from readers like git
+			// status, or chmod) are not content changes; ignore them.
+			if ev.Op&^ fsnotify.Chmod == 0 {
+				continue
 			}
 			if w.ignore(ev.Name) {
 				continue

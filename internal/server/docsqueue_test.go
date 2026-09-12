@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"tasktracker/internal/docs"
-	"tasktracker/internal/model"
+	"lessmess/internal/docs"
+	"lessmess/internal/model"
 )
 
 // fakeRunner records jobs and can be told to fail.
@@ -160,7 +160,7 @@ func TestCloseWithoutRunnerMarksStale(t *testing.T) {
 		t.Errorf("stale %v", got)
 	}
 	// State persisted.
-	data, err := os.ReadFile(filepath.Join(dir, ".tasktracker", "docs-queue.json"))
+	data, err := os.ReadFile(filepath.Join(dir, ".lessmess", "docs-queue.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

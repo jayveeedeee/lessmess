@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"tasktracker/internal/model"
+	"lessmess/internal/model"
 )
 
 func htmlGet(t *testing.T, h http.Handler, path string, hx bool) *httptest.ResponseRecorder {
@@ -45,7 +45,7 @@ func TestIndexHTML(t *testing.T) {
 		t.Fatalf("code = %d", w.Code)
 	}
 	body := w.Body.String()
-	for _, want := range []string{"<html", "tasktracker", "Fixture change", "/changes/2026-09-10-0", "htmx.min.js"} {
+	for _, want := range []string{"<html", "lessmess", "Fixture change", "/changes/2026-09-10-0", "htmx.min.js"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("index HTML missing %q", want)
 		}
@@ -59,7 +59,7 @@ func TestBoardHTML(t *testing.T) {
 		t.Fatalf("code = %d", w.Code)
 	}
 	body := w.Body.String()
-	for _, want := range []string{"Not started", "In progress", "Blocked", "Done", "Cancelled",
+	for _, want := range []string{"Not started", "In progress", "Blocked", "Test", "Done", "Cancelled",
 		"First", "Second", "data-task=\"FIX-00\"", `data-change="2026-09-10-0"`,
 		`sessions-btn`, `sessions-panel`, `terminal-overlay`, `xterm.min.js`} {
 		if !strings.Contains(body, want) {

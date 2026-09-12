@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"tasktracker/internal/model"
+	"lessmess/internal/model"
 )
 
 // Violation is one breach of the AGENTS.md validation contract.

@@ -2,6 +2,7 @@
 <section class="board-head">
   <h2>{{.Data.ID}}</h2>
   <span class="pill status-{{.Data.Overall | statusClass}}">{{.Data.Overall}}</span>
+  <button type="button" class="btn-accent" id="continue-session-btn">Continue session</button>
   <button type="button" class="btn-ghost"
           hx-get="/changes/{{.Data.ID}}/plan"
           hx-target="#detail"

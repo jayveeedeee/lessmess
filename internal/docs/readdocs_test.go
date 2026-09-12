@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"tasktracker/internal/model"
+	"lessmess/internal/model"
 )
 
 func TestDirDocs(t *testing.T) {

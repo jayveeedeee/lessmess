@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"tasktracker/internal/model"
+	"lessmess/internal/model"
 )
 
 // workflowAgents is the canonical change-management instruction set that
@@ -54,7 +54,7 @@ type InitAction struct {
 
 // Init bootstraps root as a workflow-ready repository: root AGENTS.md with
 // the canonical change-management instructions, the changes/ skeleton,
-// .gitignore covering .tasktracker/, a starter opencode.json, and the default
+// .gitignore covering .lessmess/, a starter opencode.json, and the default
 // agentsdocs.json. Git is not assumed. Every artifact is merge-safe —
 // existing content is never clobbered — so Init is idempotent.
 func Init(root string) ([]InitAction, error) {
@@ -120,7 +120,7 @@ func initLedger(root string) (InitAction, error) {
 	return a, err
 }
 
-// initGitignore ensures .gitignore ignores .tasktracker/. A missing file is
+// initGitignore ensures .gitignore ignores .lessmess/. A missing file is
 // created; an existing file gains one line; a file already covering it is
 // skipped.
 func initGitignore(root string) (InitAction, error) {
@@ -128,19 +128,19 @@ func initGitignore(root string) (InitAction, error) {
 	p := filepath.Join(root, ".gitignore")
 	existing, err := os.ReadFile(p)
 	if os.IsNotExist(err) {
-		err = writeInitFile(p, []byte(".tasktracker/\n"), &a, "created")
+		err = writeInitFile(p, []byte(".lessmess/\n"), &a, "created")
 		return a, err
 	}
 	if err != nil {
 		return a, err
 	}
 	for _, line := range strings.Split(string(existing), "\n") {
-		if strings.TrimSpace(line) == ".tasktracker" || strings.TrimSpace(line) == ".tasktracker/" {
+		if strings.TrimSpace(line) == ".lessmess" || strings.TrimSpace(line) == ".lessmess/" {
 			a.Action = "skipped"
 			return a, nil
 		}
 	}
-	merged := strings.TrimRight(string(existing), "\n") + "\n.tasktracker/\n"
+	merged := strings.TrimRight(string(existing), "\n") + "\n.lessmess/\n"
 	err = writeInitFile(p, []byte(merged), &a, "merged")
 	return a, err
 }

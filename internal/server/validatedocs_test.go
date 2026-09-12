@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"tasktracker/internal/docs"
+	"lessmess/internal/docs"
 )
 
 func TestValidateEndpointIncludesDocsFindings(t *testing.T) {

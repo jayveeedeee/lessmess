@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"tasktracker/internal/model"
+	"lessmess/internal/model"
 )
 
 // SeedOptions tunes a Seed run.
@@ -22,7 +22,7 @@ type SeedOptions struct {
 }
 
 // seedCursorPath is the resumable-seed state file (gitignored tooling state).
-const seedCursorPath = ".tasktracker/docs-seed.json"
+const seedCursorPath = ".lessmess/docs-seed.json"
 
 type seedCursor struct {
 	Summarized map[string]bool `json:"summarized"`

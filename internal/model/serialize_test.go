@@ -103,6 +103,39 @@ func TestMoveTaskNotFound(t *testing.T) {
 	}
 }
 
+func TestChangeLedgerMoveTaskToTest(t *testing.T) {
+	l, err := ParseChangeLedger("change_ledger.md", load(t, "testdata/change_ledger.md"))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if !StatusTest.Valid() {
+		t.Fatal("StatusTest must be a valid task status")
+	}
+	// Test must sit immediately before Done in the kanban column order.
+	ti, di := -1, -1
+	for i, s := range TaskStatusOrder {
+		switch s {
+		case StatusTest:
+			ti = i
+		case StatusDone:
+			di = i
+		}
+	}
+	if ti == -1 || di != ti+1 {
+		t.Fatalf("TaskStatusOrder = %v; want Test immediately before Done", TaskStatusOrder)
+	}
+	if err := l.MoveTask("KAN-04", StatusTest, 0, "2026-09-12"); err != nil {
+		t.Fatalf("move: %v", err)
+	}
+	l2, err := ParseChangeLedger("change_ledger.md", l.Content())
+	if err != nil {
+		t.Fatalf("reparse: %v", err)
+	}
+	if row := l2.Row("KAN-04"); row == nil || row.Status != StatusTest {
+		t.Fatalf("row = %+v", row)
+	}
+}
+
 func TestChangeLedgerAppendTaskRoundTrip(t *testing.T) {
 	orig := load(t, "testdata/change_ledger.md")
 	l, _ := ParseChangeLedger("change_ledger.md", orig)
@@ -183,6 +216,9 @@ func TestTemplatesRoundTrip(t *testing.T) {
 	}
 	if cl.ChangeID != "2026-09-12-0" || cl.Overall != OverallPlanned || len(cl.Rows) != 0 {
 		t.Errorf("cl = %+v rows=%d", cl, len(cl.Rows))
+	}
+	if !bytes.Contains(RenderChangeLedger("2026-09-12-0", "2026-09-12"), []byte("| Test |")) {
+		t.Error("ledger template must define the Test status")
 	}
 	if !bytes.Contains(RenderChangePlan("2026-09-12-0", "T", "2026-09-12"), []byte("[ledger.md](ledger.md)")) {
 		t.Error("plan template must link ledger.md")

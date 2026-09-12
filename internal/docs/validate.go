@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"sort"
 
-	"tasktracker/internal/model"
+	"lessmess/internal/model"
 )
 
 // Finding severities for docs-system checks.
@@ -67,7 +67,7 @@ func checkStructure(d *Dir, treeHash string) []Finding {
 	rel := joinRel(d.Rel, StructureFile)
 	data, err := os.ReadFile(filepath.Join(d.Abs, StructureFile))
 	if os.IsNotExist(err) {
-		return []Finding{{SeverityWarning, rel, "covered directory has no STRUCTURE.md (run 'tasktracker docs seed')"}}
+		return []Finding{{SeverityWarning, rel, "covered directory has no STRUCTURE.md (run 'lessmess docs seed')"}}
 	}
 	if err != nil {
 		return []Finding{{SeverityError, rel, err.Error()}}
@@ -86,7 +86,7 @@ func checkStructure(d *Dir, treeHash string) []Finding {
 	case meta == nil:
 		return []Finding{{SeverityWarning, rel, "freshness metadata missing"}}
 	case meta.TreeHash != treeHash:
-		return []Finding{{SeverityWarning, rel, "stale: tree changed since last refresh (close a change or run 'tasktracker docs refresh')"}}
+		return []Finding{{SeverityWarning, rel, "stale: tree changed since last refresh (close a change or run 'lessmess docs refresh')"}}
 	}
 	return nil
 }
@@ -96,7 +96,7 @@ func checkAgents(d *Dir) []Finding {
 	rel := joinRel(d.Rel, AgentsFile)
 	data, err := os.ReadFile(filepath.Join(d.Abs, AgentsFile))
 	if os.IsNotExist(err) {
-		return []Finding{{SeverityWarning, rel, "covered directory has no AGENTS.md (run 'tasktracker docs seed')"}}
+		return []Finding{{SeverityWarning, rel, "covered directory has no AGENTS.md (run 'lessmess docs seed')"}}
 	}
 	if err != nil {
 		return []Finding{{SeverityError, rel, err.Error()}}

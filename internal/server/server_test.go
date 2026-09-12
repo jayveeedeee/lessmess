@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"tasktracker/internal/model"
-	"tasktracker/internal/store"
+	"lessmess/internal/model"
+	"lessmess/internal/store"
 )
 
 // fixtureStore opens a store on a tempdir fixture repo.
@@ -87,6 +87,54 @@ func TestIndex(t *testing.T) {
 	}
 }
 
+func TestIndexNewestFirst(t *testing.T) {
+	st, dir := fixtureStore(t)
+	addChange := func(id, title string) {
+		date := id[:strings.LastIndex(id, "-")]
+		cdir := filepath.Join(dir, "changes", id)
+		if err := os.MkdirAll(filepath.Join(cdir, "tasks"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(cdir, "plan.md"), model.RenderChangePlan(id, title, date), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		l, _ := model.ParseChangeLedger("l", model.RenderChangeLedger(id, date))
+		l.SetOverall(model.OverallInProgress, date)
+		if err := os.WriteFile(filepath.Join(cdir, "ledger.md"), l.Content(), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		root := mustRead(t, filepath.Join(dir, "changes", "ledger.md"))
+		row := "| [" + id + "](" + id + "/plan.md) | " + title + " | NEW | — | In progress | " + date + " | " + date + " |\n"
+		if err := os.WriteFile(filepath.Join(dir, "changes", "ledger.md"), append(root, []byte(row)...), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	addChange("2026-09-11-0", "Newer change")
+	addChange("2026-09-11-2", "Two")
+	addChange("2026-09-11-10", "Ten") // unpadded counter must sort numerically
+	st.Reload()
+
+	w := do(t, New(st).Handler(), "GET", "/", "")
+	if w.Code != 200 {
+		t.Fatalf("code = %d body = %s", w.Code, w.Body)
+	}
+	var resp struct {
+		Changes []map[string]any `json:"changes"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"2026-09-11-10", "2026-09-11-2", "2026-09-11-0", "2026-09-10-0"}
+	if len(resp.Changes) != len(want) {
+		t.Fatalf("changes = %v, want %v", resp.Changes, want)
+	}
+	for i, id := range want {
+		if resp.Changes[i]["id"] != id {
+			t.Fatalf("changes = %v, want %v", resp.Changes, want)
+		}
+	}
+}
+
 func TestBoard(t *testing.T) {
 	st, _ := fixtureStore(t)
 	w := do(t, New(st).Handler(), "GET", "/changes/2026-09-10-0", "")
@@ -104,11 +152,14 @@ func TestBoard(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatal(err)
 	}
-	if resp.Overall != "In progress" || len(resp.Tasks) != 2 || len(resp.Columns) != 5 {
+	if resp.Overall != "In progress" || len(resp.Tasks) != 2 || len(resp.Columns) != 6 {
 		t.Fatalf("resp = %+v", resp)
 	}
 	if resp.Columns[0].Status != "Not started" || resp.Columns[0].Count != 1 {
 		t.Fatalf("columns = %+v", resp.Columns)
+	}
+	if resp.Columns[3].Status != "Test" || resp.Columns[4].Status != "Done" {
+		t.Fatalf("columns = %+v; want Test at index 3, Done at index 4", resp.Columns)
 	}
 }
 

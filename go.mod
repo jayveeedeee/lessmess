@@ -1,4 +1,4 @@
-module tasktracker
+module lessmess
 
 go 1.26.1
 

@@ -1,4 +1,4 @@
-/* tasktracker UI — dual theme (dark default, light via [data-theme="light"]) */
+/* lessmess UI — dual theme (dark default, light via [data-theme="light"]) */
 
 :root {
   --bg: #171717;
@@ -24,6 +24,8 @@
   --st-in-progress-fg: #f48a50;
   --st-blocked-bg: rgba(212, 82, 56, 0.16);
   --st-blocked-fg: #e88a70;
+  --st-test-bg: rgba(70, 130, 180, 0.16);
+  --st-test-fg: #6aa8d8;
   --st-done-bg: rgba(111, 112, 87, 0.28);
   --st-done-fg: #a8a983;
   --st-cancelled-bg: rgba(148, 144, 140, 0.1);
@@ -54,6 +56,8 @@
   --st-in-progress-fg: #b8480b;
   --st-blocked-bg: rgba(198, 60, 36, 0.12);
   --st-blocked-fg: #a83b22;
+  --st-test-bg: rgba(40, 110, 170, 0.12);
+  --st-test-fg: #2f6ba3;
   --st-done-bg: rgba(117, 118, 79, 0.16);
   --st-done-fg: #5f6039;
   --st-cancelled-bg: rgba(106, 118, 134, 0.1);
@@ -85,13 +89,16 @@ header {
   background: var(--surface);
 }
 .brand {
-  font-weight: 700;
-  font-size: 0.95rem;
-  letter-spacing: -0.01em;
-  color: var(--accent);
+  display: inline-flex;
+  align-items: center;
   text-decoration: none;
 }
-.crumb { color: var(--muted); font-size: 0.85rem; }
+.brand-icon {
+  display: block;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+}
 
 #theme-toggle {
   margin-left: auto;
@@ -108,6 +115,24 @@ header {
   cursor: pointer;
 }
 #theme-toggle:hover { color: var(--text); border-color: var(--muted); }
+
+/* --- top navigation --- */
+
+.topnav { display: flex; align-self: stretch; gap: 0.15rem; }
+.topnav a {
+  display: flex;
+  align-items: center;
+  padding: 0 0.7rem;
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 0.88rem;
+  font-weight: 600;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px; /* overlap the header's bottom border */
+}
+.topnav a:hover { color: var(--text); }
+.topnav a.active,
+.topnav a.active:hover { color: var(--accent); border-bottom-color: var(--accent); }
 
 main { padding: 1.25rem; }
 
@@ -129,6 +154,7 @@ h3 { margin: 0; font-size: 0.82rem; font-weight: 600; }
 .status-not-started { background: var(--st-not-started-bg); color: var(--st-not-started-fg); }
 .status-in-progress { background: var(--st-in-progress-bg); color: var(--st-in-progress-fg); }
 .status-blocked     { background: var(--st-blocked-bg); color: var(--st-blocked-fg); }
+.status-test        { background: var(--st-test-bg); color: var(--st-test-fg); }
 .status-done        { background: var(--st-done-bg); color: var(--st-done-fg); }
 .status-cancelled   { background: var(--st-cancelled-bg); color: var(--st-cancelled-fg); text-decoration: line-through; }
 
@@ -192,6 +218,9 @@ button:hover { background: var(--slate-hover); }
 
 .btn-accent { background: var(--accent); }
 .btn-accent:hover { background: var(--accent-hover); }
+
+/* Primary board action: visibly louder than the ghost buttons. */
+#continue-session-btn { font-weight: 700; padding: 0.55rem 1.15rem; }
 
 button:disabled {
   opacity: 0.55;
@@ -562,9 +591,6 @@ body[data-page="board"] .board {
 
 /* --- project explorer --- */
 
-.nav-link { margin-left: 1rem; color: var(--muted); text-decoration: none; font-size: 0.9rem; }
-.nav-link:hover { color: var(--text); }
-
 .explorer h1 { margin: 0 0 0.4rem; }
 .explorer-hint { color: var(--muted); font-size: 0.85rem; margin: 0 0 1rem; }
 
@@ -616,11 +642,14 @@ body[data-page="board"] .board {
 
 #notif-bell {
   position: relative; background: none; border: none; box-shadow: none;
-  font-size: 1.05rem; cursor: pointer; padding: 0.15rem 0.35rem; color: var(--muted);
+  cursor: pointer; padding: 0; color: var(--muted);
+  width: 32px; height: 32px; display: grid; place-items: center;
 }
+#notif-bell[hidden] { display: none; }
+#notif-bell svg { width: 18px; height: 18px; display: block; }
 #notif-bell:hover { color: var(--text); background: none; }
 #notif-badge {
-  position: absolute; top: -3px; right: -5px;
+  position: absolute; top: 0; right: -4px;
   background: #d69a45; color: #1a1a1a;
   border-radius: 999px; font-size: 0.62rem; font-weight: 700; padding: 0.05rem 0.32rem;
 }
@@ -642,3 +671,34 @@ body[data-page="board"] .board {
   margin-top: 0.9rem; border-top: 1px solid var(--border); padding-top: 0.8rem;
 }
 #notif-refresh-status { font-size: 0.8rem; }
+
+/* --- commit-all modal (index) ------------------------------------------------ */
+
+#commit-modal {
+  position: fixed; inset: 0; background: rgba(0, 0, 0, 0.55);
+  display: grid; place-items: center; z-index: 25;
+}
+#commit-modal[hidden] { display: none; }
+.commit-window { width: min(560px, 92vw); }
+#commit-file-list { font-size: 0.85rem; max-height: 40vh; overflow-y: auto; }
+#commit-file-list .commit-file { display: flex; gap: 0.6rem; padding: 0.12rem 0; }
+#commit-file-list .commit-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  width: 2.2em; flex: none; color: var(--muted);
+}
+#commit-file-list .commit-path { word-break: break-all; flex: 1; }
+#commit-file-list .commit-counts {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.78rem; color: var(--muted); flex: none; white-space: nowrap;
+}
+#commit-stat {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.78rem; color: var(--muted);
+  margin: 0.7rem 0 0; white-space: pre-wrap;
+}
+#commit-stat:empty { display: none; }
+.commit-actions {
+  display: flex; align-items: center; gap: 0.7rem;
+  margin-top: 0.9rem; border-top: 1px solid var(--border); padding-top: 0.8rem;
+}
+#commit-modal-status { font-size: 0.8rem; }

@@ -65,3 +65,10 @@ in accent orange (text + 2px underline).
 
 - User picked the orange underline style over filled-pill and soft-wash
   options.
+- Verified 2026-09-12: header = brand | `.topnav` (Changes, Explorer) | crumb
+  | bell | theme toggle; active class server-side from `pageData.Page`
+  (`index`/`board` → Changes, `explorer` → Explorer); underline overlaps the
+  header border via `margin-bottom: -1px`. Screenshot-verified on `/`,
+  `/changes/2026-09-12-11`, and `/explorer`; vet/test/build green. Also
+  required syncing the root-ledger status cell after the change went
+  In progress (validation rule 6).

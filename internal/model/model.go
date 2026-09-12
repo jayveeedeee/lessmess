@@ -11,12 +11,13 @@ const (
 	StatusNotStarted TaskStatus = "Not started"
 	StatusInProgress TaskStatus = "In progress"
 	StatusBlocked    TaskStatus = "Blocked"
+	StatusTest       TaskStatus = "Test"
 	StatusDone       TaskStatus = "Done"
 	StatusCancelled  TaskStatus = "Cancelled"
 )
 
 // TaskStatusOrder is the kanban column order.
-var TaskStatusOrder = []TaskStatus{StatusNotStarted, StatusInProgress, StatusBlocked, StatusDone, StatusCancelled}
+var TaskStatusOrder = []TaskStatus{StatusNotStarted, StatusInProgress, StatusBlocked, StatusTest, StatusDone, StatusCancelled}
 
 func (s TaskStatus) Valid() bool {
 	for _, v := range TaskStatusOrder {
