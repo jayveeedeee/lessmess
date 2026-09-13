@@ -3,6 +3,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -87,10 +88,16 @@ func New(st *store.Store) *Server {
 	mux.HandleFunc("DELETE /changes/{id}/sessions/{sessionID}", s.unlinkChangeSession)
 	mux.HandleFunc("GET /api/discussions", s.listDiscussions)
 	mux.HandleFunc("DELETE /api/discussions/{sessionID}", s.unlinkDiscussion)
+	mux.HandleFunc("GET /api/sessions/{sessionID}/change", s.sessionChange)
 	mux.HandleFunc("GET /api/git/status", s.gitStatusAPI)
 	mux.HandleFunc("POST /api/git/commit", s.commitAll)
 	mux.HandleFunc("GET /api/git/commit-status", s.commitStatus)
 	mux.HandleFunc("POST /docs/refresh", s.docsRefresh)
+	mux.HandleFunc("GET /api/settings", s.getSettings)
+	mux.HandleFunc("PUT /api/settings", s.putSettings)
+	mux.HandleFunc("GET /api/settings/options", s.settingsOptions)
+	mux.HandleFunc("GET /settings", s.settingsPage)
+	mux.HandleFunc("POST /api/settings/change", s.settingsChange)
 	mux.HandleFunc("GET /explorer", s.explorer)
 	mux.HandleFunc("GET /explorer/tree", s.explorerTree)
 	mux.HandleFunc("GET /explorer/detail", s.explorerDetail)
@@ -107,7 +114,11 @@ func New(st *store.Store) *Server {
 func (s *Server) SetOpencode(c *opencode.Client) {
 	s.oc = c
 	if c != nil && s.docsQ != nil {
-		s.docsQ.setRunner(&gardenerRunner{oc: c, root: s.st.Dir, cfg: s.docsQ.cfg})
+		gr := &gardenerRunner{oc: c, root: s.st.Dir, cfg: s.docsQ.cfg}
+		gr.spawn = func(ctx context.Context, title string) (*opencode.Session, error) {
+			return spawnSession(ctx, c, s.st.Dir, title)
+		}
+		s.docsQ.setRunner(gr)
 	}
 }
 
@@ -169,12 +180,16 @@ func (s *Server) index(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, fmt.Errorf("%w: %v", store.ErrInvalid, err))
 		return
 	}
+	showArchived := s.effectiveSettings().UI.ShowArchived
 	rows := make([]changeSummary, 0, len(root.Rows))
 	byID := map[string]*store.Change{}
 	for _, c := range s.st.Changes() {
 		byID[c.ID] = c
 	}
 	for _, rr := range root.Rows {
+		if !showArchived && strings.HasPrefix(rr.Href, "archive/") {
+			continue
+		}
 		sum := changeSummary{ID: rr.Change, Title: rr.Title, Prefix: rr.Prefix, Status: string(rr.Status), Updated: rr.Updated}
 		if c, ok := byID[rr.Change]; ok && c.Ledger != nil {
 			sum.Tasks = len(c.Ledger.Rows)
@@ -398,7 +413,7 @@ func (s *Server) createChange(w http.ResponseWriter, r *http.Request) {
 		req.Title = r.FormValue("title")
 		req.Prefix = r.FormValue("prefix")
 	}
-	id, err := s.st.CreateChange(req.Title, req.Prefix, time.Now().Format("2006-01-02"))
+	id, err := s.st.CreateChange(req.Title, req.Prefix, s.effectiveSettings().Git.DefaultBranch, time.Now().Format("2006-01-02"))
 	if err != nil {
 		writeErr(w, err)
 		return

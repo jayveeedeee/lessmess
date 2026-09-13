@@ -52,6 +52,39 @@ func TestIndexHTML(t *testing.T) {
 	}
 }
 
+func TestSettingsPageHTML(t *testing.T) {
+	st, _ := fixtureStore(t)
+	w := htmlGet(t, New(st).Handler(), "/settings", false)
+	if w.Code != 200 {
+		t.Fatalf("code = %d", w.Code)
+	}
+	body := w.Body.String()
+	for _, want := range []string{
+		`id="settings-page"`, `data-page="settings"`, "Prompt addenda",
+		`class="settings-nav"`,
+		`data-group="session"`, `data-group="prompts"`, `data-group="git"`,
+		`data-group="ui"`, `data-group="docs"`,
+		`data-field="session.agent"`, `data-field="session.model"`,
+		`data-field="prompts.discussion"`, `data-field="prompts.change"`,
+		`data-field="prompts.commit"`, `data-field="prompts.repoCommit"`,
+		`data-field="prompts.gardener"`, `data-field="prompts.explorer"`,
+		`data-field="git.defaultBranch"`, `data-field="ui.showArchived"`,
+		`data-field="docs.autoGardenerOnClose"`, `class="settings-change"`,
+		`name="settings-scope"`, "lessmess.json", ".lessmess/settings.json",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("settings HTML missing %q", want)
+		}
+	}
+	// The right-aligned top-menu link is present and active on the page.
+	if !strings.Contains(body, `class="topnav topnav-right"`) {
+		t.Error("topnav-right group missing")
+	}
+	if !strings.Contains(body, `<a href="/settings" class="active">Settings</a>`) {
+		t.Error("active Settings nav link missing")
+	}
+}
+
 func TestBoardHTML(t *testing.T) {
 	st, _ := fixtureStore(t)
 	w := htmlGet(t, New(st).Handler(), "/changes/2026-09-10-0", false)

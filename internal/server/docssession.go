@@ -11,15 +11,19 @@ import (
 
 	"lessmess/internal/docs"
 	"lessmess/internal/model"
+	"lessmess/internal/opencode"
 )
 
 // gardenerRunner executes queued docs jobs with one unattended opencode
 // session ("doc gardener") per job, guarded by a snapshot/verify/restore
-// confinement check. It implements DocsRunner.
+// confinement check. It implements DocsRunner. spawn, when set, replaces
+// plain session creation so configured agent/model defaults apply (wired
+// by SetOpencode); nil spawn falls back to oc.CreateSession.
 type gardenerRunner struct {
-	oc   docs.SessionClient
-	root string
-	cfg  *docs.Config
+	oc    docs.SessionClient
+	root  string
+	cfg   *docs.Config
+	spawn func(ctx context.Context, title string) (*opencode.Session, error)
 }
 
 // RunDocsJob refreshes the doc pairs for the job's directories:
@@ -88,7 +92,13 @@ func (r *gardenerRunner) RunDocsJob(ctx context.Context, job DocsJob) error {
 
 // garden creates, primes, awaits, and cleans up one gardener session.
 func (r *gardenerRunner) garden(ctx context.Context, job DocsJob, targets []*docs.Dir) error {
-	sess, err := r.oc.CreateSession(ctx, job.Change+" — docs", r.root)
+	var sess *opencode.Session
+	var err error
+	if r.spawn != nil {
+		sess, err = r.spawn(ctx, job.Change+" — docs")
+	} else {
+		sess, err = r.oc.CreateSession(ctx, job.Change+" — docs", r.root)
+	}
 	if err != nil {
 		return fmt.Errorf("create gardener session: %w", err)
 	}
@@ -97,7 +107,7 @@ func (r *gardenerRunner) garden(ctx context.Context, job DocsJob, targets []*doc
 		defer cancel()
 		_ = r.oc.DeleteSession(ctx, sess.ID)
 	}()
-	if err := r.oc.Prompt(ctx, sess.ID, gardenerPrompt(job, targets)); err != nil {
+	if err := r.oc.Prompt(ctx, sess.ID, appendAddendum(gardenerPrompt(job, targets), promptAddendumFor(r.root, "gardener"))); err != nil {
 		return fmt.Errorf("prompt gardener: %w", err)
 	}
 	if err := r.oc.WaitDone(ctx, sess.ID); err != nil {

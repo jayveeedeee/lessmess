@@ -23,3 +23,5 @@ One row per change directory. This file is authoritative for change existence, t
 | [2026-09-12-15](2026-09-12-15/plan.md) | User-gated Test status before Done | TST | — | Done | 2026-09-12 | 2026-09-13 |
 | [2026-09-13-0](2026-09-13-0/plan.md) | Commit-all button on changes page | CMT | — | Done | 2026-09-13 | 2026-09-13 |
 | [2026-09-13-1](2026-09-13-1/plan.md) | Embedded terminal improvements | TUI | — | Done | 2026-09-13 | 2026-09-13 |
+| [2026-09-13-2](2026-09-13-2/plan.md) | Settings page with session defaults and prompt addenda | SET | — | Done | 2026-09-13 | 2026-09-13 |
+| [2026-09-13-3](2026-09-13-3/plan.md) | Discussion prompt question policy | DQP | — | Done | 2026-09-13 | 2026-09-13 |

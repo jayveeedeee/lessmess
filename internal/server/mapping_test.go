@@ -125,6 +125,32 @@ func mappingServer(t *testing.T, ocHandler http.HandlerFunc) *Server {
 	return s
 }
 
+func TestSessionChangeEndpoint(t *testing.T) {
+	s := mappingServer(t, nil)
+	if err := s.sessions.add("2026-09-10-0", SessionEntry{Session: "ses_bound", Title: "t", Created: "x"}); err != nil {
+		t.Fatal(err)
+	}
+	// Bound session → its change.
+	w := do(t, s.Handler(), "GET", "/api/sessions/ses_bound/change", "")
+	if w.Code != 200 {
+		t.Fatalf("code = %d", w.Code)
+	}
+	var resp map[string]string
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp["change"] != "2026-09-10-0" {
+		t.Errorf("resp = %v, want change 2026-09-10-0", resp)
+	}
+	// Unknown session → empty (unassigned discussions answer the same).
+	w = do(t, s.Handler(), "GET", "/api/sessions/ses_nope/change", "")
+	if w.Code != 200 {
+		t.Fatalf("code = %d", w.Code)
+	}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp["change"] != "" {
+		t.Errorf("resp = %v, want empty change", resp)
+	}
+}
+
 func TestListSessionsEndpoint(t *testing.T) {
 	s := mappingServer(t, nil)
 	// Seed the mapping file directly.

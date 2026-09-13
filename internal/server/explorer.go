@@ -177,12 +177,12 @@ func (s *Server) explorerChat(w http.ResponseWriter, r *http.Request) {
 
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
-	sess, err := s.oc.CreateSession(ctx, title, s.st.Dir)
+	sess, err := s.spawnSession(ctx, title)
 	if err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "create opencode session: " + err.Error()})
 		return
 	}
-	if err := s.oc.Prompt(ctx, sess.ID, explorerPrompt(dir, structure, agents)); err != nil {
+	if err := s.oc.Prompt(ctx, sess.ID, s.promptWith(explorerPrompt(dir, structure, agents), "explorer")); err != nil {
 		_ = s.oc.DeleteSession(context.Background(), sess.ID)
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "prime explorer session: " + err.Error()})
 		return

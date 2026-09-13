@@ -19,7 +19,11 @@ func (s *Server) closeChange(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	slog.Info("change closed", "id", id)
-	s.enqueueDocsRefresh(id) // best-effort; logs its own errors
+	if s.effectiveSettings().Docs.AutoGardenerOnClose {
+		s.enqueueDocsRefresh(id) // best-effort; logs its own errors
+	} else {
+		slog.Info("docs auto-gardener disabled by settings; skipping refresh", "id", id)
+	}
 	writeJSON(w, http.StatusOK, map[string]string{"ok": "true", "status": string(model.OverallDone)})
 }
 
@@ -54,7 +58,7 @@ func (s *Server) commitChange(w http.ResponseWriter, r *http.Request) {
 
 	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
 	defer cancel()
-	sess, err := s.oc.CreateSession(ctx, id+" — git commit", s.st.Dir)
+	sess, err := s.spawnSession(ctx, id+" — git commit")
 	if err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "create opencode session: " + err.Error()})
 		return
@@ -65,7 +69,7 @@ func (s *Server) commitChange(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "persist mapping: " + err.Error()})
 		return
 	}
-	if err := s.oc.Prompt(ctx, sess.ID, commitPrompt(id)); err != nil {
+	if err := s.oc.Prompt(ctx, sess.ID, s.promptWith(commitPrompt(id), "commit")); err != nil {
 		slog.Warn("commit prime failed", "session", sess.ID, "err", err)
 		writeJSON(w, http.StatusBadGateway, map[string]string{"session": sess.ID, "error": "session created, but priming failed: " + err.Error()})
 		return

@@ -8,6 +8,6 @@
 - `Manager.Spawn` starts a command in a new PTY at a given cwd and window size, returning a `PTY` with an auto-generated `pty-N` ID; use `Resize` to update dimensions.
 - Always call `CloseAll` on server shutdown, and `PTY.Close` per instance, to terminate child processes and release file descriptors.
 - `Manager` is mutex-protected for the map, but individual `PTY` reads/writes are not synchronized; coordinate concurrent access to a single PTY.
-- (manual) `Manager.Spawn` delegates to `SpawnWithEnv` with a nil environment, which inherits the server process env; a non-nil env replaces it wholesale, so callers must include any inherited variables they need.
-- (manual) `server.terminalWS` uses the env hook to pass a generated `XDG_CONFIG_HOME` for chrome-free embedded TUIs, falling back to nil (inherit) when config generation fails.
+- (2026-09-13-1) `Manager.Spawn` delegates to `SpawnWithEnv` with a nil environment, which inherits the server process env; a non-nil env replaces it wholesale, so callers must include any inherited variables they need (e.g. `xdgEnv` in `internal/server` starts from `os.Environ`).
+- (2026-09-13-1) `server.terminalWS` uses the env hook to pass a generated `XDG_CONFIG_HOME` for chrome-free embedded TUIs, falling back to nil (inherit) when config generation fails.
 <!-- tasktracker:end -->

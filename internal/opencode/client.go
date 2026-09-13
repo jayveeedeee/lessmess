@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -204,15 +205,107 @@ type Session struct {
 
 // CreateSession creates a session titled title scoped to directory.
 func (c *Client) CreateSession(ctx context.Context, title, directory string) (*Session, error) {
+	return c.CreateSessionWith(ctx, title, directory, "", nil)
+}
+
+// ModelRef identifies a provider model, per the V2 Model.Ref schema. Model
+// IDs may contain slashes; ProviderID is required alongside ID. Variant is
+// optional and currently never set by lessmess.
+type ModelRef struct {
+	ID         string `json:"id"`
+	ProviderID string `json:"providerID"`
+	Variant    string `json:"variant,omitempty"`
+}
+
+// CreateSessionWith is CreateSession with optional agent and model
+// defaults applied at creation (the V2 create endpoint accepts both).
+// Empty agent or a nil/incomplete model leaves the service default in
+// place. The service answers 400 for an unknown agent/model — callers
+// decide whether to retry plainly.
+func (c *Client) CreateSessionWith(ctx context.Context, title, directory, agent string, model *ModelRef) (*Session, error) {
 	body := map[string]any{
 		"title":    title,
 		"location": map[string]string{"directory": directory},
+	}
+	if agent != "" {
+		body["agent"] = agent
+	}
+	if model != nil && model.ID != "" && model.ProviderID != "" {
+		body["model"] = model
 	}
 	var s Session
 	if err := c.do(ctx, http.MethodPost, "/api/session", body, &s); err != nil {
 		return nil, err
 	}
 	return &s, nil
+}
+
+// AgentInfo is one registered agent as returned by GET /api/agent. Mode is
+// "primary" (usable as a session driver) or "subagent".
+type AgentInfo struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Mode        string `json:"mode"`
+	Hidden      bool   `json:"hidden"`
+}
+
+// ModelInfo is one available model as returned by GET /api/model.
+type ModelInfo struct {
+	ID         string `json:"id"`
+	ProviderID string `json:"providerID"`
+	Name       string `json:"name"`
+}
+
+// ListAgents returns the service's registered agents for its default
+// location.
+func (c *Client) ListAgents(ctx context.Context) ([]AgentInfo, error) {
+	return c.ListAgentsFor(ctx, "")
+}
+
+// ListAgentsFor is ListAgents scoped to a repository directory: agents
+// defined by that project's own opencode configuration are included. An
+// empty dir uses the service default location.
+func (c *Client) ListAgentsFor(ctx context.Context, dir string) ([]AgentInfo, error) {
+	var agents []AgentInfo
+	if err := c.do(ctx, http.MethodGet, "/api/agent"+locationQuery(dir), nil, &agents); err != nil {
+		return nil, err
+	}
+	return agents, nil
+}
+
+// ListModels returns the models available to the service's default
+// location.
+func (c *Client) ListModels(ctx context.Context) ([]ModelInfo, error) {
+	return c.ListModelsFor(ctx, "")
+}
+
+// ListModelsFor is ListModels scoped to a repository directory (providers
+// can be project-configured). An empty dir uses the default location.
+func (c *Client) ListModelsFor(ctx context.Context, dir string) ([]ModelInfo, error) {
+	var models []ModelInfo
+	if err := c.do(ctx, http.MethodGet, "/api/model"+locationQuery(dir), nil, &models); err != nil {
+		return nil, err
+	}
+	return models, nil
+}
+
+// locationQuery builds the deepObject location query the V2 API expects:
+// ?location[directory]=<dir>, empty for the default location.
+func locationQuery(dir string) string {
+	if dir == "" {
+		return ""
+	}
+	return "?location[directory]=" + url.QueryEscape(dir)
+}
+
+// DefaultModel returns the service's default model.
+func (c *Client) DefaultModel(ctx context.Context) (*ModelInfo, error) {
+	var m ModelInfo
+	if err := c.do(ctx, http.MethodGet, "/api/model/default", nil, &m); err != nil {
+		return nil, err
+	}
+	return &m, nil
 }
 
 // GetSession returns one session.

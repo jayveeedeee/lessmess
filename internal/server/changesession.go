@@ -75,12 +75,12 @@ func (s *Server) createDiscussionSession(w http.ResponseWriter, r *http.Request)
 
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
-	sess, err := s.oc.CreateSession(ctx, title, s.st.Dir)
+	sess, err := s.spawnSession(ctx, title)
 	if err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "create opencode session: " + err.Error()})
 		return
 	}
-	if err := s.oc.Prompt(ctx, sess.ID, discussionPrompt(s.apiBase(), sess.ID)); err != nil {
+	if err := s.oc.Prompt(ctx, sess.ID, s.promptWith(discussionPrompt(s.apiBase(), sess.ID), "discussion")); err != nil {
 		_ = s.oc.DeleteSession(context.Background(), sess.ID)
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "prime discussion session: " + err.Error()})
 		return
@@ -142,7 +142,7 @@ func (s *Server) scaffoldChange(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := s.st.CreateChange(req.Title, req.Prefix, time.Now().Format("2006-01-02"))
+	id, err := s.st.CreateChange(req.Title, req.Prefix, s.effectiveSettings().Git.DefaultBranch, time.Now().Format("2006-01-02"))
 	if err != nil {
 		writeErr(w, err)
 		return

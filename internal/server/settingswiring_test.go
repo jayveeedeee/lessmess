@@ -1,0 +1,300 @@
+package server
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"lessmess/internal/opencode"
+)
+
+// ocCapture is a fake opencode service recording create bodies and prompt
+// texts; rejectDefaults answers 400 when the create carries agent/model.
+type ocCapture struct {
+	creates        []map[string]any
+	prompts        []string
+	rejectDefaults bool
+}
+
+func (c *ocCapture) handler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/session":
+			var body map[string]any
+			json.NewDecoder(r.Body).Decode(&body)
+			c.creates = append(c.creates, body)
+			if c.rejectDefaults {
+				if _, ok := body["agent"]; ok {
+					w.WriteHeader(http.StatusBadRequest)
+					w.Write([]byte(`{"message":"unknown agent"}`))
+					return
+				}
+				if _, ok := body["model"]; ok {
+					w.WriteHeader(http.StatusBadRequest)
+					w.Write([]byte(`{"message":"unknown model"}`))
+					return
+				}
+			}
+			w.Write([]byte(`{"data":{"id":"ses_cap","title":"t","location":{"directory":"/x"}}}`))
+		case strings.HasSuffix(r.URL.Path, "/prompt"):
+			var body map[string]string
+			json.NewDecoder(r.Body).Decode(&body)
+			c.prompts = append(c.prompts, body["text"])
+			w.Write([]byte(`{"data":{}}`))
+		default:
+			w.Write([]byte(`{"data":{}}`))
+		}
+	}
+}
+
+func writeSettingsFile(t *testing.T, dir string, s Settings) {
+	t.Helper()
+	writeJSONFile(t, settingsProjectPath(dir), s)
+}
+
+func TestSpawnSessionAppliesAgentAndModel(t *testing.T) {
+	cap := &ocCapture{}
+	s := mappingServer(t, cap.handler())
+	writeSettingsFile(t, s.st.Dir, Settings{Session: SessionSettings{
+		Agent: "build",
+		Model: "prov/accounts/x/model-1",
+	}})
+
+	w := do(t, s.Handler(), "POST", "/changes/session", `{"title":"t"}`)
+	if w.Code != 201 {
+		t.Fatalf("code = %d body = %s", w.Code, w.Body)
+	}
+	if len(cap.creates) != 1 {
+		t.Fatalf("creates = %d", len(cap.creates))
+	}
+	body := cap.creates[0]
+	if body["agent"] != "build" {
+		t.Errorf("agent = %v, want build", body["agent"])
+	}
+	m, _ := body["model"].(map[string]any)
+	if m["providerID"] != "prov" || m["id"] != "accounts/x/model-1" {
+		t.Errorf("model = %v, want prov + accounts/x/model-1 (split on first /)", body["model"])
+	}
+}
+
+func TestSpawnSessionDefaultsOmittedWhenUnset(t *testing.T) {
+	cap := &ocCapture{}
+	s := mappingServer(t, cap.handler())
+
+	w := do(t, s.Handler(), "POST", "/changes/session", `{"title":"t"}`)
+	if w.Code != 201 {
+		t.Fatalf("code = %d body = %s", w.Code, w.Body)
+	}
+	if _, ok := cap.creates[0]["agent"]; ok {
+		t.Errorf("agent key must be absent without settings: %v", cap.creates[0])
+	}
+	if _, ok := cap.creates[0]["model"]; ok {
+		t.Errorf("model key must be absent without settings: %v", cap.creates[0])
+	}
+}
+
+func TestSpawnSessionFallbackOn400(t *testing.T) {
+	cap := &ocCapture{rejectDefaults: true}
+	s := mappingServer(t, cap.handler())
+	writeSettingsFile(t, s.st.Dir, Settings{Session: SessionSettings{Agent: "ghost", Model: "gone/m"}})
+
+	w := do(t, s.Handler(), "POST", "/changes/session", `{"title":"t"}`)
+	if w.Code != 201 {
+		t.Fatalf("code = %d body = %s — fallback must still yield a session", w.Code, w.Body)
+	}
+	if len(cap.creates) != 2 {
+		t.Fatalf("creates = %d, want 2 (rejected + plain retry)", len(cap.creates))
+	}
+	if _, ok := cap.creates[1]["agent"]; ok {
+		t.Errorf("retry must drop the configured agent: %v", cap.creates[1])
+	}
+	if _, ok := cap.creates[1]["model"]; ok {
+		t.Errorf("retry must drop the configured model: %v", cap.creates[1])
+	}
+}
+
+func TestPromptAddendaAppended(t *testing.T) {
+	cap := &ocCapture{}
+	s := mappingServer(t, cap.handler())
+	writeSettingsFile(t, s.st.Dir, Settings{Prompts: PromptSettings{
+		Discussion: "DISCUSSION-ADDENDUM",
+		Change:     "CHANGE-ADDENDUM",
+	}})
+
+	if w := do(t, s.Handler(), "POST", "/changes/session", `{"title":"t"}`); w.Code != 201 {
+		t.Fatalf("discussion: %d %s", w.Code, w.Body)
+	}
+	if w := do(t, s.Handler(), "POST", "/changes/2026-09-10-0/sessions", `{}`); w.Code != 201 {
+		t.Fatalf("change session: %d %s", w.Code, w.Body)
+	}
+	if len(cap.prompts) != 2 {
+		t.Fatalf("prompts = %d", len(cap.prompts))
+	}
+	if !strings.Contains(cap.prompts[0], "planning assistant") || !strings.HasSuffix(cap.prompts[0], "\n\nDISCUSSION-ADDENDUM") {
+		t.Errorf("discussion prompt missing base or addendum: %q…", cap.prompts[0][:80])
+	}
+	if !strings.Contains(cap.prompts[1], "change execution assistant") || !strings.HasSuffix(cap.prompts[1], "\n\nCHANGE-ADDENDUM") {
+		t.Errorf("change prompt missing base or addendum: %q…", cap.prompts[1][:80])
+	}
+}
+
+func TestPromptByteIdenticalWithoutSettings(t *testing.T) {
+	cap := &ocCapture{}
+	s := mappingServer(t, cap.handler())
+
+	if w := do(t, s.Handler(), "POST", "/changes/2026-09-10-0/sessions", `{}`); w.Code != 201 {
+		t.Fatalf("code = %d body = %s", w.Code, w.Body)
+	}
+	if len(cap.prompts) != 1 || cap.prompts[0] != changePrompt("2026-09-10-0") {
+		t.Error("prompt must be byte-identical to the base builder without settings")
+	}
+}
+
+func TestDefaultBranchRecorded(t *testing.T) {
+	cap := &ocCapture{}
+	s := mappingServer(t, cap.handler())
+	writeSettingsFile(t, s.st.Dir, Settings{Git: GitSettings{DefaultBranch: "main"}})
+
+	// Plain create route.
+	w := do(t, s.Handler(), "POST", "/changes/", `{"title":"Branched","prefix":"BRA"}`)
+	if w.Code != 201 {
+		t.Fatalf("create: %d %s", w.Code, w.Body)
+	}
+	root, err := s.st.Root()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found bool
+	for _, r := range root.Rows {
+		if r.Title == "Branched" {
+			found = true
+			if r.Branch != "main" {
+				t.Errorf("branch = %q, want main", r.Branch)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("created change missing from root ledger")
+	}
+
+	// Scaffold route shares the same settings path.
+	if err := s.sessions.addUnassigned(SessionEntry{Session: "ses_br", Title: "d", Created: "x"}); err != nil {
+		t.Fatal(err)
+	}
+	w = do(t, s.Handler(), "POST", "/changes/scaffold", `{"title":"Scaffolded","prefix":"SCA","session":"ses_br"}`)
+	if w.Code != 201 {
+		t.Fatalf("scaffold: %d %s", w.Code, w.Body)
+	}
+	root, _ = s.st.Root()
+	for _, r := range root.Rows {
+		if r.Title == "Scaffolded" && r.Branch != "main" {
+			t.Errorf("scaffold branch = %q, want main", r.Branch)
+		}
+	}
+}
+
+func TestGardenerGateOnClose(t *testing.T) {
+	s, dir := docsServer(t)
+	writeTaskFilesAffected(t, dir, "2026-09-10-0", "00-first.md", "- internal/model/docfile.go\n")
+	writeSettingsFile(t, dir, Settings{Docs: DocsSettings{AutoGardenerOnClose: boolp(false)}})
+	runner := &fakeRunner{}
+	s.SetDocsRunner(runner)
+
+	if w := do(t, s.Handler(), "POST", "/changes/2026-09-10-0/close", ""); w.Code != 200 {
+		t.Fatalf("close: %d %s", w.Code, w.Body)
+	}
+	// Give the (non-existent) enqueue a beat: nothing may be enqueued.
+	time.Sleep(150 * time.Millisecond)
+	if got := len(runner.got()); got != 0 {
+		t.Fatalf("gardener ran %d jobs with the gate off", got)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".lessmess", "docs-queue.json")); !os.IsNotExist(err) {
+		t.Error("queue file must not exist when the gate is off")
+	}
+
+	// Reopen, enable the gate, close again: the job runs.
+	if w := do(t, s.Handler(), "POST", "/changes/2026-09-10-0/reopen", ""); w.Code != 200 {
+		t.Fatalf("reopen: %d %s", w.Code, w.Body)
+	}
+	writeSettingsFile(t, dir, Settings{})
+	if w := do(t, s.Handler(), "POST", "/changes/2026-09-10-0/close", ""); w.Code != 200 {
+		t.Fatalf("second close: %d %s", w.Code, w.Body)
+	}
+	waitForCond(t, "docs job after enabling gate", func() bool { return len(runner.got()) == 1 })
+}
+
+func TestIndexArchivedFilter(t *testing.T) {
+	s := mappingServer(t, nil)
+	// Add an archived row to the root ledger and reload.
+	rootPath := filepath.Join(s.st.Dir, "changes", "ledger.md")
+	data, err := os.ReadFile(rootPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	row := "| [2026-09-08-0](archive/2026-09-08-0/plan.md) | Old archived | OLD | — | Done | 2026-09-08 | 2026-09-08 |\n"
+	if err := os.WriteFile(rootPath, append(data, []byte(row)...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s.st.Reload()
+
+	indexIDs := func() []string {
+		w := do(t, s.Handler(), "GET", "/", "")
+		if w.Code != 200 {
+			t.Fatalf("index: %d", w.Code)
+		}
+		var resp struct {
+			Changes []changeSummary `json:"changes"`
+		}
+		json.Unmarshal(w.Body.Bytes(), &resp)
+		ids := make([]string, 0, len(resp.Changes))
+		for _, c := range resp.Changes {
+			ids = append(ids, c.ID)
+		}
+		return ids
+	}
+
+	// Default: archived rows are listed (current behavior).
+	ids := indexIDs()
+	if len(ids) != 2 {
+		t.Fatalf("default index ids = %v, want 2 rows", ids)
+	}
+
+	writeSettingsFile(t, s.st.Dir, Settings{UI: UISettings{ShowArchived: boolp(false)}})
+	ids = indexIDs()
+	if len(ids) != 1 || ids[0] != "2026-09-10-0" {
+		t.Fatalf("filtered index ids = %v, want only the active change", ids)
+	}
+}
+
+func TestGardenerRunnerSpawnAndAddendum(t *testing.T) {
+	fake := &fakeSessionClient{}
+	root, cfg := gardenerRepo(t)
+
+	// With a settings addendum and no spawn: plain create, addendum appended.
+	writeSettingsFile(t, root, Settings{Prompts: PromptSettings{Gardener: "GARDENER-ADDENDUM"}})
+	r := &gardenerRunner{oc: fake, root: root, cfg: cfg}
+	if err := r.garden(context.Background(), DocsJob{Change: "manual", Title: "manual"}, nil); err != nil {
+		t.Fatalf("garden: %v", err)
+	}
+	if len(fake.prompts) != 1 || !strings.HasSuffix(fake.prompts[0], "\n\nGARDENER-ADDENDUM") {
+		t.Fatalf("gardener prompt missing addendum: %v", fake.prompts)
+	}
+
+	// With spawn wired (as SetOpencode does), spawn replaces plain creation.
+	spawned := 0
+	r.spawn = func(_ context.Context, title string) (*opencode.Session, error) {
+		spawned++
+		return &opencode.Session{ID: "ses_spawn", Title: title}, nil
+	}
+	if err := r.garden(context.Background(), DocsJob{Change: "manual", Title: "manual"}, nil); err != nil {
+		t.Fatalf("garden with spawn: %v", err)
+	}
+	if spawned != 1 {
+		t.Errorf("spawn called %d times, want 1", spawned)
+	}
+}

@@ -212,6 +212,18 @@ func (s *Server) unlinkDiscussion(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"ok": "true"})
 }
 
+// sessionChange handles GET /api/sessions/{sessionID}/change: the change
+// the session is bound to (empty when unassigned). Drives the terminal
+// task panel on non-board pages.
+func (s *Server) sessionChange(w http.ResponseWriter, r *http.Request) {
+	if s.mapErr != nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "session mapping unreadable: " + s.mapErr.Error()})
+		return
+	}
+	change, _ := s.sessions.changeOf(r.PathValue("sessionID"))
+	writeJSON(w, http.StatusOK, map[string]string{"change": change})
+}
+
 type createSessionRequest struct {
 	Title string `json:"title"` // optional; defaults to the change title
 }
@@ -244,12 +256,12 @@ func (s *Server) createChangeSession(w http.ResponseWriter, r *http.Request) {
 
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
-	sess, err := s.oc.CreateSession(ctx, title, s.st.Dir)
+	sess, err := s.spawnSession(ctx, title)
 	if err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "create opencode session: " + err.Error()})
 		return
 	}
-	if err := s.oc.Prompt(ctx, sess.ID, changePrompt(id)); err != nil {
+	if err := s.oc.Prompt(ctx, sess.ID, s.promptWith(changePrompt(id), "change")); err != nil {
 		// Don't leak an unbound session: the binding is the whole point.
 		_ = s.oc.DeleteSession(context.Background(), sess.ID)
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "prime change session: " + err.Error()})

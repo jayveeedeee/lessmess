@@ -144,7 +144,7 @@ func (s *Server) commitAll(w http.ResponseWriter, r *http.Request) {
 
 	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
 	defer cancel()
-	sess, err := s.oc.CreateSession(ctx, "repo — git commit", s.st.Dir)
+	sess, err := s.spawnSession(ctx, "repo — git commit")
 	if err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "create opencode session: " + err.Error()})
 		return
@@ -155,7 +155,7 @@ func (s *Server) commitAll(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "persist mapping: " + err.Error()})
 		return
 	}
-	if err := s.oc.Prompt(ctx, sess.ID, repoCommitPrompt()); err != nil {
+	if err := s.oc.Prompt(ctx, sess.ID, s.promptWith(repoCommitPrompt(), "repoCommit")); err != nil {
 		slog.Warn("repo commit prime failed", "session", sess.ID, "err", err)
 		writeJSON(w, http.StatusBadGateway, map[string]string{"session": sess.ID, "error": "session created, but priming failed: " + err.Error()})
 		return

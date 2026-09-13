@@ -358,7 +358,9 @@ func (s *Store) CreateTask(changeID, title string) (model.TaskRow, error) {
 // CreateChange allocates the next change number for date (YYYY-MM-DD),
 // scaffolds the directory, and appends the root-ledger row. Numbers are
 // never reused: the next number is the highest existing for the date + 1.
-func (s *Store) CreateChange(title, prefix, date string) (string, error) {
+// branch is recorded in the root row's Branch column (empty = —); it is
+// informational only — no git branch is created.
+func (s *Store) CreateChange(title, prefix, branch, date string) (string, error) {
 	title = strings.TrimSpace(title)
 	if title == "" || strings.Contains(title, "|") {
 		return "", fmt.Errorf("%w: change title must be non-empty and contain no |", ErrInvalid)
@@ -368,6 +370,10 @@ func (s *Store) CreateChange(title, prefix, date string) (string, error) {
 	}
 	if prefix == "" {
 		prefix = model.Empty
+	}
+	branch = strings.TrimSpace(branch)
+	if branch == "" || strings.Contains(branch, "|") {
+		branch = model.Empty
 	}
 
 	maxNum := -1
@@ -406,7 +412,7 @@ func (s *Store) CreateChange(title, prefix, date string) (string, error) {
 	}
 	root.AppendRow(model.RootRow{
 		Change: id, Href: id + "/plan.md", Title: title, Prefix: prefix,
-		Branch: model.Empty, Status: model.OverallPlanned, Created: date, Updated: date,
+		Branch: branch, Status: model.OverallPlanned, Created: date, Updated: date,
 	})
 	if err := model.WriteFileAtomic(filepath.Join(s.ChangesDir, "ledger.md"), root.Content(), 0o644); err != nil {
 		return "", err

@@ -5,6 +5,24 @@
 
   var page = document.body.getAttribute("data-page");
 
+  // --- effective settings (terminal auto-open gate) -------------------------
+
+  // Cached once per page load; gates terminal auto-open after session
+  // creation. Deliberate opens (clicking a session) are never gated.
+  var autoOpenTerminal = true;
+  fetch("/api/settings", { headers: { Accept: "application/json" } })
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (j) {
+      if (j && j.effective && j.effective.session) {
+        autoOpenTerminal = j.effective.session.autoOpenTerminal !== false;
+      }
+    })
+    .catch(function () {});
+
+  function maybeOpenTerminal(sessionID, title) {
+    if (autoOpenTerminal) openTerminal(sessionID, title);
+  }
+
   function boardEl() { return document.getElementById("board"); }
 
   // --- drag and drop -----------------------------------------------------
@@ -50,7 +68,10 @@
   }
 
   document.addEventListener("htmx:afterSwap", function (e) {
-    if (e.target && e.target.id === "board") { initSortable(); syncTerminalTasks(); }
+    if (e.target && e.target.id === "board") {
+      initSortable();
+      if (boardEl()) syncTerminalTasks(boardEl(), boardEl().dataset.change);
+    }
   });
 
   // After a successful htmx form POST (add task), refresh the board.
@@ -69,7 +90,7 @@
       try {
         var j = JSON.parse(e.detail.xhr.responseText);
         loadDiscussions();
-        openTerminal(j.session, j.title);
+        maybeOpenTerminal(j.session, j.title);
       } catch (_) {}
     }
   });
@@ -88,6 +109,13 @@
         checkValidation();
         if (page === "board" && boardEl()) refreshBoard();
         else if (page === "index") location.reload();
+        // Terminal task panel: re-mirror an open panel, and pick up a
+        // fresh binding (a discussion that just scaffolded a change —
+        // the scaffold writes changes/, which fired this event).
+        if (terminalOpen()) {
+          if (terminalPanelChange) loadTerminalTasks(terminalPanelChange);
+          else if (!(page === "board" && boardEl()) && tstate.session) resolveTerminalPanel(tstate.session);
+        }
       }, 250);
     }
   }
@@ -470,7 +498,7 @@
           body: "{}",
         })
           .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.statusText); return j; }); })
-          .then(function (s) { markOpened(s.session); loadSessions(); openTerminal(s.session, s.title); })
+          .then(function (s) { markOpened(s.session); loadSessions(); maybeOpenTerminal(s.session, s.title); })
           .catch(function (e) { alert("Create session failed: " + e.message); });
       });
     }
@@ -513,25 +541,35 @@
         markOpened(s.session);
         btn.textContent = "Continue session";
         loadSessions();
-        openTerminal(s.session, s.title);
+        maybeOpenTerminal(s.session, s.title);
       })
       .catch(function (e) { alert("Create session failed: " + e.message); })
       .finally(function () { btn.disabled = false; });
   }
 
-  var tstate = { term: null, ws: null, ro: null };
+  var tstate = { term: null, ws: null, ro: null, session: null };
+  // The change id the task panel currently shows for a non-board terminal
+  // (null on board pages, where the panel mirrors the live board DOM).
+  var terminalPanelChange = null;
 
   function openTerminal(sessionID, title) {
     closeTerminal();
     var overlay = document.getElementById("terminal-overlay");
     overlay.hidden = false;
-    // The task panel is for change terminals (board pages) only.
+    // The task panel serves any change-bound terminal: mirrored from the
+    // live board DOM on board pages, resolved via the session→change
+    // binding (and fed by a fetched board fragment) everywhere else.
     var panel = terminalTasksEl();
     var onBoard = page === "board" && boardEl() && boardEl().dataset.change;
     if (panel) {
-      panel.hidden = !onBoard;
+      panel.hidden = true;
       panel.innerHTML = "";
-      if (onBoard) syncTerminalTasks();
+      if (onBoard) {
+        panel.hidden = false;
+        syncTerminalTasks(boardEl(), boardEl().dataset.change);
+      } else {
+        resolveTerminalPanel(sessionID);
+      }
     }
     document.getElementById("terminal-title").textContent = title || "";
     var status = document.getElementById("terminal-status");
@@ -580,14 +618,15 @@
     });
     ro.observe(container);
 
-    tstate = { term: term, ws: ws, ro: ro };
+    tstate = { term: term, ws: ws, ro: ro, session: sessionID };
   }
 
   function closeTerminal() {
     if (tstate.ro) tstate.ro.disconnect();
     if (tstate.ws && tstate.ws.readyState <= 1) tstate.ws.close();
     if (tstate.term) tstate.term.dispose();
-    tstate = { term: null, ws: null, ro: null };
+    tstate = { term: null, ws: null, ro: null, session: null };
+    terminalPanelChange = null;
     var overlay = document.getElementById("terminal-overlay");
     if (overlay) overlay.hidden = true;
     var panel = terminalTasksEl();
@@ -612,17 +651,17 @@
   // Mirrors the statusClass template func in internal/server/render.go.
   function statusClass(s) { return s.toLowerCase().replace(/ /g, "-"); }
 
-  // The panel mirrors the board DOM (.cards[data-status] / .card[data-task]
-  // from boardFragment), so live updates ride the existing SSE board refresh:
-  // it re-runs on every #board htmx swap and never touches the server itself.
-  function syncTerminalTasks() {
+  // The panel mirrors the board fragment DOM (.cards[data-status] /
+  // .card[data-task]): on board pages src is the live #board (live updates
+  // ride the existing SSE board refresh); elsewhere it is a fetched
+  // fragment, re-loaded on SSE events by the terminal hooks above.
+  function syncTerminalTasks(src, change) {
     var panel = terminalTasksEl();
     if (!panel || panel.hidden) return;
-    var board = boardEl();
     var html = '<div class="ttp-scroll"><div class="ttp-head">Tasks</div>';
     var groups = 0;
-    if (board) {
-      board.querySelectorAll(".cards[data-status]").forEach(function (col) {
+    if (src) {
+      src.querySelectorAll(".cards[data-status]").forEach(function (col) {
         var cards = col.querySelectorAll(".card");
         if (!cards.length) return;
         groups++;
@@ -646,13 +685,42 @@
     html += "</div>"; // .ttp-scroll
     // Fixed footer: open the change plan modal, same request as the board's
     // Plan button (#detail stacks above the terminal).
-    if (board && board.dataset.change) {
+    if (change) {
       html += '<div class="ttp-foot"><a class="ttp-plan" hx-get="/changes/' +
-        encodeURIComponent(board.dataset.change) + '/plan"' +
+        encodeURIComponent(change) + '/plan"' +
         ' hx-target="#detail" hx-swap="innerHTML">Plan</a></div>';
     }
     panel.innerHTML = html;
     if (window.htmx) htmx.process(panel); // wire hx-get on the new rows
+  }
+
+  // Non-board terminals: resolve the session's change binding and, when
+  // bound, fill the panel from the change's board fragment.
+  function resolveTerminalPanel(sessionID) {
+    fetch("/api/sessions/" + encodeURIComponent(sessionID) + "/change", { headers: { Accept: "application/json" } })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (j) {
+        if (!j || !j.change) return;
+        if (!terminalOpen() || tstate.session !== sessionID) return; // user moved on
+        loadTerminalTasks(j.change);
+      })
+      .catch(function () {});
+  }
+
+  function loadTerminalTasks(changeID) {
+    fetch("/changes/" + encodeURIComponent(changeID), { headers: { Accept: "text/html", "HX-Request": "true" } })
+      .then(function (r) { return r.ok ? r.text() : null; })
+      .then(function (html) {
+        if (html == null || !terminalOpen()) return;
+        var panel = terminalTasksEl();
+        if (!panel) return;
+        var src = document.createElement("div");
+        src.innerHTML = html;
+        terminalPanelChange = changeID;
+        panel.hidden = false;
+        syncTerminalTasks(src, changeID);
+      })
+      .catch(function () {});
   }
 
   // Auto-open the terminal when arriving from the new-change-session flow
@@ -915,6 +983,205 @@
     });
   }
 
+  // --- settings page ---------------------------------------------------------
+
+  function initSettings() {
+    var root = document.getElementById("settings-page");
+    if (!root) return;
+
+    var view = null;
+    var options = null;
+    var scope = "project";
+
+    var BOOL_DEFAULTS = {
+      "session.autoOpenTerminal": true,
+      "ui.showArchived": true,
+      "docs.autoGardenerOnClose": true,
+    };
+
+    function getPath(obj, path) {
+      return path.split(".").reduce(function (o, k) { return o == null ? undefined : o[k]; }, obj);
+    }
+    function isSet(v) { return v !== undefined && v !== null && v !== ""; }
+    function boolLabel(v) { return v ? "On" : "Off"; }
+
+    // What applies when the layer being edited leaves the field unset:
+    // the other layer's value, else the built-in default.
+    function fallbackFor(field) {
+      var other = scope === "project" ? view.personal : view.project;
+      var v = getPath(other, field);
+      if (isSet(v)) return v;
+      if (field in BOOL_DEFAULTS) return BOOL_DEFAULTS[field];
+      return undefined;
+    }
+
+    function placeholderFor(field, fb) {
+      if (isSet(fb)) return String(fb);
+      if (field === "session.agent") return "Service default";
+      if (field === "session.model") {
+        return options && options.defaultModel ? "Service default (" + options.defaultModel + ")" : "Service default";
+      }
+      if (field === "git.defaultBranch") return "—";
+      if (field.indexOf("prompts.") === 0) return "(no addendum)";
+      return "";
+    }
+
+    function render() {
+      var layer = scope === "project" ? view.project : view.personal;
+      root.querySelectorAll(".settings-field").forEach(function (f) {
+        var field = f.getAttribute("data-field");
+        var kind = f.getAttribute("data-kind");
+        var input = f.querySelector("[data-input]");
+        var badge = f.querySelector("[data-badge]");
+        var lv = getPath(layer, field);
+        var fb = fallbackFor(field);
+        if (kind === "bool") {
+          input.value = isSet(lv) ? String(lv) : "";
+          var fbLabel = isSet(fb) ? boolLabel(fb) : boolLabel(BOOL_DEFAULTS[field]);
+          input.options[0].textContent = "Inherit (" + fbLabel + ")";
+        } else {
+          input.value = isSet(lv) ? lv : "";
+          input.placeholder = placeholderFor(field, fb);
+        }
+        var src = (view.sources && view.sources[field]) || "default";
+        badge.textContent = src.charAt(0).toUpperCase() + src.slice(1);
+        badge.classList.remove("src-default", "src-project", "src-personal");
+        badge.classList.add("src-" + src);
+      });
+      var err = document.getElementById("settings-load-error");
+      if (view.loadError) {
+        err.textContent = "Settings file problem: " + view.loadError;
+        err.hidden = false;
+      } else {
+        err.hidden = true;
+      }
+    }
+
+    function renderOptions() {
+      var hint = document.getElementById("settings-options-hint");
+      if (!options || !options.available) {
+        hint.hidden = false;
+        return;
+      }
+      hint.hidden = true;
+      var al = document.getElementById("settings-agent-list");
+      (options.agents || []).forEach(function (a) {
+        var o = document.createElement("option");
+        o.value = a.id;
+        o.label = a.name + (a.description ? " — " + a.description : "");
+        al.appendChild(o);
+      });
+      var ml = document.getElementById("settings-model-list");
+      (options.models || []).forEach(function (m) {
+        var o = document.createElement("option");
+        o.value = m.value;
+        o.label = m.name;
+        ml.appendChild(o);
+      });
+    }
+
+    root.querySelectorAll('input[name="settings-scope"]').forEach(function (radio) {
+      radio.addEventListener("change", function () {
+        scope = radio.value;
+        render();
+      });
+    });
+
+    // Group navigation: one section visible at a time, tracked in the URL
+    // hash so the active group survives a reload. Sections stay in the DOM
+    // (hidden), so render/save logic above is unaffected.
+    var nav = root.querySelector(".settings-nav");
+    function showGroup(name) {
+      root.querySelectorAll(".settings-section").forEach(function (sec) {
+        sec.hidden = sec.getAttribute("data-section") !== name;
+      });
+      nav.querySelectorAll("button").forEach(function (b) {
+        b.classList.toggle("active", b.getAttribute("data-group") === name);
+      });
+    }
+    nav.querySelectorAll("button").forEach(function (b) {
+      b.addEventListener("click", function () {
+        var name = b.getAttribute("data-group");
+        showGroup(name);
+        if (history.replaceState) history.replaceState(null, "", "#" + name);
+      });
+    });
+    var initial = (location.hash || "").slice(1);
+    showGroup(nav.querySelector('button[data-group="' + initial + '"]') ? initial : "session");
+
+    // Per-setting Change button: start (or reuse) the settings discussion
+    // for exactly this setting. A deliberate click — always opens the
+    // terminal, the auto-open gate does not apply.
+    root.addEventListener("click", function (e) {
+      var btn = e.target.closest(".settings-change");
+      if (!btn || !root.contains(btn)) return;
+      e.preventDefault();
+      var field = btn.closest(".settings-field").getAttribute("data-field");
+      btn.disabled = true;
+      fetch("/api/settings/change", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ field: field, scope: scope }),
+      })
+        .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.statusText); return j; }); })
+        .then(function (j) { openTerminal(j.session, j.title); })
+        .catch(function (err) { alert("Change request failed: " + err.message); })
+        .finally(function () { btn.disabled = false; });
+    });
+
+    root.querySelectorAll("[data-save]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var sectionEl = btn.closest(".settings-section");
+        var section = sectionEl.getAttribute("data-section");
+        var status = sectionEl.querySelector(".settings-status");
+        var payload = {};
+        payload[section] = {};
+        sectionEl.querySelectorAll(".settings-field").forEach(function (f) {
+          var key = f.getAttribute("data-field").split(".")[1];
+          var kind = f.getAttribute("data-kind");
+          var input = f.querySelector("[data-input]");
+          if (kind === "bool") {
+            payload[section][key] = input.value === "" ? null : input.value === "true";
+          } else {
+            payload[section][key] = input.value;
+          }
+        });
+        btn.disabled = true;
+        status.hidden = false;
+        status.classList.remove("err");
+        status.textContent = "Saving…";
+        fetch("/api/settings?scope=" + scope, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify(payload),
+        })
+          .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.statusText); return j; }); })
+          .then(function (j) {
+            view = j;
+            render();
+            status.textContent = "Saved ✓";
+            setTimeout(function () { status.hidden = true; }, 2500);
+          })
+          .catch(function (e) {
+            status.textContent = e.message;
+            status.classList.add("err");
+          })
+          .finally(function () { btn.disabled = false; });
+      });
+    });
+
+    fetch("/api/settings", { headers: { Accept: "application/json" } })
+      .then(function (r) { return r.json(); })
+      .then(function (j) { view = j; render(); })
+      .catch(function () {});
+    fetch("/api/settings/options", { headers: { Accept: "application/json" } })
+      .then(function (r) { return r.json(); })
+      .then(function (j) { options = j; renderOptions(); render(); })
+      .catch(function () {
+        document.getElementById("settings-options-hint").hidden = false;
+      });
+  }
+
   // --- init -----------------------------------------------------------------
 
   document.addEventListener("DOMContentLoaded", function () {
@@ -924,6 +1191,7 @@
     initContinue();
     initLifecycle();
     initCommitAll();
+    initSettings();
     checkValidation();
     autoOpenSession();
     loadDiscussions();

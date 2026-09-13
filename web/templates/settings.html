@@ -1,0 +1,145 @@
+{{define "content"}}
+<section id="settings-page" class="settings">
+  <div class="settings-head">
+    <h1>Settings</h1>
+    <div class="scope-toggle" role="radiogroup" aria-label="Save scope">
+      <label><input type="radio" name="settings-scope" value="project" checked> Project <span class="muted">(committed)</span></label>
+      <label><input type="radio" name="settings-scope" value="personal"> Personal <span class="muted">(this machine)</span></label>
+    </div>
+  </div>
+  <p class="muted">
+    Project settings live in <code>lessmess.json</code> (committed, shared with everyone using this repo).
+    Personal settings live in <code>.lessmess/settings.json</code> (gitignored) and win over project values.
+    The badge on each field shows where its current value comes from.
+  </p>
+  <p id="settings-load-error" class="settings-error" hidden></p>
+  <p id="settings-options-hint" class="muted" hidden>opencode service unavailable — agent and model are free text; values are saved as typed.</p>
+
+  <div class="settings-body">
+    <nav class="settings-nav" aria-label="Settings groups">
+      <button type="button" data-group="session" class="active"><span class="snav-name">Session</span></button>
+      <button type="button" data-group="prompts"><span class="snav-name">Prompts</span></button>
+      <button type="button" data-group="git"><span class="snav-name">Git</span></button>
+      <button type="button" data-group="ui"><span class="snav-name">UI</span></button>
+      <button type="button" data-group="docs"><span class="snav-name">Docs</span></button>
+    </nav>
+    <div class="settings-content">
+  <section class="settings-section" data-section="session">
+    <div class="settings-section-head">
+      <h2>Session</h2>
+      <button type="button" data-save>Save</button>
+      <span class="settings-status" hidden></span>
+    </div>
+    <p class="muted">Defaults applied to every opencode session lessmess spawns (change sessions, discussions, explorer chats, commits, doc gardener). Existing sessions are unaffected.</p>
+    <div class="settings-field" data-field="session.agent" data-kind="string">
+      <label>Default agent <span class="src-badge" data-badge></span><button type="button" class="settings-change" title="Discuss changing this setting">✦ change</button></label>
+      <input type="text" list="settings-agent-list" data-input autocomplete="off" spellcheck="false">
+      <datalist id="settings-agent-list"></datalist>
+      <p class="muted field-help">Primary opencode agent driving new sessions. Empty uses the service default.</p>
+    </div>
+    <div class="settings-field" data-field="session.model" data-kind="string">
+      <label>Default model <span class="src-badge" data-badge></span><button type="button" class="settings-change" title="Discuss changing this setting">✦ change</button></label>
+      <input type="text" list="settings-model-list" data-input autocomplete="off" spellcheck="false">
+      <datalist id="settings-model-list"></datalist>
+      <p class="muted field-help">Model for new sessions, as provider/model. Empty uses the service default.</p>
+    </div>
+    <div class="settings-field" data-field="session.autoOpenTerminal" data-kind="bool">
+      <label>Auto-open terminal <span class="src-badge" data-badge></span><button type="button" class="settings-change" title="Discuss changing this setting">✦ change</button></label>
+      <select data-input>
+        <option value="">Inherit</option>
+        <option value="true">On</option>
+        <option value="false">Off</option>
+      </select>
+      <p class="muted field-help">Open the embedded terminal automatically after a session is created.</p>
+    </div>
+  </section>
+
+  <section class="settings-section" data-section="prompts">
+    <div class="settings-section-head">
+      <h2>Prompt addenda</h2>
+      <button type="button" data-save>Save</button>
+      <span class="settings-status" hidden></span>
+    </div>
+    <p class="muted">Free text <strong>appended</strong> to the built-in prompts. The base prompts are never modified, so workflow safeguards stay intact. Empty means no addendum.</p>
+    <div class="settings-field" data-field="prompts.discussion" data-kind="string">
+      <label>Discussion <span class="src-badge" data-badge></span><button type="button" class="settings-change" title="Discuss changing this setting">✦ change</button></label>
+      <textarea data-input rows="3" spellcheck="false"></textarea>
+      <p class="muted field-help">Appended to the planning-assistant prompt that starts change discussions.</p>
+    </div>
+    <div class="settings-field" data-field="prompts.change" data-kind="string">
+      <label>Change execution <span class="src-badge" data-badge></span><button type="button" class="settings-change" title="Discuss changing this setting">✦ change</button></label>
+      <textarea data-input rows="3" spellcheck="false"></textarea>
+      <p class="muted field-help">Appended to the prompt binding a session to its change.</p>
+    </div>
+    <div class="settings-field" data-field="prompts.commit" data-kind="string">
+      <label>Commit (per change) <span class="src-badge" data-badge></span><button type="button" class="settings-change" title="Discuss changing this setting">✦ change</button></label>
+      <textarea data-input rows="3" spellcheck="false"></textarea>
+      <p class="muted field-help">Appended to the per-change commit prompt.</p>
+    </div>
+    <div class="settings-field" data-field="prompts.repoCommit" data-kind="string">
+      <label>Commit all (repo-wide) <span class="src-badge" data-badge></span><button type="button" class="settings-change" title="Discuss changing this setting">✦ change</button></label>
+      <textarea data-input rows="3" spellcheck="false"></textarea>
+      <p class="muted field-help">Appended to the repo-wide Commit all prompt.</p>
+    </div>
+    <div class="settings-field" data-field="prompts.gardener" data-kind="string">
+      <label>Doc gardener <span class="src-badge" data-badge></span><button type="button" class="settings-change" title="Discuss changing this setting">✦ change</button></label>
+      <textarea data-input rows="3" spellcheck="false"></textarea>
+      <p class="muted field-help">Appended to the docs-gardener prompt run after a change closes.</p>
+    </div>
+    <div class="settings-field" data-field="prompts.explorer" data-kind="string">
+      <label>Explorer chat <span class="src-badge" data-badge></span><button type="button" class="settings-change" title="Discuss changing this setting">✦ change</button></label>
+      <textarea data-input rows="3" spellcheck="false"></textarea>
+      <p class="muted field-help">Appended to the directory-chat prompt.</p>
+    </div>
+  </section>
+
+  <section class="settings-section" data-section="git">
+    <div class="settings-section-head">
+      <h2>Git</h2>
+      <button type="button" data-save>Save</button>
+      <span class="settings-status" hidden></span>
+    </div>
+    <div class="settings-field" data-field="git.defaultBranch" data-kind="string">
+      <label>Default branch <span class="src-badge" data-badge></span><button type="button" class="settings-change" title="Discuss changing this setting">✦ change</button></label>
+      <input type="text" data-input autocomplete="off" spellcheck="false">
+      <p class="muted field-help">Recorded in the root ledger Branch column for newly created changes. Informational only — no git branch is created.</p>
+    </div>
+  </section>
+
+  <section class="settings-section" data-section="ui">
+    <div class="settings-section-head">
+      <h2>UI</h2>
+      <button type="button" data-save>Save</button>
+      <span class="settings-status" hidden></span>
+    </div>
+    <div class="settings-field" data-field="ui.showArchived" data-kind="bool">
+      <label>Show archived changes <span class="src-badge" data-badge></span><button type="button" class="settings-change" title="Discuss changing this setting">✦ change</button></label>
+      <select data-input>
+        <option value="">Inherit</option>
+        <option value="true">On</option>
+        <option value="false">Off</option>
+      </select>
+      <p class="muted field-help">List archived changes on the Changes page.</p>
+    </div>
+  </section>
+
+  <section class="settings-section" data-section="docs">
+    <div class="settings-section-head">
+      <h2>Docs</h2>
+      <button type="button" data-save>Save</button>
+      <span class="settings-status" hidden></span>
+    </div>
+    <div class="settings-field" data-field="docs.autoGardenerOnClose" data-kind="bool">
+      <label>Doc gardener on close <span class="src-badge" data-badge></span><button type="button" class="settings-change" title="Discuss changing this setting">✦ change</button></label>
+      <select data-input>
+        <option value="">Inherit</option>
+        <option value="true">On</option>
+        <option value="false">Off</option>
+      </select>
+      <p class="muted field-help">Run the doc gardener automatically when a change is closed.</p>
+    </div>
+  </section>
+    </div>
+  </div>
+</section>
+{{end}}

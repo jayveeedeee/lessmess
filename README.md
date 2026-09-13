@@ -56,6 +56,46 @@ directory). One process serves one repository.
 - **Validation banner**: any breach of the `AGENTS.md` validation rules is
   shown in a banner and refuses writes to the affected file.
 
+## Settings
+
+The **Settings** page (top menu, right) edits defaults that used to be
+hard-coded. Settings are layered:
+
+- **Project** — `lessmess.json` at the repo root, committed and shared with
+  everyone using the repository. Edits via the page land in git status and
+  flow through the normal commit path like any other project file.
+- **Personal** — `.lessmess/settings.json`, gitignored tooling state on
+  this machine. Per field, personal wins over project, which wins over the
+  built-in default. Each field's badge shows which layer supplies its
+  current value; saving always writes the selected scope only.
+
+Everything is optional: a missing file means built-in defaults, and a
+malformed file falls back to defaults with a warning on the page. Saved
+values apply to new activity immediately — no restart.
+
+| Setting | Effect |
+| --- | --- |
+| `session.agent` | opencode agent for newly spawned sessions (change sessions, discussions, explorer chats, commits, doc gardener). Unknown values are rejected at save time when the service is reachable. |
+| `session.model` | Model for new sessions as `provider/model` (e.g. `anthropic/claude-sonnet-4-5`). Same validation. |
+| `session.autoOpenTerminal` | Open the embedded terminal automatically after a session is created (default on). |
+| `prompts.discussion` / `change` / `commit` / `repoCommit` / `gardener` / `explorer` | Free text **appended** to the corresponding built-in prompt. Base prompts are never modified, so workflow safeguards stay intact. |
+| `git.defaultBranch` | Recorded in the root ledger Branch column for newly created changes (informational only — no branch is created). |
+| `ui.showArchived` | List archived changes on the Changes page (default on). |
+| `docs.autoGardenerOnClose` | Run the doc gardener automatically when a change closes (default on). |
+
+Agent and model fields suggest live values from the opencode service
+(primary agents, available models, service default shown as placeholder);
+with the service down the fields stay editable as free text. Agent/model
+apply only to sessions created after saving — never retroactively.
+
+API: `GET /api/settings` (effective + layers + sources),
+`PUT /api/settings?scope=project|personal` (section-scoped writes; empty
+or null clears a field from that layer; submitted agent/model values are
+validated against the live service when reachable — the service accepts
+unknown names at creation but then never runs the session),
+`GET /api/settings/options` (agent/model lists scoped to this repository;
+`available:false` when the service is down).
+
 ## Safety
 
 - Binds `127.0.0.1` by default; **no authentication** — it is a local

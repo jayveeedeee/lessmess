@@ -1,7 +1,7 @@
 <!-- tasktracker:begin -->
 # Structure: internal/server
 
-<!-- tasktracker-meta: refreshed=2026-09-13 source=manual tree=4b4a54067346 -->
+<!-- tasktracker-meta: refreshed=2026-09-13 source=manual tree=e735f3b8cf4a -->
 
 HTTP server over the store: HTML pages, JSON endpoints, SSE updates, session mapping, PTY terminal, and the docs refresh queue
 
@@ -29,6 +29,13 @@ HTTP server over the store: HTML pages, JSON endpoints, SSE updates, session map
 | `render_test.go` | Tests for rendering and HTML pages |
 | `server.go` | Server struct, routes, core handlers, SSE stream |
 | `server_test.go` | Tests for core routes and handlers |
+| `settings.go` | Layered project and personal settings schema with stateless load, per-field merge, and atomic single-layer writes. |
+| `settings_test.go` | Tests for settings layering, merge precedence, patches, fail-open loads, and model ref splitting. |
+| `settingsapi.go` | Settings page plus GET/PUT JSON API with live agent and model validation and an opencode options proxy. |
+| `settingsapi_test.go` | Tests for settings API reads, writes, validation, and degraded options responses. |
+| `settingschange.go` | Settings-page Change button: POST /api/settings/change starts or reuses a settings-primed discussion. |
+| `settingschange_test.go` | Tests for the settings Change flow: fresh, reused, and rejected discussions. |
+| `settingswiring_test.go` | Tests for settings wiring into session spawn defaults, prompt addenda, branch recording, the gardener gate, and archived filtering. |
 | `terminal.go` | WebSocket-to-PTY bridge running the opencode TUI |
 | `terminal_test.go` | Tests for the terminal WebSocket bridge |
 | `touched.go` | Derives covered docs dirs touched by a change |

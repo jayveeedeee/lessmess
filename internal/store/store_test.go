@@ -261,7 +261,7 @@ func TestCreateTaskNoReuse(t *testing.T) {
 
 func TestCreateChange(t *testing.T) {
 	s, dir := openFixture(t)
-	id, err := s.CreateChange("New objective", "NEW", "2026-09-12")
+	id, err := s.CreateChange("New objective", "NEW", "feat/settings", "2026-09-12")
 	if err != nil {
 		t.Fatalf("CreateChange: %v", err)
 	}
@@ -279,15 +279,32 @@ func TestCreateChange(t *testing.T) {
 	}
 	var found bool
 	for _, r := range root.Rows {
-		if r.Change == id && r.Prefix == "NEW" && r.Status == model.OverallPlanned {
+		if r.Change == id && r.Prefix == "NEW" && r.Status == model.OverallPlanned && r.Branch == "feat/settings" {
 			found = true
 		}
 	}
 	if !found {
-		t.Fatal("root row not appended")
+		t.Fatal("root row not appended with branch")
 	}
 	if v := s.Validate(); len(v) != 0 {
 		t.Fatalf("violations after create: %v", v)
+	}
+}
+
+func TestCreateChangeEmptyBranch(t *testing.T) {
+	s, _ := openFixture(t)
+	id, err := s.CreateChange("Plain", "PLA", "", "2026-09-12")
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, err := s.Root()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range root.Rows {
+		if r.Change == id && r.Branch != model.Empty {
+			t.Fatalf("branch = %q, want %q", r.Branch, model.Empty)
+		}
 	}
 }
 
@@ -300,7 +317,7 @@ func TestCreateChangeGapRule(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	id, err := s.CreateChange("Third", "—", "2026-09-12")
+	id, err := s.CreateChange("Third", "—", "", "2026-09-12")
 	if err != nil {
 		t.Fatal(err)
 	}

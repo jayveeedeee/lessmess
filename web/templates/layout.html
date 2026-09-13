@@ -27,6 +27,9 @@ document.documentElement.dataset.theme = localStorage.getItem("tt-theme") || "da
     <a href="/"{{if or (eq .Page "index") (eq .Page "board")}} class="active"{{end}}>Changes</a>
     <a href="/explorer"{{if eq .Page "explorer"}} class="active"{{end}}>Explorer</a>
   </nav>
+  <nav class="topnav topnav-right">
+    <a href="/settings"{{if eq .Page "settings"}} class="active"{{end}}>Settings</a>
+  </nav>
   <button id="notif-bell" type="button" title="Docs notifications" aria-label="Docs notifications" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg><span id="notif-badge"></span></button>
   <button id="theme-toggle" type="button" title="Toggle theme" aria-label="Toggle theme">☾</button>
 </header>

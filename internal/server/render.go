@@ -42,6 +42,7 @@ type renderer struct {
 	board    *template.Template
 	partial  *template.Template
 	explorer *template.Template
+	settings *template.Template
 	assetsV  string
 }
 
@@ -69,6 +70,7 @@ func newRenderer() *renderer {
 		board:    mustParse("templates/layout.html", "templates/board.html", "templates/partials.html"),
 		partial:  mustParse("templates/partials.html", "templates/explorer.html"),
 		explorer: mustParse("templates/layout.html", "templates/explorer.html"),
+		settings: mustParse("templates/layout.html", "templates/settings.html"),
 		assetsV:  assetsVersion(),
 	}
 }

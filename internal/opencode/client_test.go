@@ -89,6 +89,100 @@ func TestListSessions(t *testing.T) {
 	}
 }
 
+func TestCreateSessionWithAgentAndModel(t *testing.T) {
+	c, _ := fakeServer(t, "opencode", "pw", func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		json.NewDecoder(r.Body).Decode(&body)
+		if body["agent"] != "build" {
+			t.Errorf("agent = %v, want build", body["agent"])
+		}
+		m, _ := body["model"].(map[string]any)
+		if m["id"] != "accounts/f/m1" || m["providerID"] != "prov" {
+			t.Errorf("model = %v", body["model"])
+		}
+		if _, ok := m["variant"]; ok {
+			t.Errorf("variant must be omitted when empty: %v", m)
+		}
+		w.Write([]byte(`{"data":{"id":"ses_9","title":"t","location":{"directory":"/repo"}}}`))
+	})
+	s, err := c.CreateSessionWith(context.Background(), "t", "/repo", "build",
+		&ModelRef{ID: "accounts/f/m1", ProviderID: "prov"})
+	if err != nil {
+		t.Fatalf("CreateSessionWith: %v", err)
+	}
+	if s.ID != "ses_9" {
+		t.Fatalf("session = %+v", s)
+	}
+}
+
+func TestCreateSessionWithOmitsEmptyDefaults(t *testing.T) {
+	c, _ := fakeServer(t, "opencode", "pw", func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		json.NewDecoder(r.Body).Decode(&body)
+		if _, ok := body["agent"]; ok {
+			t.Errorf("agent key must be omitted when empty: %v", body)
+		}
+		if _, ok := body["model"]; ok {
+			t.Errorf("model key must be omitted for incomplete ref: %v", body)
+		}
+		w.Write([]byte(`{"data":{"id":"ses_1","title":"t"}}`))
+	})
+	// Empty agent and a model ref missing providerID → both omitted.
+	if _, err := c.CreateSessionWith(context.Background(), "t", "/repo", "", &ModelRef{ID: "x"}); err != nil {
+		t.Fatalf("CreateSessionWith: %v", err)
+	}
+}
+
+func TestListAgentsAndModels(t *testing.T) {
+	c, _ := fakeServer(t, "opencode", "pw", func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/agent":
+			// Real shape: top-level {location, data:[...]} — do() unwraps data.
+			w.Write([]byte(`{"location":{"directory":"/r"},"data":[{"id":"build","name":"Build","description":"d","mode":"primary","hidden":false},{"id":"general","name":"General","mode":"subagent"}]}`))
+		case "/api/model":
+			w.Write([]byte(`{"location":{"directory":"/r"},"data":[{"id":"accounts/f/m1","providerID":"prov","name":"M1"}]}`))
+		case "/api/model/default":
+			w.Write([]byte(`{"location":{"directory":"/r"},"data":{"id":"accounts/f/m1","providerID":"prov","name":"M1"}}`))
+		default:
+			t.Errorf("unexpected path %s", r.URL.Path)
+		}
+	})
+	ctx := context.Background()
+	agents, err := c.ListAgents(ctx)
+	if err != nil || len(agents) != 2 || agents[0].ID != "build" || agents[1].Mode != "subagent" {
+		t.Fatalf("agents = %v, %v", agents, err)
+	}
+	models, err := c.ListModels(ctx)
+	if err != nil || len(models) != 1 || models[0].ProviderID != "prov" || models[0].Name != "M1" {
+		t.Fatalf("models = %v, %v", models, err)
+	}
+	def, err := c.DefaultModel(ctx)
+	if err != nil || def.ID != "accounts/f/m1" {
+		t.Fatalf("default = %v, %v", def, err)
+	}
+}
+
+func TestListAgentsAndModelsLocationScoped(t *testing.T) {
+	c, _ := fakeServer(t, "opencode", "pw", func(w http.ResponseWriter, r *http.Request) {
+		if got := r.URL.Query().Get("location[directory]"); got != "/repo" {
+			t.Errorf("location[directory] = %q, want /repo", got)
+		}
+		switch r.URL.Path {
+		case "/api/agent":
+			w.Write([]byte(`{"data":[]}`))
+		case "/api/model":
+			w.Write([]byte(`{"data":[]}`))
+		}
+	})
+	ctx := context.Background()
+	if _, err := c.ListAgentsFor(ctx, "/repo"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.ListModelsFor(ctx, "/repo"); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestRenameAndDelete(t *testing.T) {
 	c, _ := fakeServer(t, "opencode", "pw", func(w http.ResponseWriter, r *http.Request) {
 		switch {
