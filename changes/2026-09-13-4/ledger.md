@@ -3,8 +3,8 @@
 - Change ID: 2026-09-13-4
 - Plan: [plan.md](plan.md)
 - Branch: —
-- Overall status: In progress
-- Last updated: 2026-09-13
+- Overall status: Done
+- Last updated: 2026-09-14
 
 ## Status definitions
 
@@ -23,14 +23,14 @@ Row order is display and priority order; top row is highest priority.
 
 | Task | Title | Status | Depends on | Updated | Notes |
 | --- | --- | --- | --- | --- | --- |
-| [ONB-00](tasks/00-onboarding-state-file.md) | Onboarding state file helpers | Test | — | 2026-09-13 | Verified: roundtrip/malformed-fail-open/pending-transition tests pass; vet clean. |
-| [ONB-01](tasks/01-setup-mode-server.md) | Setup-mode server shell with hot-open | Test | ONB-00 | 2026-09-13 | Verified: sentinel+guard+swap-once tests pass; partial-tree case (changes/ without root ledger, found in user testing on truendo2) now triggers setup mode while a corrupt ledger stays fatal; live E2E on both scenarios green. |
-| [ONB-02](tasks/02-prereq-checks-endpoint.md) | Prerequisite checks endpoint | Test | ONB-01 | 2026-09-13 | Verified: faked ok/warn/fail + staged service-failure tests pass; changes-present now distinguishes present / partial (no root ledger) / absent; live run against truendo2 reports ready:true with the partial-tree warning. |
-| [ONB-03](tasks/03-bootstrap-endpoint.md) | Bootstrap endpoint with docs-coverage option | Test | ONB-01 | 2026-09-13 | Verified: full-loop + partial-tree + exclusion tests pass; excludeDirs accepts base names and nested paths (422 on globs/escapes), redundant ancestors normalized, existing configs updated with hand-authored patterns preserved; GET /api/setup/dirs serves lazy children with per-dir excluded state. |
-| [ONB-04](tasks/04-docs-seed-endpoint.md) | Server-side docs seed honoring agent/model | Test | ONB-01 | 2026-09-13 | Verified: summarizer passes agent/model (first-slash split), endpoint 503/409/run/status tests pass; CLI docs seed now uses SessionDefaults; full suite green. |
-| [ONB-05](tasks/05-wizard-ui.md) | Wizard UI (template, client flow, styles) | Test | ONB-02, ONB-03, ONB-04 | 2026-09-13 | Verified: render tests (incl. chrome-absence) + JS checks pass; wizard E2E green; agent/model lists populate; picker is a lazy expandable tree with implied-descendant display; wizard is a centered card with underline step highlights and no app chrome. |
-| [ONB-06](tasks/06-onboarding-banner.md) | Index banner and Settings re-entry | Test | ONB-00, ONB-05 | 2026-09-13 | Verified: render test (pending/dismissed/completed) passes; live on this repo: banner shows, dismiss persists, Settings link + /setup reachable. |
-| [ONB-07](tasks/07-readme-and-verification.md) | README and full verification | Test | ONB-05, ONB-06 | 2026-09-13 | Verified: README documents first-run + setup API; vet/test/build green; validate exit 0; live E2E matrix executed (evidence in Notes). |
+| [ONB-00](tasks/00-onboarding-state-file.md) | Onboarding state file helpers | Done | — | 2026-09-14 | Verified: roundtrip/malformed-fail-open/pending-transition tests pass; vet clean. |
+| [ONB-01](tasks/01-setup-mode-server.md) | Setup-mode server shell with hot-open | Done | ONB-00 | 2026-09-14 | Verified: sentinel+guard+swap-once tests pass; partial-tree case (changes/ without root ledger, found in user testing on truendo2) now triggers setup mode while a corrupt ledger stays fatal; live E2E on both scenarios green. |
+| [ONB-07](tasks/07-readme-and-verification.md) | README and full verification | Done | ONB-05, ONB-06 | 2026-09-14 | Verified: README documents first-run + setup API; vet/test/build green; validate exit 0; live E2E matrix executed (evidence in Notes). |
+| [ONB-06](tasks/06-onboarding-banner.md) | Index banner and Settings re-entry | Done | ONB-00, ONB-05 | 2026-09-14 | Verified: render test (pending/dismissed/completed) passes; live on this repo: banner shows, dismiss persists, Settings link + /setup reachable. |
+| [ONB-05](tasks/05-wizard-ui.md) | Wizard UI (template, client flow, styles) | Done | ONB-02, ONB-03, ONB-04 | 2026-09-14 | Verified: render tests (incl. chrome-absence) + JS checks pass; wizard E2E green; agent/model lists populate; picker is a lazy expandable tree with implied-descendant display; wizard is a centered card with underline step highlights and no app chrome. |
+| [ONB-04](tasks/04-docs-seed-endpoint.md) | Server-side docs seed honoring agent/model | Done | ONB-01 | 2026-09-14 | Verified: summarizer passes agent/model (first-slash split), endpoint 503/409/run/status tests pass; CLI docs seed now uses SessionDefaults; full suite green. |
+| [ONB-03](tasks/03-bootstrap-endpoint.md) | Bootstrap endpoint with docs-coverage option | Done | ONB-01 | 2026-09-14 | Verified: full-loop + partial-tree + exclusion tests pass; excludeDirs accepts base names and nested paths (422 on globs/escapes), redundant ancestors normalized, existing configs updated with hand-authored patterns preserved; GET /api/setup/dirs serves lazy children with per-dir excluded state. |
+| [ONB-02](tasks/02-prereq-checks-endpoint.md) | Prerequisite checks endpoint | Done | ONB-01 | 2026-09-14 | Verified: faked ok/warn/fail + staged service-failure tests pass; changes-present now distinguishes present / partial (no root ledger) / absent; live run against truendo2 reports ready:true with the partial-tree warning. |
 
 ## Notes
 

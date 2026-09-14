@@ -1,7 +1,7 @@
 <!-- tasktracker:begin -->
 # Structure: internal/docs
 
-<!-- tasktracker-meta: refreshed=2026-09-13 source=manual tree=d0a9e98c968f -->
+<!-- tasktracker-meta: refreshed=2026-09-14 source=2026-09-13-4 tree=96e9cf2961a9 -->
 
 Implements agentsdocs management: coverage config, per-folder STRUCTURE.md/AGENTS.md generation, seeding, summarization, validation, and refresh.
 
@@ -14,6 +14,8 @@ Implements agentsdocs management: coverage config, per-folder STRUCTURE.md/AGENT
 | `config_test.go` | tests for config loading and coverage rules |
 | `init.go` | bootstraps workflow files into a repository |
 | `init_test.go` | tests for repository initialization |
+| `learnings.go` | Lints AGENTS.md auto sections for stale backticked path references via StaleLearningRefs. |
+| `learnings_test.go` | Tests for reference extraction, path-shape filtering, and stale-reference detection. |
 | `readdocs.go` | Reads a directory's STRUCTURE.md into UI-facing purpose, entry blurbs, and meta. |
 | `readdocs_test.go` | Tests for reading docs content, placeholder handling, and corrupt markers. |
 | `seed.go` | resumable three-phase seed orchestration |

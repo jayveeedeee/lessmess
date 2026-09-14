@@ -79,7 +79,13 @@ body {
 
 /* --- header ------------------------------------------------------------ */
 
+/* Sticky on every page: the bar stays visible while the page scrolls.
+   z-index 20 keeps it under the terminal overlay (30) and the board's
+   task-detail panel; the banner and page content scroll beneath it. */
 header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
   display: flex;
   align-items: center;
   gap: 0.9rem;
@@ -789,14 +795,55 @@ body[data-page="board"] .board {
 
 /* --- settings page ------------------------------------------------------- */
 
-.settings { max-width: 720px; }
-.settings h1 { margin: 0; font-size: 1.25rem; font-weight: 700; }
-.settings-head {
-  display: flex; align-items: center; gap: 1.2rem; flex-wrap: wrap;
-  margin-bottom: 0.6rem;
+.settings h1 { margin: 0 0 0.9rem; font-size: 1.05rem; font-weight: 700; }
+
+/* Permanent scope row: sits flush under the top menu bar (negative margins
+   cancel main's padding) and stays pinned below the sticky header. z-index 19
+   keeps it under the header (20) and the terminal overlay (30). */
+.settings-scopebar {
+  position: sticky;
+  top: 52px;
+  z-index: 19;
+  display: flex;
+  align-items: center;
+  margin: -1.25rem -1.25rem 0;
+  padding: 0.45rem 1.25rem;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
 }
-.scope-toggle { display: flex; gap: 1rem; font-size: 0.85rem; }
-.scope-toggle label { display: flex; align-items: center; gap: 0.35rem; cursor: pointer; }
+
+/* Segmented Personal/Project control: native radios drive the logic in
+   app.js; the input is visually hidden and the span is the visible pill. */
+.scope-seg {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-2);
+}
+.scope-seg label { position: relative; display: inline-flex; }
+.scope-seg input[type="radio"] {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.scope-seg span {
+  padding: 0.18rem 1.05rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--muted);
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+.scope-seg label:hover input:not(:checked) + span { color: var(--text); }
+.scope-seg input:checked + span { background: var(--accent); color: #fff; }
+.scope-seg input:focus-visible + span {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
 
 .settings-section {
   background: var(--surface);
@@ -860,42 +907,103 @@ body[data-page="board"] .board {
   font-size: 0.82rem;
 }
 
-/* --- settings page: grouped left navigation ------------------------------- */
+/* --- settings page: split shell ------------------------------------------- */
 
-.settings { max-width: 860px; }
-.settings-body { display: flex; gap: 1.2rem; align-items: flex-start; margin-top: 1rem; }
-.settings-nav {
-  display: flex; flex-direction: column; gap: 0.15rem;
-  width: 9.5rem; flex: none;
-  position: sticky; top: 1rem;
+/* Full-height app page (same pattern as the board): header + scope row on
+   top, the split fills the viewport, the footer is pinned to the bottom,
+   and each pane scrolls internally. */
+body[data-page="settings"] {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
 }
+body[data-page="settings"] main {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.settings {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.settings-split {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 1.5rem;
+  margin-top: 1rem;
+}
+
+/* Side menu: full column height, scrolls on its own when the viewport is
+   short. */
+.settings-side {
+  flex: 0 0 13.5rem;
+  min-height: 0;
+  overflow-y: auto;
+}
+.settings-nav { display: flex; flex-direction: column; gap: 0.2rem; }
+/* Flat, full-width selections: hover and the active accent bar span the
+   whole sidebar column, square corners. */
 .settings-nav button {
   display: flex;
   background: none;
   color: var(--text);
   text-align: left;
-  padding: 0.14rem 0.25rem;
-  border-radius: 4px;
+  padding: 0.42rem 0.55rem;
+  border-radius: 0;
 }
 .settings-nav button:hover { background: var(--surface-2); }
+.settings-nav button.active,
+.settings-nav button.active:hover { background: var(--accent); color: #fff; }
 .settings-nav .snav-name {
   font-weight: 600;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.88rem;
 }
-/* Explorer selection idiom: the active item's name is an accent-filled
-   pill, same as .xtree summary.selected .xdir-name. */
-.settings-nav button.active .snav-name {
-  background: var(--accent);
-  color: #fff;
-  padding: 0 0.2rem;
-  margin: 0 -0.2rem;
+
+/* Pinned footer: flush to the viewport bottom (negative margins cancel
+   main's padding), spanning the full page width. */
+.settings-foot {
+  flex: none;
+  margin: 1rem -1.25rem -1.25rem;
+  padding: 0.6rem 1.25rem;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
 }
-.settings-content { flex: 1; min-width: 0; }
+.settings-foot p { margin: 0; font-size: 0.78rem; }
+
+/* General section: the ghost button renders on an anchor, so give it the
+   block sizing a <button> gets for free. */
+.settings-wizard-btn {
+  display: inline-block;
+  width: fit-content;
+  text-decoration: none;
+}
+
+.settings-content {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+}
 .settings-content .settings-section { margin-top: 0; }
+
+/* Narrow viewports: back to normal page scroll and a stacked layout, with
+   the footer in normal flow after the content. */
 @media (max-width: 640px) {
-  .settings-body { flex-direction: column; }
-  .settings-nav { flex-direction: row; flex-wrap: wrap; width: auto; position: static; }
+  body[data-page="settings"] { display: block; height: auto; overflow: visible; }
+  body[data-page="settings"] main { display: block; }
+  .settings { display: block; }
+  .settings-split { flex-direction: column; }
+  .settings-side { flex: none; width: auto; overflow: visible; }
+  .settings-nav { flex-direction: row; flex-wrap: wrap; }
+  .settings-content { overflow: visible; }
+  .settings-foot { margin: 1.25rem 0 0; }
 }
 
 /* Per-setting Change button: same pill idiom as the explorer's chat button. */

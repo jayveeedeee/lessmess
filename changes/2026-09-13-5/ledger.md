@@ -3,8 +3,8 @@
 - Change ID: 2026-09-13-5
 - Plan: [plan.md](plan.md)
 - Branch: —
-- Overall status: In progress
-- Last updated: 2026-09-13
+- Overall status: Done
+- Last updated: 2026-09-14
 
 ## Status definitions
 
@@ -23,16 +23,16 @@ Row order is display and priority order; top row is highest priority.
 
 | Task | Title | Status | Depends on | Updated | Notes |
 | --- | --- | --- | --- | --- | --- |
-| [LRN-00](tasks/00-ancestor-targets.md) | Ancestor targets and DocsJob shape | Test | — | 2026-09-13 | Verified: ancestor table tests + queue roundtrip pass; close job carries Ancestors=["internal"]; stale/reconcile paths cover ancestors. |
-| [LRN-01](tasks/01-gardener-prompt-sections.md) | Two-section gardener prompt with removal accounting | Test | LRN-00 | 2026-09-13 | Verified: prompt table tests (review section, deletion license, accounting, manual unchanged, no-ancestor case) pass. |
-| [LRN-02](tasks/02-ancestor-verify-restore.md) | Snapshot/verify/restore for ancestor targets | Test | LRN-00, LRN-01 | 2026-09-13 | Verified: ancestor out-of-marker violation restores + fails job; in-marker learning deletion persists; existing cage tests green. |
-| [LRN-03](tasks/03-reference-lint.md) | Stale-reference lint in internal/docs | Test | — | 2026-09-13 | Verified (post-feedback): sibling-variant resolution (`truservice.yaml` ↔ `truservice.yaml.template`) + deduplicated findings; truendo2 validate read-only dropped ~67 warnings to the 7 legitimately-stale ones. |
-| [LRN-04](tasks/04-refresh-union-lint-context.md) | Refresh union and lint context in manual jobs | Test | LRN-03 | 2026-09-13 | Verified (post-feedback): refresh union chunks into ≤10-dir gardener jobs (unit + 13-dir live-shape test); one fragile giant session can no longer flag everything stale. |
-| [LRN-05](tasks/05-gardener-model-setting.md) | docs.gardenerModel setting | Test | — | 2026-09-13 | Verified: precedence tests; spawn override + fallback via fake service; PUT 422 names field; clear restores inheritance; Settings row renders. |
-| [LRN-06](tasks/06-docs-and-verification.md) | README, package docs, and full verification | Test | LRN-01, LRN-02, LRN-04, LRN-05 | 2026-09-13 | Verified: gates green (vet/test/build, validate exit 0); live E2E on scratch repo — lint flag → refresh job → gardener removed dead ref → finding cleared; override model logged and used. |
-| [LRN-07](tasks/07-server-seed-endpoint.md) | Resumable seed on the normal server | Test | — | 2026-09-13 | Verified (post-feedback): file-based missing-docs targeting (cursor ignored for missing dirs), force mode redoes all, plain re-run returns the use-force hint; live E2E confirms all three. |
-| [LRN-08](tasks/08-exclusions-editor.md) | Exclusions editor and bell seed button | Test | LRN-07 | 2026-09-13 | Verified (post-feedback): Settings exclusions widget is the wizard's lazy nested tree (same endpoint/rows); bell shows Run missing docs (N) + Force checkbox with confirm; nested POST prunes subtrees (live). |
-| [LRN-09](tasks/09-seed-exclusions-verification.md) | README and verification for seed/exclusions | Test | LRN-07, LRN-08 | 2026-09-13 | Verified: README documents missing-file targeting, force, nested exclusions; live matrix green (partial/missing/force/exclusion + UI hooks). |
+| [LRN-00](tasks/00-ancestor-targets.md) | Ancestor targets and DocsJob shape | Done | — | 2026-09-14 | Verified: ancestor table tests + queue roundtrip pass; close job carries Ancestors=["internal"]; stale/reconcile paths cover ancestors. |
+| [LRN-01](tasks/01-gardener-prompt-sections.md) | Two-section gardener prompt with removal accounting | Done | LRN-00 | 2026-09-14 | Verified: prompt table tests (review section, deletion license, accounting, manual unchanged, no-ancestor case) pass. |
+| [LRN-09](tasks/09-seed-exclusions-verification.md) | README and verification for seed/exclusions | Done | LRN-07, LRN-08 | 2026-09-14 | Verified: README documents missing-file targeting, force, nested exclusions; live matrix green (partial/missing/force/exclusion + UI hooks). |
+| [LRN-05](tasks/05-gardener-model-setting.md) | docs.gardenerModel setting | Done | — | 2026-09-14 | Verified: precedence tests; spawn override + fallback via fake service; PUT 422 names field; clear restores inheritance; Settings row renders. |
+| [LRN-07](tasks/07-server-seed-endpoint.md) | Resumable seed on the normal server | Done | — | 2026-09-14 | Verified (post-feedback): file-based missing-docs targeting (cursor ignored for missing dirs), force mode redoes all, plain re-run returns the use-force hint; live E2E confirms all three. |
+| [LRN-08](tasks/08-exclusions-editor.md) | Exclusions editor and bell seed button | Done | LRN-07 | 2026-09-14 | Verified (post-feedback): Settings exclusions widget is the wizard's lazy nested tree (same endpoint/rows); bell shows Run missing docs (N) + Force checkbox with confirm; nested POST prunes subtrees (live). |
+| [LRN-06](tasks/06-docs-and-verification.md) | README, package docs, and full verification | Done | LRN-01, LRN-02, LRN-04, LRN-05 | 2026-09-14 | Verified: gates green (vet/test/build, validate exit 0); live E2E on scratch repo — lint flag → refresh job → gardener removed dead ref → finding cleared; override model logged and used. |
+| [LRN-02](tasks/02-ancestor-verify-restore.md) | Snapshot/verify/restore for ancestor targets | Done | LRN-00, LRN-01 | 2026-09-14 | Verified: ancestor out-of-marker violation restores + fails job; in-marker learning deletion persists; existing cage tests green. |
+| [LRN-03](tasks/03-reference-lint.md) | Stale-reference lint in internal/docs | Done | — | 2026-09-14 | Verified (post-feedback): sibling-variant resolution (`truservice.yaml` ↔ `truservice.yaml.template`) + deduplicated findings; truendo2 validate read-only dropped ~67 warnings to the 7 legitimately-stale ones. |
+| [LRN-04](tasks/04-refresh-union-lint-context.md) | Refresh union and lint context in manual jobs | Done | LRN-03 | 2026-09-14 | Verified (post-feedback): refresh union chunks into ≤10-dir gardener jobs (unit + 13-dir live-shape test); one fragile giant session can no longer flag everything stale. |
 
 ## Notes
 

@@ -1,30 +1,37 @@
 {{define "content"}}
 <section id="settings-page" class="settings">
-  <div class="settings-head">
-    <h1>Settings</h1>
-    <div class="scope-toggle" role="radiogroup" aria-label="Save scope">
-      <label><input type="radio" name="settings-scope" value="project" checked> Project <span class="muted">(committed)</span></label>
-      <label><input type="radio" name="settings-scope" value="personal"> Personal <span class="muted">(this machine)</span></label>
+  <div class="settings-scopebar">
+    <div class="scope-seg" role="radiogroup" aria-label="Save scope">
+      <label><input type="radio" name="settings-scope" value="project" checked><span>Project</span></label>
+      <label><input type="radio" name="settings-scope" value="personal"><span>Personal</span></label>
     </div>
   </div>
-  <p class="muted">
-    Project settings live in <code>lessmess.json</code> (committed, shared with everyone using this repo).
-    Personal settings live in <code>.lessmess/settings.json</code> (gitignored) and win over project values.
-    The badge on each field shows where its current value comes from.
-  </p>
-  <p id="settings-load-error" class="settings-error" hidden></p>
-  <p id="settings-options-hint" class="muted" hidden>opencode service unavailable — agent and model are free text; values are saved as typed.</p>
-  <p class="muted">First-time setup? <a href="/setup">Re-run the onboarding wizard</a> — prerequisites, bootstrap, default agent, and optional docs seeding.</p>
-
-  <div class="settings-body">
-    <nav class="settings-nav" aria-label="Settings groups">
-      <button type="button" data-group="session" class="active"><span class="snav-name">Session</span></button>
-      <button type="button" data-group="prompts"><span class="snav-name">Prompts</span></button>
-      <button type="button" data-group="git"><span class="snav-name">Git</span></button>
-      <button type="button" data-group="ui"><span class="snav-name">UI</span></button>
-      <button type="button" data-group="docs"><span class="snav-name">Docs</span></button>
-    </nav>
+  <div class="settings-split">
+    <aside class="settings-side">
+      <h1>Settings</h1>
+      <nav class="settings-nav" aria-label="Settings groups">
+        <button type="button" data-group="general"><span class="snav-name">General</span></button>
+        <button type="button" data-group="session" class="active"><span class="snav-name">Session</span></button>
+        <button type="button" data-group="prompts"><span class="snav-name">Prompts</span></button>
+        <button type="button" data-group="git"><span class="snav-name">Git</span></button>
+        <button type="button" data-group="ui"><span class="snav-name">UI</span></button>
+        <button type="button" data-group="docs"><span class="snav-name">Docs</span></button>
+      </nav>
+    </aside>
     <div class="settings-content">
+      <p id="settings-load-error" class="settings-error" hidden></p>
+      <p id="settings-options-hint" class="muted" hidden>opencode service unavailable — agent and model are free text; values are saved as typed.</p>
+  <section class="settings-section" data-section="general">
+    <div class="settings-section-head">
+      <h2>General</h2>
+    </div>
+    <div class="settings-field">
+      <label>Onboarding wizard</label>
+      <a class="btn-ghost settings-wizard-btn" href="/setup">Re-run the onboarding wizard</a>
+      <p class="muted field-help">Five steps: prerequisites, bootstrap, default agent and model, optional docs seeding, finish. Runs on top of the current repository — existing artifacts are kept.</p>
+    </div>
+  </section>
+
   <section class="settings-section" data-section="session">
     <div class="settings-section-head">
       <h2>Session</h2>
@@ -154,5 +161,12 @@
   </section>
     </div>
   </div>
+  <footer class="settings-foot">
+    <p class="muted">
+      Project settings live in <code>lessmess.json</code> (committed, shared with everyone using this repo).
+      Personal settings live in <code>.lessmess/settings.json</code> (gitignored) and win over project values.
+      The badge on each field shows where its current value comes from.
+    </p>
+  </footer>
 </section>
 {{end}}

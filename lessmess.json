@@ -1,5 +1,6 @@
 {
   "session": {
+    "agent": "build",
     "model": "zai-coding-plan/glm-5.3-flash"
   },
   "prompts": {
