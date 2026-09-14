@@ -34,6 +34,49 @@ lessmess docs seed [--dry-run] [--budget N] [--dir .]
 `--dir` points at a repository root containing `changes/` (default: current
 directory). One process serves one repository.
 
+### First run: onboarding wizard
+
+Point `lessmess serve` at a directory that has no `changes/` tree and the
+server starts in **setup mode**: instead of exiting, it serves a first-run
+wizard at `http://127.0.0.1:8080/` (all normal routes refuse with 503 or
+redirect there until setup completes). The wizard walks through:
+
+1. **Prerequisites** — per-check status with fix hints and a Re-check
+   button: the `opencode2` binary, the opencode background service and its
+   credentials, `git`, and that the directory is writable. The wizard
+   detects and instructs; it never tries to start anything itself.
+2. **Bootstrap** — creates the workflow files merge-safely (same artifacts
+   as `lessmess init`: `AGENTS.md`, `changes/ledger.md`, `.gitignore`,
+   `opencode.json`), with a separate choice of whether to enable docs
+   coverage (`agentsdocs.json`) and an **exclusion picker** for it: a lazy
+   directory tree (expand ▸ for nested folders) where checked directories
+   and their subtrees get no doc pairs — top-level picks also exclude
+   same-named directories elsewhere, and built-in exclusions like
+   `node_modules` are pre-checked and disabled.
+   The full UI **hot-opens in place** — no restart.
+3. **Default agent and model** — picked from live lists served by the
+   opencode service, saved to the personal layer (`.lessmess/settings.json`)
+   or the project layer (`lessmess.json`), or skipped to use the service
+   defaults.
+4. **Docs seeding — explicit opt-in** — "Generate docs now" runs a budgeted
+   seed (one opencode session per covered directory, honoring the chosen
+   agent/model) with live progress; skipping means nothing runs. Already-
+   summarized directories are skipped on re-runs.
+5. **Finish** — completion is recorded in `.lessmess/onboarding.json`
+   (gitignored) and the wizard never nags again.
+
+On an already-initialized repository whose onboarding is incomplete, the
+index shows a dismissible banner linking to `/setup`; the Settings page has
+a permanent "Re-run the onboarding wizard" link. The CLI (`lessmess init`,
+`lessmess docs seed`) stays available for scripted setups, and `docs seed`
+honors the configured `session.agent`/`session.model` like every other
+session lessmess spawns.
+
+Setup API (for the wizard and other clients): `GET /setup`,
+`GET /api/setup/prereqs`, `GET /api/setup/dirs`, `POST /api/setup/bootstrap`,
+`POST /api/setup/docs-seed`, `GET /api/setup/docs-seed-status`,
+`POST /api/setup/complete`, `POST /api/setup/dismiss`.
+
 ### The board
 
 - **Top menu** — Changes and Explorer are always visible in the header; the
@@ -82,6 +125,7 @@ values apply to new activity immediately — no restart.
 | `git.defaultBranch` | Recorded in the root ledger Branch column for newly created changes (informational only — no branch is created). |
 | `ui.showArchived` | List archived changes on the Changes page (default on). |
 | `docs.autoGardenerOnClose` | Run the doc gardener automatically when a change closes (default on). |
+| `docs.gardenerModel` | Model for doc-gardener sessions, as `provider/model`. Empty inherits `session.model`; save-time validation applies when the service is reachable. |
 
 Agent and model fields suggest live values from the opencode service
 (primary agents, available models, service default shown as placeholder);
@@ -194,20 +238,47 @@ skeleton, `.gitignore` handling, and a starter `opencode.json`.
   `STRUCTURE.md` skeletons, then runs one unattended opencode session per
   directory to fill purposes and write first-pass `AGENTS.md` learnings.
   Resumable (`.lessmess/docs-seed.json`), budget-capped (`--budget`),
-  dry-runnable; offline it writes skeletons only.
+  dry-runnable; offline it writes skeletons only. Sessions honor the
+  configured `session.agent`/`session.model` defaults. The server exposes
+  the same run: `POST /docs/seed` targets the covered directories that
+  **do not yet have their doc files** (file existence decides — a stale
+  cursor never hides a missing dir), and `{"force":true}` (or the bell's
+  **Force — redo every directory** checkbox, or `--force` on the CLI)
+  re-runs everything regardless. `GET /docs/seed-status` reports
+  progress; `/api/validate` includes the missing-docs count, and the bell
+  shows **Run missing docs (N)** while any directory is incomplete.
+- **Exclusions editor**: the Settings page's Docs section has the same
+  lazy expandable folder tree as the onboarding wizard — top-level and
+  nested picks alike — and saving persists the selection to
+  `agentsdocs.json` (`GET`/`POST /docs/exclusions`) with the same
+  semantics: picker-representable patterns are replaced, hand-authored
+  globs and stale names are preserved. The root directory is always
+  covered and never listed.
 - **Refresh**: closing a change computes the touched folders from its tasks'
   "Files affected" and enqueues a serialized doc-gardener job — one unattended
   session updates those folders' docs, with each new learning citing the
-  change ID. If the service is down, folders are flagged stale and reconciled
-  by the next run or `POST /docs/refresh`.
+  change ID. The job also names **ancestor directories** as review-and-fix
+  targets: the gardener checks whether the change invalidated learnings in
+  the parents (a removed feature, a moved file) and fixes or deletes those
+  learnings, accounting for every removal in its reply. If the service is
+  down, folders are flagged stale and reconciled by the next run or
+  `POST /docs/refresh`.
+- **Stale-reference lint**: a deterministic check scans every covered
+  `AGENTS.md`'s learnings for backticked path-like references that no longer
+  resolve anywhere in the repository and surfaces them as warnings. The
+  refresh flow folds those directories into its reconciliation job, with the
+  flagged references named in the gardener prompt so the fix is targeted.
+  The lint is conservative: Go-style symbols (`server.New`), model IDs, and
+  bare directory mentions never lint.
 - **Confinement**: after every LLM pass the server verifies that only the
   marker sections changed (bytes outside are compared; freshness hashes must
   match) and rolls back violations.
 - **Visibility**: docs findings surface in a header **notification bell** (badge
   counts findings; red if any are errors). The bell opens a modal listing them
   grouped by severity, with a **Refresh stale docs** button that reconciles
-  every stale directory (queue-stale and hash-stale alike) as one manual
-  gardener job — findings and the explorer tree update live as it finishes.
+  every stale directory (queue-stale, hash-stale, and lint-flagged alike) as
+  one manual gardener job — findings and the explorer tree update live as it
+  finishes.
   `lessmess validate` reports the same findings (warnings; structural
   corruption is an error). The red banner remains for `changes/` violations.
 

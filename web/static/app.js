@@ -236,6 +236,13 @@
         latestDocsFindings = j.docs || [];
         updateNotifBadge();
         renderNotifList();
+        var seedBtn = document.getElementById("docs-seed-btn");
+        if (seedBtn) {
+          var pending = j.docsSeedPending;
+          seedBtn.textContent = pending > 0
+            ? "Run missing docs (" + pending + (pending === 1 ? " dir" : " dirs") + ")"
+            : "Run docs seed";
+        }
       })
       .catch(function () {});
   }
@@ -336,6 +343,49 @@
         status.textContent = "Docs updated — findings re-checked.";
       }
     });
+
+    // Seed docs: without force, runs the covered dirs missing their doc
+    // files; the force checkbox redoes everything regardless.
+    var seedBtn = document.getElementById("docs-seed-btn");
+    if (seedBtn) {
+      var seedRunning = false;
+      seedBtn.addEventListener("click", function () {
+        var force = document.getElementById("docs-seed-force");
+        if (force && force.checked &&
+            !confirm("Force will re-run the docs seed for EVERY covered directory, ignoring what already exists. Continue?")) {
+          return;
+        }
+        seedBtn.disabled = true;
+        seedRunning = true;
+        status.textContent = "Seeding…";
+        fetch("/docs/seed", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify({ force: !!(force && force.checked) }),
+        })
+          .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.statusText); return j; }); })
+          .then(function (j) {
+            status.textContent = j.status
+              ? j.status
+              : "Seed running — can take a few minutes; findings update live.";
+            if (j.status) {
+              seedBtn.disabled = false;
+              seedRunning = false;
+            }
+          })
+          .catch(function (err) {
+            status.textContent = "Seed request failed: " + err.message;
+            seedBtn.disabled = false;
+            seedRunning = false;
+          });
+      });
+      document.addEventListener("tt:docs-event", function () {
+        if (seedRunning) {
+          seedRunning = false;
+          seedBtn.disabled = false;
+        }
+      });
+    }
   })();
 
   // --- theme toggle ---------------------------------------------------------
@@ -1011,11 +1061,15 @@
       var other = scope === "project" ? view.personal : view.project;
       var v = getPath(other, field);
       if (isSet(v)) return v;
+      if (field === "docs.gardenerModel") return getPath(view.effective, "session.model");
       if (field in BOOL_DEFAULTS) return BOOL_DEFAULTS[field];
       return undefined;
     }
 
     function placeholderFor(field, fb) {
+      if (field === "docs.gardenerModel") {
+        return isSet(fb) ? "Session model (" + fb + ")" : "Service default";
+      }
       if (isSet(fb)) return String(fb);
       if (field === "session.agent") return "Service default";
       if (field === "session.model") {
@@ -1030,6 +1084,7 @@
       var layer = scope === "project" ? view.project : view.personal;
       root.querySelectorAll(".settings-field").forEach(function (f) {
         var field = f.getAttribute("data-field");
+        if (!field) return;
         var kind = f.getAttribute("data-kind");
         var input = f.querySelector("[data-input]");
         var badge = f.querySelector("[data-badge]");
@@ -1044,7 +1099,11 @@
           input.placeholder = placeholderFor(field, fb);
         }
         var src = (view.sources && view.sources[field]) || "default";
-        badge.textContent = src.charAt(0).toUpperCase() + src.slice(1);
+        if (field === "docs.gardenerModel" && src === "default") {
+          badge.textContent = "Session model";
+        } else {
+          badge.textContent = src.charAt(0).toUpperCase() + src.slice(1);
+        }
         badge.classList.remove("src-default", "src-project", "src-personal");
         badge.classList.add("src-" + src);
       });
@@ -1137,7 +1196,9 @@
         var payload = {};
         payload[section] = {};
         sectionEl.querySelectorAll(".settings-field").forEach(function (f) {
-          var key = f.getAttribute("data-field").split(".")[1];
+          var fieldAttr = f.getAttribute("data-field");
+          if (!fieldAttr) return;
+          var key = fieldAttr.split(".")[1];
           var kind = f.getAttribute("data-kind");
           var input = f.querySelector("[data-input]");
           if (kind === "bool") {
@@ -1180,6 +1241,592 @@
       .catch(function () {
         document.getElementById("settings-options-hint").hidden = false;
       });
+
+    // Exclusions editor: a lazy folder tree like the onboarding wizard's
+    // picker (same endpoint, same rows), persisted to agentsdocs.json.
+    var exBox = document.getElementById("docs-exclusions");
+    if (exBox) {
+      var exStatus = document.getElementById("docs-exclusions-status");
+      exBox.innerHTML = "";
+
+      function exLoadRows(rel, afterRow, depth) {
+        fetch("/api/setup/dirs?dir=" + encodeURIComponent(rel), { headers: { Accept: "application/json" } })
+          .then(function (r) { return r.json(); })
+          .then(function (j) {
+            var dirs = j.dirs || [];
+            if (!dirs.length && depth === 0) {
+              exBox.innerHTML = '<span class="muted">No excludable directories.</span>';
+            }
+            dirs.forEach(function (d) {
+              var row = exMakeRow(d, depth);
+              if (afterRow) afterRow.parentNode.insertBefore(row, afterRow.nextSibling);
+              else exBox.appendChild(row);
+              afterRow = row;
+            });
+            if (j.hasConfig === false && depth === 0) {
+              exStatus.textContent = "Docs coverage is disabled — run the onboarding wizard to enable it.";
+            }
+          })
+          .catch(function () {
+            if (depth === 0) exBox.innerHTML = '<span class="muted">Exclusions unavailable.</span>';
+          });
+      }
+
+      function exMakeRow(d, depth) {
+        var row = document.createElement("div");
+        row.className = "setup-exclude";
+        row.setAttribute("data-rel", d.rel);
+        row.style.paddingLeft = (depth * 1.1 + 0.2) + "rem";
+        var toggle = document.createElement("button");
+        toggle.type = "button";
+        toggle.className = "setup-exclude-toggle";
+        if (d.hasChildren && !d.defaultExcluded) {
+          toggle.textContent = "▸";
+          toggle.title = "Expand";
+          toggle.addEventListener("click", function () { exToggleRow(row, toggle, d, depth); });
+        } else {
+          toggle.classList.add("empty");
+          toggle.disabled = true;
+          toggle.tabIndex = -1;
+        }
+        row.appendChild(toggle);
+        var label = document.createElement("label");
+        label.className = "setup-exclude-name";
+        var cb = document.createElement("input");
+        cb.type = "checkbox";
+        cb.value = d.rel;
+        if (d.defaultExcluded) {
+          cb.checked = true;
+          cb.disabled = true;
+          row.classList.add("default-excluded");
+        } else if (d.excluded) {
+          cb.checked = true;
+        }
+        cb.addEventListener("change", exImplied);
+        label.appendChild(cb);
+        label.appendChild(document.createTextNode(d.name + (d.defaultExcluded ? " (built-in)" : "")));
+        row.appendChild(label);
+        return row;
+      }
+
+      function exToggleRow(row, toggle, d, depth) {
+        if (row.getAttribute("data-loaded") !== "1") {
+          row.setAttribute("data-loaded", "1");
+          toggle.textContent = "▾";
+          exLoadRows(d.rel, row, depth + 1);
+          return;
+        }
+        var collapse = row.getAttribute("data-collapsed") !== "1";
+        row.setAttribute("data-collapsed", collapse ? "1" : "0");
+        toggle.textContent = collapse ? "▸" : "▾";
+        exDescendants(row).forEach(function (r) { r.style.display = collapse ? "none" : ""; });
+      }
+
+      function exDescendants(row) {
+        var prefix = row.getAttribute("data-rel") + "/";
+        var out = [];
+        exBox.querySelectorAll('.setup-exclude[data-rel]').forEach(function (r) {
+          if (r !== row && r.getAttribute("data-rel").indexOf(prefix) === 0) out.push(r);
+        });
+        return out;
+      }
+
+      // Descendants of a checked row are implied (the parent's pattern
+      // prunes the subtree) and are not submitted separately.
+      function exImplied() {
+        exBox.querySelectorAll('.setup-exclude[data-rel]').forEach(function (r) { r.classList.remove("implied"); });
+        exBox.querySelectorAll('.setup-exclude[data-rel]').forEach(function (r) {
+          var cb = r.querySelector('input[type="checkbox"]');
+          if (cb.checked && !cb.disabled) exDescendants(r).forEach(function (d) { d.classList.add("implied"); });
+        });
+      }
+
+      function exSelected() {
+        var out = [];
+        exBox.querySelectorAll('.setup-exclude[data-rel]').forEach(function (r) {
+          var cb = r.querySelector('input[type="checkbox"]');
+          if (cb.checked && !cb.disabled && !r.classList.contains("implied")) out.push(cb.value);
+        });
+        return out;
+      }
+
+      exLoadRows("", null, 0);
+
+      var exSave = document.getElementById("docs-exclusions-save");
+      exSave.addEventListener("click", function () {
+        exSave.disabled = true;
+        exStatus.textContent = "Saving…";
+        fetch("/docs/exclusions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify({ excludeDirs: exSelected() }),
+        })
+          .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.statusText); return j; }); })
+          .then(function (j) {
+            exStatus.textContent = j.saved ? "Saved ✓" : "No changes.";
+            setTimeout(function () { exStatus.textContent = ""; }, 2500);
+          })
+          .catch(function (e) {
+            exStatus.textContent = e.message;
+          })
+          .finally(function () { exSave.disabled = false; });
+      });
+    }
+  }
+
+  // --- onboarding banner (index) --------------------------------------------
+
+  function initOnboardingBanner() {
+    var b = document.getElementById("onboarding-banner");
+    if (!b) return;
+    var d = document.getElementById("onboarding-dismiss");
+    d.addEventListener("click", function () {
+      d.disabled = true;
+      fetch("/api/setup/dismiss", { method: "POST", headers: { Accept: "application/json" } })
+        .then(function (r) {
+          if (r.ok) b.hidden = true;
+          else d.disabled = false;
+        })
+        .catch(function () { d.disabled = false; });
+    });
+  }
+
+  // --- setup wizard ---------------------------------------------------------
+
+  function initSetup() {
+    var root = document.getElementById("setup-page");
+    if (!root) return;
+
+    var state = {
+      checks: [],
+      ready: false,
+      coverage: false,       // docs coverage enabled (checks or bootstrap choice)
+      changesPresent: false, // repo already bootstrapped on load
+      bootstrapped: false,   // bootstrap ran this session
+      excludedCount: 0,      // dirs excluded from coverage at bootstrap
+      agentSaved: false,
+      agentSkipped: false,
+      docsOutcome: "",       // "seeded" | "skipped" | "pending" (failed)
+    };
+
+    var steps = ["prereqs", "bootstrap", "agent", "docs", "finish"];
+
+    function el(id) { return document.getElementById(id); }
+
+    function showError(msg) {
+      var e = el("setup-error");
+      e.textContent = msg || "";
+      e.hidden = !msg;
+    }
+
+    function visibleSteps() {
+      return steps.filter(function (s) { return s !== "docs" || state.coverage; });
+    }
+
+    function showStep(name) {
+      root.querySelectorAll(".setup-step").forEach(function (sec) {
+        sec.hidden = sec.getAttribute("data-step") !== name;
+      });
+      var vis = visibleSteps();
+      root.querySelectorAll("#setup-steps-nav li").forEach(function (li) {
+        var n = li.getAttribute("data-step-nav");
+        li.classList.toggle("active", n === name);
+        li.classList.toggle("done", vis.indexOf(n) > -1 && vis.indexOf(n) < vis.indexOf(name));
+      });
+      el("setup-step-indicator").textContent = "Step " + (vis.indexOf(name) + 1) + " of " + vis.length;
+      showError("");
+      if (name === "bootstrap") enterBootstrap();
+      if (name === "agent" && !optionsLoaded) loadAgentOptions();
+      if (name === "finish") renderFinish();
+    }
+
+    // --- step 1: prerequisites ---
+
+    function renderPrereqs() {
+      var ul = el("setup-prereq-list");
+      ul.innerHTML = "";
+      state.checks.forEach(function (c) {
+        var li = document.createElement("li");
+        li.className = "setup-prereq";
+        var pill = document.createElement("span");
+        pill.className = "pill prereq-" + c.status;
+        pill.textContent = c.status.toUpperCase();
+        var body = document.createElement("div");
+        body.className = "setup-prereq-body";
+        var name = document.createElement("strong");
+        name.textContent = c.name;
+        body.appendChild(name);
+        if (c.detail) {
+          var d = document.createElement("div");
+          d.className = "muted";
+          d.textContent = c.detail;
+          body.appendChild(d);
+        }
+        if (c.remedy) {
+          var r = document.createElement("div");
+          r.className = "setup-remedy";
+          r.textContent = "→ " + c.remedy;
+          body.appendChild(r);
+        }
+        li.appendChild(pill);
+        li.appendChild(body);
+        ul.appendChild(li);
+      });
+      el("setup-prereqs-next").disabled = !state.ready;
+    }
+
+    function loadPrereqs() {
+      el("setup-prereqs-next").disabled = true;
+      return fetch("/api/setup/prereqs", { headers: { Accept: "application/json" } })
+        .then(function (r) { return r.json(); })
+        .then(function (j) {
+          state.checks = j.checks || [];
+          state.ready = !!j.ready;
+          state.checks.forEach(function (c) {
+            if (c.id === "changes-present" && c.status === "ok") state.changesPresent = true;
+            if (c.id === "docs-coverage" && c.status === "ok") state.coverage = true;
+          });
+          renderPrereqs();
+        })
+        .catch(function () { showError("Could not reach the setup API."); });
+    }
+
+    el("setup-recheck-btn").addEventListener("click", function () { loadPrereqs(); });
+    el("setup-prereqs-next").addEventListener("click", function () { showStep("bootstrap"); });
+
+    // --- step 2: bootstrap ---
+
+    function enterBootstrap() {
+      loadDirs();
+      if (state.changesPresent && !state.bootstrapped) {
+        el("setup-bootstrap-done").hidden = false;
+        el("setup-bootstrap-next").hidden = false;
+        // The Bootstrap button stays visible: init is idempotent, and a
+        // submission updates the coverage exclusions of an existing config.
+      }
+    }
+
+    // The exclusion picker is a lazy tree: each row loads its children on
+    // expand. Checking a row marks its loaded descendants as implied (the
+    // parent's pattern already prunes the subtree); implied rows are not
+    // submitted, and the server also normalizes redundant nested patterns.
+    var dirsLoaded = false;
+
+    function loadDirs() {
+      if (dirsLoaded) return;
+      dirsLoaded = true;
+      var box = el("setup-exclude-list");
+      box.innerHTML = "";
+      loadDirRows("", box, 0, null);
+    }
+
+    function loadDirRows(rel, box, depth, afterRow) {
+      fetch("/api/setup/dirs?dir=" + encodeURIComponent(rel), { headers: { Accept: "application/json" } })
+        .then(function (r) { return r.json(); })
+        .then(function (j) {
+          var dirs = j.dirs || [];
+          if (!dirs.length && depth === 0) {
+            box.innerHTML = '<p class="muted">No candidate directories.</p>';
+            return;
+          }
+          var ref = afterRow;
+          dirs.forEach(function (d) {
+            var row = makeDirRow(d, depth);
+            if (ref) {
+              ref.parentNode.insertBefore(row, ref.nextSibling);
+              ref = row;
+            } else {
+              box.appendChild(row);
+            }
+          });
+          refreshImplied();
+        })
+        .catch(function () {});
+    }
+
+    function makeDirRow(d, depth) {
+      var row = document.createElement("div");
+      row.className = "setup-exclude";
+      row.setAttribute("data-rel", d.rel);
+      row.style.paddingLeft = (depth * 1.1 + 0.2) + "rem";
+
+      var toggle = document.createElement("button");
+      toggle.type = "button";
+      toggle.className = "setup-exclude-toggle";
+      if (d.hasChildren && !d.defaultExcluded) {
+        toggle.textContent = "▸";
+        toggle.title = "Expand";
+        toggle.addEventListener("click", function () { toggleDirRow(row, toggle, d, depth); });
+      } else {
+        toggle.classList.add("empty");
+        toggle.disabled = true;
+        toggle.tabIndex = -1;
+      }
+      row.appendChild(toggle);
+
+      var label = document.createElement("label");
+      label.className = "setup-exclude-name";
+      var cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.value = d.rel;
+      if (d.defaultExcluded) {
+        cb.checked = true;
+        cb.disabled = true;
+        row.classList.add("default-excluded");
+      } else if (d.excluded) {
+        cb.checked = true;
+      }
+      cb.addEventListener("change", refreshImplied);
+      label.appendChild(cb);
+      label.appendChild(document.createTextNode(d.name + (d.defaultExcluded ? " (built-in)" : "")));
+      row.appendChild(label);
+      return row;
+    }
+
+    function toggleDirRow(row, toggle, d, depth) {
+      if (row.getAttribute("data-loaded") !== "1") {
+        row.setAttribute("data-loaded", "1");
+        toggle.textContent = "▾";
+        loadDirRows(d.rel, row.parentNode, depth + 1, row);
+        return;
+      }
+      var collapse = row.getAttribute("data-collapsed") !== "1";
+      row.setAttribute("data-collapsed", collapse ? "1" : "0");
+      toggle.textContent = collapse ? "▸" : "▾";
+      descendantRows(row).forEach(function (r) { r.style.display = collapse ? "none" : ""; });
+    }
+
+    function descendantRows(row) {
+      var prefix = row.getAttribute("data-rel") + "/";
+      var out = [];
+      row.parentNode.querySelectorAll('.setup-exclude[data-rel]').forEach(function (r) {
+        if (r !== row && r.getAttribute("data-rel").indexOf(prefix) === 0) out.push(r);
+      });
+      return out;
+    }
+
+    // Descendants of a checked row are visually implied: the parent's
+    // pattern prunes them whether or not they are checked themselves.
+    function refreshImplied() {
+      var rows = [];
+      el("setup-exclude-list").querySelectorAll('.setup-exclude[data-rel]').forEach(function (r) { rows.push(r); });
+      rows.forEach(function (r) { r.classList.remove("implied"); });
+      rows.forEach(function (r) {
+        var cb = r.querySelector('input[type="checkbox"]');
+        if (cb.checked && !cb.disabled) {
+          descendantRows(r).forEach(function (d) { d.classList.add("implied"); });
+        }
+      });
+    }
+
+    function selectedExcludes() {
+      var out = [];
+      el("setup-exclude-list").querySelectorAll('.setup-exclude[data-rel]').forEach(function (r) {
+        var cb = r.querySelector('input[type="checkbox"]');
+        if (cb.checked && !cb.disabled && !r.classList.contains("implied")) out.push(cb.value);
+      });
+      return out;
+    }
+
+    el("setup-coverage").addEventListener("change", function () {
+      el("setup-excludes").hidden = !el("setup-coverage").checked;
+    });
+
+    el("setup-bootstrap-btn").addEventListener("click", function () {
+      var btn = el("setup-bootstrap-btn");
+      btn.disabled = true;
+      showError("");
+      var coverage = el("setup-coverage").checked;
+      var excludeDirs = coverage ? selectedExcludes() : [];
+      fetch("/api/setup/bootstrap", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ docsCoverage: coverage, excludeDirs: excludeDirs }),
+      })
+        .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.statusText); return j; }); })
+        .then(function (j) {
+          state.bootstrapped = true;
+          state.coverage = coverage;
+          state.excludedCount = excludeDirs.length;
+          var ul = el("setup-bootstrap-result");
+          (j.actions || []).forEach(function (a) {
+            var li = document.createElement("li");
+            li.textContent = a.Action + "  " + a.Path;
+            li.className = "artifact-" + a.Action;
+            ul.appendChild(li);
+          });
+          btn.hidden = true;
+          el("setup-bootstrap-done").hidden = false;
+          el("setup-bootstrap-next").hidden = false;
+        })
+        .catch(function (e) { showError("Bootstrap failed: " + e.message); })
+        .finally(function () { btn.disabled = false; });
+    });
+    el("setup-bootstrap-next").addEventListener("click", function () { showStep("agent"); });
+
+    // --- step 3: default agent/model ---
+
+    // The setup shell only holds an opencode client after the prereq check
+    // discovers the service, so options load strictly after prereqs — and
+    // are re-fetched when the agent step is entered if the first attempt
+    // came back unavailable.
+    var optionsLoaded = false;
+
+    function loadAgentOptions() {
+      return fetch("/api/settings/options", { headers: { Accept: "application/json" } })
+        .then(function (r) { return r.json(); })
+        .then(function (j) {
+          if (!j.available) { el("setup-options-hint").hidden = false; return; }
+          optionsLoaded = true;
+          el("setup-options-hint").hidden = true;
+          var al = el("setup-agent-list");
+          al.innerHTML = "";
+          (j.agents || []).forEach(function (a) {
+            var o = document.createElement("option");
+            o.value = a.id;
+            o.label = a.name + (a.description ? " — " + a.description : "");
+            al.appendChild(o);
+          });
+          var ml = el("setup-model-list");
+          ml.innerHTML = "";
+          (j.models || []).forEach(function (m) {
+            var o = document.createElement("option");
+            o.value = m.value;
+            o.label = m.name;
+            ml.appendChild(o);
+          });
+          if (j.defaultModel) {
+            el("setup-model").placeholder = "Service default (" + j.defaultModel + ")";
+          }
+        })
+        .catch(function () { el("setup-options-hint").hidden = false; });
+    }
+
+    function setupScope() {
+      var r = root.querySelector('input[name="setup-scope"]:checked');
+      return r ? r.value : "personal";
+    }
+
+    el("setup-agent-save").addEventListener("click", function () {
+      var status = el("setup-agent-status");
+      var payload = { session: {
+        agent: el("setup-agent").value.trim(),
+        model: el("setup-model").value.trim(),
+      } };
+      status.textContent = "Saving…";
+      fetch("/api/settings?scope=" + setupScope(), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify(payload),
+      })
+        .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.statusText); return j; }); })
+        .then(function () {
+          state.agentSaved = true;
+          status.textContent = "Saved ✓";
+          showStep(state.coverage ? "docs" : "finish");
+        })
+        .catch(function (e) { status.textContent = e.message; });
+    });
+    el("setup-agent-skip").addEventListener("click", function () {
+      state.agentSkipped = true;
+      showStep(state.coverage ? "docs" : "finish");
+    });
+
+    // --- step 4: docs seeding (opt-in) ---
+
+    function pollSeed() {
+      fetch("/api/setup/docs-seed-status", { headers: { Accept: "application/json" } })
+        .then(function (r) { return r.json(); })
+        .then(function (j) {
+          var log = el("setup-seed-log");
+          log.hidden = false;
+          log.textContent = (j.lines || []).join("\n");
+          log.scrollTop = log.scrollHeight;
+          if (!j.done) {
+            setTimeout(pollSeed, 1000);
+            return;
+          }
+          el("setup-seed-btn").disabled = false;
+          el("setup-seed-next").hidden = false;
+          el("setup-seed-skip").hidden = true;
+          if (j.error) {
+            state.docsOutcome = "pending";
+            showError("Docs generation finished with failures: " + j.error + " — you can re-run it later.");
+          } else {
+            state.docsOutcome = "seeded";
+          }
+        })
+        .catch(function () { setTimeout(pollSeed, 2000); });
+    }
+
+    el("setup-seed-btn").addEventListener("click", function () {
+      var budget = parseInt(el("setup-seed-budget").value, 10);
+      if (isNaN(budget) || budget < 0) budget = 0;
+      var btn = el("setup-seed-btn");
+      btn.disabled = true;
+      showError("");
+      fetch("/api/setup/docs-seed", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ budget: budget }),
+      })
+        .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.statusText); return j; }); })
+        .then(function () { setTimeout(pollSeed, 500); })
+        .catch(function (e) {
+          btn.disabled = false;
+          showError("Could not start docs generation: " + e.message);
+        });
+    });
+    el("setup-seed-skip").addEventListener("click", function () {
+      state.docsOutcome = "skipped";
+      showStep("finish");
+    });
+    el("setup-seed-next").addEventListener("click", function () { showStep("finish"); });
+
+    // --- step 5: finish ---
+
+    function renderFinish() {
+      var ul = el("setup-finish-summary");
+      ul.innerHTML = "";
+      var items = [];
+      items.push(state.bootstrapped ? "Repository bootstrapped" : "Repository was already initialized");
+      items.push(state.agentSaved ? "Default agent/model saved" : "Using the service's default agent/model");
+      if (state.coverage) {
+        var exNote = state.excludedCount ? " — " + state.excludedCount + " director" + (state.excludedCount === 1 ? "y" : "ies") + " excluded" : "";
+        if (state.docsOutcome === "seeded") items.push("Agent-facing docs generated" + exNote);
+        else if (state.docsOutcome === "skipped") items.push("Docs generation skipped — seed later anytime" + exNote);
+        else items.push("Docs generation pending — seed later via Settings or the docs bell" + exNote);
+      } else {
+        items.push("Docs coverage disabled — enable later by re-running onboarding");
+      }
+      items.forEach(function (t) {
+        var li = document.createElement("li");
+        li.textContent = t;
+        ul.appendChild(li);
+      });
+    }
+
+    el("setup-finish-btn").addEventListener("click", function () {
+      var btn = el("setup-finish-btn");
+      btn.disabled = true;
+      var stepMarks = {};
+      if (state.agentSaved) stepMarks.agent = "set";
+      else if (state.agentSkipped) stepMarks.agent = "skipped";
+      if (state.docsOutcome === "skipped") stepMarks.docs = "skipped";
+      fetch("/api/setup/complete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ steps: stepMarks }),
+      })
+        .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.statusText); return j; }); })
+        .then(function () { window.location.href = "/"; })
+        .catch(function (e) {
+          showError("Could not record completion: " + e.message);
+          btn.disabled = false;
+        });
+    });
+
+    loadPrereqs().then(loadAgentOptions);
   }
 
   // --- init -----------------------------------------------------------------
@@ -1192,6 +1839,8 @@
     initLifecycle();
     initCommitAll();
     initSettings();
+    initSetup();
+    initOnboardingBanner();
     checkValidation();
     autoOpenSession();
     loadDiscussions();

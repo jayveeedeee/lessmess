@@ -82,6 +82,34 @@ func filesAffected(body string) []string {
 	return out
 }
 
+// coveredAncestors returns, for each dir in dirs, every covered ancestor
+// on its path to the root (the root included whenever a config exists),
+// deduped within itself and against dirs, sorted. Uncovered intermediate
+// segments are skipped but the walk continues bubbling toward the root —
+// the same nearest-covered-ancestor escape hatch coveredAncestor uses
+// downward. Purely lexical: deleted paths still produce ancestors.
+func coveredAncestors(dirs []string, cfg *docs.Config) []string {
+	primary := make(map[string]bool, len(dirs))
+	for _, d := range dirs {
+		primary[d] = true
+	}
+	set := map[string]bool{}
+	for _, d := range dirs {
+		for d != "." {
+			d = path.Dir(d)
+			if !primary[d] && cfg.Covered(d) {
+				set[d] = true
+			}
+		}
+	}
+	out := make([]string, 0, len(set))
+	for d := range set {
+		out = append(out, d)
+	}
+	sort.Strings(out)
+	return out
+}
+
 // coveredAncestor maps a touched path to the nearest covered directory that
 // contains it. The root (".") is covered whenever a config exists.
 func coveredAncestor(rel string, cfg *docs.Config) (string, bool) {

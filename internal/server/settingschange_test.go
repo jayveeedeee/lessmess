@@ -152,6 +152,16 @@ func TestSettingsChangeDeadSessionStartsFresh(t *testing.T) {
 	}
 }
 
+func TestSettingsFieldValueGardenerModel(t *testing.T) {
+	e := EffectiveSettings{Docs: EffectiveDocsSettings{GardenerModel: "prov/m1"}}
+	if v, ok := settingsFieldValue(e, "docs.gardenerModel"); !ok || v != "prov/m1" {
+		t.Errorf("settingsFieldValue = %q, %v; want prov/m1, true", v, ok)
+	}
+	if _, ok := settingsFieldValue(EffectiveSettings{}, "docs.nope"); ok {
+		t.Error("unknown field must not resolve")
+	}
+}
+
 func TestSettingsChangeRejects(t *testing.T) {
 	fake := &scFake{}
 	s := mappingServer(t, fake.handler())

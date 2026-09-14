@@ -92,6 +92,8 @@ func settingsFieldValue(e EffectiveSettings, field string) (string, bool) {
 		return strconv.FormatBool(e.UI.ShowArchived), true
 	case "docs.autoGardenerOnClose":
 		return strconv.FormatBool(e.Docs.AutoGardenerOnClose), true
+	case "docs.gardenerModel":
+		return e.Docs.GardenerModel, true
 	}
 	return "", false
 }

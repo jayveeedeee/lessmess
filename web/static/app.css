@@ -912,3 +912,109 @@ body[data-page="board"] .board {
 }
 .settings-change:hover { color: var(--text); border-color: var(--text); }
 .settings-change:disabled { opacity: 0.55; cursor: wait; }
+
+/* --- setup wizard --- */
+
+/* The wizard floats as a centered card, vertically and horizontally. */
+body[data-page="setup"] main {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: calc(100vh - 52px - 2.5rem);
+}
+
+.setup-wizard {
+  width: min(48rem, 100%);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: var(--shadow-lg);
+  padding: 1.8rem 2.2rem 2rem;
+}
+
+.setup-steps {
+  display: flex; flex-wrap: wrap; gap: 0.15rem;
+  list-style: none; padding: 0; margin: 0 0 1.4rem;
+  border-bottom: 1px solid var(--border);
+}
+/* Stage highlights mirror the topnav: weight + accent underline, no pills. */
+.setup-steps li {
+  padding: 0.45rem 0.7rem;
+  color: var(--muted); font-size: 0.88rem; font-weight: 600;
+  border-bottom: 2px solid transparent; margin-bottom: -1px;
+}
+.setup-steps li.done { color: var(--text); }
+.setup-steps li.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+.setup-step h3 { margin: 0 0 0.4rem; }
+.setup-step .settings-field { margin: 0.6rem 0; }
+.setup-step input[type="text"], .setup-step input[type="number"], .setup-step input[list] {
+  width: 100%; max-width: 26rem; padding: 0.4rem 0.55rem;
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 6px; color: var(--text);
+}
+.setup-step input:focus { border-color: var(--accent); outline: none; }
+
+.setup-actions { display: flex; gap: 0.6rem; align-items: center; margin-top: 1rem; }
+
+.setup-prereq-list { list-style: none; padding: 0; margin: 0.8rem 0; }
+.setup-prereq {
+  display: flex; gap: 0.8rem; align-items: flex-start;
+  padding: 0.55rem 0.7rem; border: 1px solid var(--border);
+  border-radius: 8px; margin-bottom: 0.45rem; background: var(--surface);
+}
+.setup-prereq .pill { flex-shrink: 0; margin-top: 0.1rem; }
+.prereq-ok   { background: var(--st-done-bg); color: var(--st-done-fg); }
+.prereq-warn { background: var(--st-in-progress-bg); color: var(--st-in-progress-fg); }
+.prereq-fail { background: var(--st-blocked-bg); color: var(--st-blocked-fg); }
+.setup-prereq-body { min-width: 0; }
+.setup-remedy { color: var(--accent); font-size: 0.88rem; margin-top: 0.15rem; }
+
+.setup-file-list { margin: 0.4rem 0 0.8rem; padding-left: 1.2rem; }
+
+.setup-check { display: flex; gap: 0.5rem; align-items: flex-start; margin: 0.8rem 0; }
+.setup-check input { margin-top: 0.2rem; }
+
+.setup-excludes { margin: 0.2rem 0 0.4rem; }
+.setup-exclude-list {
+  max-height: 13rem; overflow: auto;
+  border: 1px solid var(--border); border-radius: 8px;
+  padding: 0.4rem 0.5rem; background: var(--surface-2);
+  font-size: 0.9rem;
+}
+.setup-exclude { display: flex; align-items: center; gap: 0.35rem; padding: 0.1rem 0; }
+.setup-exclude-toggle {
+  width: 1.1rem; flex-shrink: 0; padding: 0;
+  background: none; border: none; color: var(--muted);
+  font-size: 0.8rem; cursor: pointer;
+}
+.setup-exclude-toggle.empty { cursor: default; }
+.setup-exclude-name { display: flex; align-items: center; gap: 0.45rem; cursor: pointer; user-select: none; }
+.setup-exclude.default-excluded .setup-exclude-name { color: var(--muted); cursor: not-allowed; }
+.setup-exclude.implied .setup-exclude-name { color: var(--muted); }
+
+.setup-scope { border: 1px solid var(--border); border-radius: 8px; padding: 0.6rem 0.8rem; margin: 0.8rem 0; }
+.setup-scope legend { padding: 0 0.3rem; font-size: 0.85rem; }
+.setup-scope label { display: block; margin: 0.3rem 0; }
+
+.setup-artifact-list { list-style: none; padding: 0; margin: 0.8rem 0; font-family: monospace; font-size: 0.88rem; }
+.setup-artifact-list li { padding: 0.15rem 0; }
+.artifact-created { color: var(--st-done-fg); }
+.artifact-merged { color: var(--st-in-progress-fg); }
+.artifact-skipped { color: var(--muted); }
+
+.setup-seed-log {
+  max-height: 16rem; overflow: auto; margin-top: 0.9rem;
+  padding: 0.6rem 0.8rem; background: var(--surface);
+  border: 1px solid var(--border); border-radius: 8px;
+  font-size: 0.82rem; white-space: pre-wrap;
+}
+
+.setup-error { color: var(--st-blocked-fg); margin-top: 1rem; }
+
+/* --- onboarding banner (index) --- */
+
+.onboarding-banner {
+  display: flex; align-items: center; gap: 0.8rem; justify-content: space-between;
+}
+.onboarding-actions { display: flex; gap: 0.5rem; flex-shrink: 0; }

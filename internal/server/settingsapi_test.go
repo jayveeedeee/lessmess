@@ -156,6 +156,25 @@ func TestSettingsAPIValidatesAgentAndModel(t *testing.T) {
 		t.Errorf("unknown model: code = %d, want 422", w.Code)
 	}
 
+	// Unknown gardener model → 422, naming the field.
+	w2 := do(t, s.Handler(), "PUT", "/api/settings?scope=personal", `{"docs":{"gardenerModel":"prov/nope"}}`)
+	if w2.Code != 422 {
+		t.Errorf("unknown gardener model: code = %d, want 422 (%s)", w2.Code, w2.Body)
+	}
+	if !strings.Contains(w2.Body.String(), "gardener") {
+		t.Errorf("gardener validation error must name the field: %s", w2.Body)
+	}
+
+	// Valid gardener model saves.
+	if w := do(t, s.Handler(), "PUT", "/api/settings?scope=personal", `{"docs":{"gardenerModel":"prov/m1"}}`); w.Code != 200 {
+		t.Errorf("valid gardener model: code = %d (%s)", w.Code, w.Body)
+	}
+
+	// Clearing it (empty) skips validation and restores inheritance.
+	if w := do(t, s.Handler(), "PUT", "/api/settings?scope=personal", `{"docs":{"gardenerModel":""}}`); w.Code != 200 {
+		t.Errorf("clear gardener model: code = %d (%s)", w.Code, w.Body)
+	}
+
 	// Valid values save.
 	if w := do(t, s.Handler(), "PUT", "/api/settings?scope=project", `{"session":{"agent":"build","model":"prov/m1"}}`); w.Code != 200 {
 		t.Errorf("valid values: code = %d (%s)", w.Code, w.Body)
@@ -221,6 +240,51 @@ func TestSettingsOptionsLive(t *testing.T) {
 	}
 	if resp.DefaultModel != "prov/accounts/f/m1" {
 		t.Errorf("defaultModel = %q", resp.DefaultModel)
+	}
+}
+
+// scopedEmptyFake mirrors the real service outside its home location: the
+// location-scoped agent list is empty while the default-location list has
+// the built-in primaries.
+func scopedEmptyFake(w http.ResponseWriter, r *http.Request) {
+	switch r.URL.Path {
+	case "/api/agent":
+		if r.URL.Query().Get("location[directory]") != "" {
+			w.Write([]byte(`{"data":[]}`))
+			return
+		}
+		w.Write([]byte(`{"data":[{"id":"build","name":"Build","mode":"primary"},{"id":"plan","name":"Plan","mode":"primary"}]}`))
+	case "/api/model":
+		w.Write([]byte(`{"data":[{"id":"m1","providerID":"prov","name":"M1"}]}`))
+	default:
+		w.WriteHeader(http.StatusNotFound)
+	}
+}
+
+func TestSettingsAgentsMergedWhenScopedEmpty(t *testing.T) {
+	s := mappingServer(t, scopedEmptyFake)
+
+	// Options still offer the built-in primaries.
+	w := do(t, s.Handler(), "GET", "/api/settings/options", "")
+	if w.Code != 200 {
+		t.Fatalf("options code = %d", w.Code)
+	}
+	var resp settingsOptionsResponse
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	if !resp.Available {
+		t.Fatal("available = false with a live service")
+	}
+	if len(resp.Agents) != 2 || resp.Agents[0].ID != "build" || resp.Agents[1].ID != "plan" {
+		t.Errorf("agents = %+v, want built-ins merged from the default location", resp.Agents)
+	}
+
+	// Save-time validation accepts a built-in primary for this repo…
+	if w := do(t, s.Handler(), "PUT", "/api/settings?scope=project", `{"session":{"agent":"plan"}}`); w.Code != 200 {
+		t.Errorf("PUT plan: code = %d (%s)", w.Code, w.Body)
+	}
+	// …and still rejects a typo.
+	if w := do(t, s.Handler(), "PUT", "/api/settings?scope=project", `{"session":{"agent":"ghost"}}`); w.Code != 422 {
+		t.Errorf("PUT ghost: code = %d, want 422", w.Code)
 	}
 }
 

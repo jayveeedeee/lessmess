@@ -21,6 +21,7 @@ type Summarizer interface {
 // summarizer needs.
 type SessionClient interface {
 	CreateSession(ctx context.Context, title, directory string) (*opencode.Session, error)
+	CreateSessionWith(ctx context.Context, title, directory, agent string, model *opencode.ModelRef) (*opencode.Session, error)
 	Prompt(ctx context.Context, id, text string) error
 	WaitDone(ctx context.Context, id string) error
 	DeleteSession(ctx context.Context, id string) error
@@ -28,22 +29,43 @@ type SessionClient interface {
 
 // OpenCodeSummarizer runs one unattended opencode session per directory.
 type OpenCodeSummarizer struct {
-	c    SessionClient
-	wait time.Duration
+	c     SessionClient
+	wait  time.Duration
+	agent string
+	model string
 }
 
-// NewOpenCodeSummarizer wraps a service client. wait bounds each session's
-// runtime; 0 uses a 10-minute default.
+// NewOpenCodeSummarizer wraps a service client with the service-default
+// agent/model. wait bounds each session's runtime; 0 uses a 10-minute
+// default.
 func NewOpenCodeSummarizer(c SessionClient, wait time.Duration) *OpenCodeSummarizer {
+	return NewOpenCodeSummarizerWith(c, wait, "", "")
+}
+
+// NewOpenCodeSummarizerWith is NewOpenCodeSummarizer carrying the
+// configured default agent/model ("" = service default; model is a single
+// "providerID/id" string). Seed sessions honor the same session defaults
+// as every other lessmess-spawned session.
+func NewOpenCodeSummarizerWith(c SessionClient, wait time.Duration, agent, model string) *OpenCodeSummarizer {
 	if wait <= 0 {
 		wait = 10 * time.Minute
 	}
-	return &OpenCodeSummarizer{c: c, wait: wait}
+	return &OpenCodeSummarizer{c: c, wait: wait, agent: agent, model: model}
+}
+
+// modelRef parses the "providerID/id" setting; nil when unset, incomplete
+// refs degrade to the service default (CreateSessionWith omits them).
+func (s *OpenCodeSummarizer) modelRef() *opencode.ModelRef {
+	if s.model == "" {
+		return nil
+	}
+	prov, id, _ := strings.Cut(s.model, "/")
+	return &opencode.ModelRef{ID: id, ProviderID: prov}
 }
 
 // SummarizeDir creates, primes, and awaits one seed session for d.
 func (s *OpenCodeSummarizer) SummarizeDir(ctx context.Context, root string, d *Dir) error {
-	sess, err := s.c.CreateSession(ctx, "seed docs: "+d.Rel, root)
+	sess, err := s.c.CreateSessionWith(ctx, "seed docs: "+d.Rel, root, s.agent, s.modelRef())
 	if err != nil {
 		return fmt.Errorf("create session: %w", err)
 	}

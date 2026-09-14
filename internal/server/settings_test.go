@@ -31,8 +31,8 @@ func TestSettingsDefaultsOnly(t *testing.T) {
 			t.Errorf("sources[%s] = %q, want default", field, src)
 		}
 	}
-	if len(sources) != 12 {
-		t.Errorf("len(sources) = %d, want 12", len(sources))
+	if len(sources) != 13 {
+		t.Errorf("len(sources) = %d, want 13", len(sources))
 	}
 }
 
@@ -77,8 +77,41 @@ func TestSettingsProjectAndPersonalLayers(t *testing.T) {
 	}
 }
 
-func TestSettingsMalformedFailsOpen(t *testing.T) {
+func TestGardenerModelPrecedence(t *testing.T) {
 	dir := t.TempDir()
+	// Nothing set: falls through to the session model, then "".
+	if got := GardenerModel(dir); got != "" {
+		t.Errorf("empty layers: GardenerModel = %q, want empty", got)
+	}
+	writeJSONFile(t, settingsProjectPath(dir), Settings{
+		Session: SessionSettings{Model: "prov/session-model"},
+	})
+	if got := GardenerModel(dir); got != "prov/session-model" {
+		t.Errorf("unset override: GardenerModel = %q, want the session model", got)
+	}
+	// Personal override wins over the session model.
+	writeJSONFile(t, settingsPersonalPath(dir), Settings{
+		Docs: DocsSettings{GardenerModel: "prov/gardener-model"},
+	})
+	if got := GardenerModel(dir); got != "prov/gardener-model" {
+		t.Errorf("set override: GardenerModel = %q, want the gardener model", got)
+	}
+	// Personal wins over a project-level gardener model too.
+	writeJSONFile(t, settingsProjectPath(dir), Settings{
+		Session: SessionSettings{Model: "prov/session-model"},
+		Docs:    DocsSettings{GardenerModel: "prov/project-gardener"},
+	})
+	if got := GardenerModel(dir); got != "prov/gardener-model" {
+		t.Errorf("personal vs project: GardenerModel = %q, want the personal gardener model", got)
+	}
+	// Clearing the personal layer restores the project gardener model.
+	writeJSONFile(t, settingsPersonalPath(dir), Settings{})
+	if got := GardenerModel(dir); got != "prov/project-gardener" {
+		t.Errorf("cleared personal: GardenerModel = %q, want the project gardener model", got)
+	}
+}
+
+func TestSettingsMalformedFailsOpen(t *testing.T) {	dir := t.TempDir()
 	if err := os.WriteFile(settingsProjectPath(dir), []byte("{not json"), 0o644); err != nil {
 		t.Fatal(err)
 	}

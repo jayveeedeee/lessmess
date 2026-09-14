@@ -25,6 +25,10 @@ func (f *fakeSessionClient) CreateSession(_ context.Context, title, _ string) (*
 	return &opencode.Session{ID: "ses_fake", Title: title}, nil
 }
 
+func (f *fakeSessionClient) CreateSessionWith(_ context.Context, title, _ string, _ string, _ *opencode.ModelRef) (*opencode.Session, error) {
+	return f.CreateSession(context.Background(), title, "")
+}
+
 func (f *fakeSessionClient) Prompt(_ context.Context, _ string, text string) error {
 	f.prompts = append(f.prompts, text)
 	if f.promptErr != nil {
@@ -215,7 +219,7 @@ func TestGardenerToleratesMissingDirs(t *testing.T) {
 }
 
 func TestGardenerManualPrompt(t *testing.T) {
-	p := gardenerPrompt(DocsJob{Change: "manual", Title: "manual reconciliation"}, []*docs.Dir{{Rel: "web"}})
+	p := gardenerPrompt(DocsJob{Change: "manual", Title: "manual reconciliation"}, []*docs.Dir{{Rel: "web"}}, nil)
 	for _, want := range []string{"MANUAL reconciliation", "(manual)", "web"} {
 		if !strings.Contains(p, want) {
 			t.Errorf("manual prompt missing %q", want)
@@ -224,10 +228,122 @@ func TestGardenerManualPrompt(t *testing.T) {
 	if strings.Contains(p, "changes/manual") {
 		t.Error("manual prompt must not reference a nonexistent change record")
 	}
+	if strings.Contains(p, "REVIEW-AND-FIX") {
+		t.Error("manual prompt must not grow a review section")
+	}
 }
 
-func TestGardenerSessionFailure(t *testing.T) {
+func TestGardenerManualPromptLintRefs(t *testing.T) {
+	job := DocsJob{
+		Change:   "manual",
+		Title:    "manual reconciliation",
+		Dirs:     []string{"internal/model"},
+		LintRefs: map[string][]string{"internal/model": {"gone/deleted.go", "also/gone.js"}},
+	}
+	p := gardenerPrompt(job, []*docs.Dir{{Rel: "internal/model"}}, nil)
+	for _, want := range []string{"reference lint", "internal/model", "`gone/deleted.go`", "`also/gone.js`"} {
+		if !strings.Contains(p, want) {
+			t.Errorf("lint-ref prompt missing %q", want)
+		}
+	}
+	// No refs: the section stays out entirely.
+	plain := gardenerPrompt(DocsJob{Change: "manual", Title: "manual reconciliation"}, []*docs.Dir{{Rel: "internal/model"}}, nil)
+	if strings.Contains(plain, "reference lint") {
+		t.Error("ref-less manual prompt must not mention the lint")
+	}
+}
+
+func TestGardenerPromptReviewSection(t *testing.T) {
+	update := []*docs.Dir{{Rel: "internal/model"}}
+	review := []*docs.Dir{{Rel: "internal"}, {Rel: "."}}
+	p := gardenerPrompt(DocsJob{Change: "2026-09-10-0", Title: "T", Dirs: []string{"internal/model"}, Ancestors: []string{"internal", "."}}, update, review)
+	for _, want := range []string{
+		"REVIEW-AND-FIX", "- internal\n", "- .\n",
+		"DELETE", "expected and correct", "account for your work",
+		"(2026-09-10-0)", "changes/2026-09-10-0/",
+		"tasktracker-meta", // update-section step still intact
+	} {
+		if !strings.Contains(p, want) {
+			t.Errorf("review prompt missing %q", want)
+		}
+	}
+	// Update dirs must not double as review dirs.
+	before := strings.Index(p, "REVIEW-AND-FIX")
+	if strings.Contains(p[:before], "Do not touch STRUCTURE.md") {
+		t.Error("review-only rules leaked into the update section")
+	}
+
+	// Without ancestors: no review section, plain reply line.
+	plain := gardenerPrompt(DocsJob{Change: "2026-09-10-0", Title: "T", Dirs: []string{"internal/model"}}, update, nil)
+	if strings.Contains(plain, "REVIEW-AND-FIX") || strings.Contains(plain, "account for your work") {
+		t.Error("ancestor-less job must not carry review language")
+	}
+	if !strings.Contains(plain, "Reply with one line per directory") {
+		t.Error("plain reply line missing")
+	}
+}
+
+func TestGardenerVerifiesAncestorTargets(t *testing.T) {
 	root, cfg := gardenerRepo(t)
+	// Pre-existing root AGENTS.md: human prefix + marker section.
+	human := "# root\n\nHuman notes.\n"
+	pre := human + model.DocMarkerBegin + "\n- (seed) old learning\n" + model.DocMarkerEnd + "\n"
+	if err := os.WriteFile(filepath.Join(root, docs.AgentsFile), []byte(pre), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fake := &fakeSessionClient{}
+	fake.onPrompt = func() {
+		goodAgent(root, "internal/model")
+		// Misbehave in the review target: edit outside the markers.
+		tampered := "# root\n\nTampered.\n" + model.DocMarkerBegin + "\n- (seed) old learning\n" + model.DocMarkerEnd + "\n"
+		os.WriteFile(filepath.Join(root, docs.AgentsFile), []byte(tampered), 0o644)
+	}
+	r := &gardenerRunner{oc: fake, root: root, cfg: cfg}
+	job := DocsJob{Change: "2026-09-10-0", Title: "T", Dirs: []string{"internal/model"}, Ancestors: []string{"."}}
+	err := r.RunDocsJob(context.Background(), job)
+	if err == nil || !strings.Contains(err.Error(), "confinement violation") {
+		t.Fatalf("ancestor violation not caught: %v", err)
+	}
+	if got := readDocFile(t, root, "AGENTS.md"); got != pre {
+		t.Errorf("ancestor not restored:\n%s", got)
+	}
+	// The prompt carried both sections.
+	if !strings.Contains(fake.prompts[0], "REVIEW-AND-FIX") || !strings.Contains(fake.prompts[0], "- .\n") {
+		t.Error("prompt missing the review-and-fix section")
+	}
+}
+
+func TestGardenerAllowsAncestorLearningDeletion(t *testing.T) {
+	root, cfg := gardenerRepo(t)
+	human := "# root\n\nHuman notes.\n"
+	kept := "- (seed) keep me\n"
+	dropped := "- (2026-09-01-0) describes a deleted file\n"
+	pre := human + model.DocMarkerBegin + "\n" + kept + dropped + model.DocMarkerEnd + "\n"
+	if err := os.WriteFile(filepath.Join(root, docs.AgentsFile), []byte(pre), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fake := &fakeSessionClient{}
+	fake.onPrompt = func() {
+		goodAgent(root, "internal/model")
+		// Compliant review work: delete the dead learning inside the markers.
+		now := human + model.DocMarkerBegin + "\n" + kept + model.DocMarkerEnd + "\n"
+		os.WriteFile(filepath.Join(root, docs.AgentsFile), []byte(now), 0o644)
+	}
+	r := &gardenerRunner{oc: fake, root: root, cfg: cfg}
+	job := DocsJob{Change: "2026-09-10-0", Title: "T", Dirs: []string{"internal/model"}, Ancestors: []string{"."}}
+	if err := r.RunDocsJob(context.Background(), job); err != nil {
+		t.Fatalf("in-marker deletion must pass confinement: %v", err)
+	}
+	got := readDocFile(t, root, "AGENTS.md")
+	if strings.Contains(got, "describes a deleted file") {
+		t.Error("deleted learning was restored; in-marker edits must persist")
+	}
+	if !strings.Contains(got, "keep me") || !strings.Contains(got, "Human notes.") {
+		t.Errorf("kept content lost:\n%s", got)
+	}
+}
+
+func TestGardenerSessionFailure(t *testing.T) {	root, cfg := gardenerRepo(t)
 	fake := &fakeSessionClient{promptErr: fmt.Errorf("service exploded")}
 	r := &gardenerRunner{oc: fake, root: root, cfg: cfg}
 	job := DocsJob{Change: "2026-09-10-0", Title: "T", Dirs: []string{"internal/model"}}

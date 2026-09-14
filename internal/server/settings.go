@@ -86,7 +86,8 @@ type UISettings struct {
 
 // DocsSettings configure the docs subsystem.
 type DocsSettings struct {
-	AutoGardenerOnClose *bool `json:"autoGardenerOnClose,omitempty"`
+	AutoGardenerOnClose *bool  `json:"autoGardenerOnClose,omitempty"`
+	GardenerModel       string `json:"gardenerModel,omitempty"`
 }
 
 // EffectiveSettings is the concrete view with all defaults materialized.
@@ -112,7 +113,8 @@ type EffectiveUISettings struct {
 
 // EffectiveDocsSettings resolves DocsSettings to concrete values.
 type EffectiveDocsSettings struct {
-	AutoGardenerOnClose bool `json:"autoGardenerOnClose"`
+	AutoGardenerOnClose bool   `json:"autoGardenerOnClose"`
+	GardenerModel       string `json:"gardenerModel"`
 }
 
 // PromptAdd returns the addendum for one named prompt: discussion, change,
@@ -237,6 +239,7 @@ func mergeSettings(project, personal Settings) (EffectiveSettings, map[string]st
 
 	eff.UI.ShowArchived = pickBool("ui.showArchived", true, project.UI.ShowArchived, personal.UI.ShowArchived)
 	eff.Docs.AutoGardenerOnClose = pickBool("docs.autoGardenerOnClose", true, project.Docs.AutoGardenerOnClose, personal.Docs.AutoGardenerOnClose)
+	eff.Docs.GardenerModel = pickStr("docs.gardenerModel", project.Docs.GardenerModel, personal.Docs.GardenerModel)
 
 	return eff, sources
 }
@@ -371,24 +374,56 @@ func appendAddendum(base, add string) string {
 	return base + "\n\n" + add
 }
 
-// spawnSession creates an opencode session titled title, applying the
-// effective agent/model defaults at creation.
-func (s *Server) spawnSession(ctx context.Context, title string) (*opencode.Session, error) {
-	return spawnSession(ctx, s.oc, s.st.Dir, title)
-}
-
-// spawnSession creates an opencode session applying the effective
-// agent/model defaults. When the service rejects them (400 — typically a
-// stale or unknown name), it logs a warning and retries with the service
-// defaults so a bad setting never blocks session creation.
-func spawnSession(ctx context.Context, oc *opencode.Client, repoDir, title string) (*opencode.Session, error) {
+// SessionDefaults returns the effective configured session agent and model
+// for repoDir ("" = service default). It is the exported read path for
+// callers outside this package (the CLI docs seed); writes stay here.
+func SessionDefaults(repoDir string) (agent, model string) {
 	eff, _, loadErr := loadEffectiveSettings(repoDir)
 	if loadErr != "" {
 		slog.Warn("settings load failed; using defaults", "err", loadErr)
 	}
+	return eff.Session.Agent, eff.Session.Model
+}
+
+// GardenerModel returns the model for docs-gardener sessions: the
+// docs.gardenerModel override when set, else the effective session model
+// ("" = service default). The gardener's agent still comes from
+// SessionDefaults — this is a model-only override by design.
+func GardenerModel(repoDir string) string {
+	eff, _, loadErr := loadEffectiveSettings(repoDir)
+	if loadErr != "" {
+		slog.Warn("settings load failed; using defaults", "err", loadErr)
+	}
+	if eff.Docs.GardenerModel != "" {
+		return eff.Docs.GardenerModel
+	}
+	return eff.Session.Model
+}
+
+// spawnSession creates an opencode session titled title, applying the
+// effective agent/model defaults at creation.
+func (s *Server) spawnSession(ctx context.Context, title string) (*opencode.Session, error) {
+	return spawnSessionWithModel(ctx, s.oc, s.st.Dir, title, "")
+}
+
+// spawnSessionWithModel creates an opencode session applying the effective
+// agent defaults plus a model resolution: modelOverride (the docs
+// gardener's docs.gardenerModel) when non-empty, else the effective
+// session.model. When the service rejects the values (400 — typically a
+// stale or unknown name), it logs a warning and retries with the service
+// defaults so a bad setting never blocks session creation.
+func spawnSessionWithModel(ctx context.Context, oc *opencode.Client, repoDir, title, modelOverride string) (*opencode.Session, error) {
+	eff, _, loadErr := loadEffectiveSettings(repoDir)
+	if loadErr != "" {
+		slog.Warn("settings load failed; using defaults", "err", loadErr)
+	}
+	model := eff.Session.Model
+	if modelOverride != "" {
+		model = modelOverride
+	}
 	var mref *opencode.ModelRef
-	if eff.Session.Model != "" {
-		prov, id := splitModelRef(eff.Session.Model)
+	if model != "" {
+		prov, id := splitModelRef(model)
 		mref = &opencode.ModelRef{ID: id, ProviderID: prov}
 	}
 	sess, err := oc.CreateSessionWith(ctx, title, repoDir, eff.Session.Agent, mref)
@@ -398,7 +433,7 @@ func spawnSession(ctx context.Context, oc *opencode.Client, repoDir, title strin
 	var apiErr *opencode.APIError
 	if (eff.Session.Agent != "" || mref != nil) && errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusBadRequest {
 		slog.Warn("session create with configured agent/model rejected; retrying with service defaults",
-			"agent", eff.Session.Agent, "model", eff.Session.Model, "err", err)
+			"agent", eff.Session.Agent, "model", model, "err", err)
 		return oc.CreateSession(ctx, title, repoDir)
 	}
 	return nil, err

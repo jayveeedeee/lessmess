@@ -23,6 +23,7 @@ document.documentElement.dataset.theme = localStorage.getItem("tt-theme") || "da
 <body data-page="{{.Page}}">
 <header>
   <a class="brand" href="/" aria-label="lessmess home"><img class="brand-icon" src="/static/icon.svg" alt="lessmess" width="28" height="28"></a>
+  {{if ne .Page "setup"}}
   <nav class="topnav">
     <a href="/"{{if or (eq .Page "index") (eq .Page "board")}} class="active"{{end}}>Changes</a>
     <a href="/explorer"{{if eq .Page "explorer"}} class="active"{{end}}>Explorer</a>
@@ -31,9 +32,10 @@ document.documentElement.dataset.theme = localStorage.getItem("tt-theme") || "da
     <a href="/settings"{{if eq .Page "settings"}} class="active"{{end}}>Settings</a>
   </nav>
   <button id="notif-bell" type="button" title="Docs notifications" aria-label="Docs notifications" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg><span id="notif-badge"></span></button>
+  {{end}}
   <button id="theme-toggle" type="button" title="Toggle theme" aria-label="Toggle theme">☾</button>
 </header>
-<div id="banner" class="banner" hidden></div>
+{{if ne .Page "setup"}}<div id="banner" class="banner" hidden></div>{{end}}
 <main>
 {{template "content" .}}
 </main>
@@ -61,6 +63,8 @@ document.documentElement.dataset.theme = localStorage.getItem("tt-theme") || "da
       <div id="notif-list"></div>
       <div class="notif-actions">
         <button id="docs-refresh-btn" type="button">Refresh stale docs</button>
+        <button id="docs-seed-btn" type="button">Run docs seed</button>
+        <label class="muted" id="docs-seed-force-label"><input type="checkbox" id="docs-seed-force"> Force — redo every directory</label>
         <span id="notif-refresh-status" class="muted"></span>
       </div>
     </div>

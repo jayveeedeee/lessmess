@@ -1,6 +1,7 @@
 package docs
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -49,6 +50,7 @@ func ValidateDocs(root string, stale map[string]string) []Finding {
 		out = append(out, checkStructure(d, hashes[d.Rel])...)
 		out = append(out, checkAgents(d)...)
 	}
+	out = append(out, staleRefFindings(root)...)
 	for _, rel := range sortedKeys(stale) {
 		out = append(out, Finding{SeverityWarning, joinRel(rel, StructureFile), "flagged stale by the docs queue: " + stale[rel]})
 	}
@@ -105,6 +107,47 @@ func checkAgents(d *Dir) []Finding {
 		return []Finding{{SeverityError, rel, err.Error()}}
 	}
 	return nil
+}
+
+// staleRefFindings runs the stale-reference lint and renders its warnings.
+// Identical missing paths across many directories are collapsed into one
+// finding (a convention like "config lives in truservice.yaml, generated
+// at deploy time" would otherwise produce one warning per service
+// directory and bury the bell). A lint error is an error finding: the lint
+// walks only files ValidateDocs already tolerates, so failure here means
+// something unusual (config or walk trouble) that the user should see.
+func staleRefFindings(root string) []Finding {
+	staleRefs, err := StaleLearningRefs(root)
+	if err != nil {
+		return []Finding{{SeverityError, ConfigFile, "reference lint: " + err.Error()}}
+	}
+	type refHit struct {
+		dirs []string
+	}
+	byRef := map[string][]string{}
+	for rel, refs := range staleRefs {
+		for _, ref := range refs {
+			byRef[ref] = append(byRef[ref], rel)
+		}
+	}
+	refs := make([]string, 0, len(byRef))
+	for ref := range byRef {
+		refs = append(refs, ref)
+	}
+	sort.Strings(refs)
+	var out []Finding
+	for _, ref := range refs {
+		dirs := byRef[ref]
+		sort.Strings(dirs)
+		f := Finding{Severity: SeverityWarning, File: joinRel(dirs[0], AgentsFile)}
+		if len(dirs) == 1 {
+			f.Msg = fmt.Sprintf("learning cites missing path %q", ref)
+		} else {
+			f.Msg = fmt.Sprintf("learning cites missing path %q (%d directories, e.g. %s)", ref, len(dirs), dirs[0])
+		}
+		out = append(out, f)
+	}
+	return out
 }
 
 func joinRel(rel, name string) string {

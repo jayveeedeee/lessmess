@@ -93,6 +93,10 @@ func New(st *store.Store) *Server {
 	mux.HandleFunc("POST /api/git/commit", s.commitAll)
 	mux.HandleFunc("GET /api/git/commit-status", s.commitStatus)
 	mux.HandleFunc("POST /docs/refresh", s.docsRefresh)
+	mux.HandleFunc("POST /docs/seed", s.docsSeed)
+	mux.HandleFunc("GET /docs/seed-status", s.docsSeedStatus)
+	mux.HandleFunc("GET /docs/exclusions", s.docsExclusions)
+	mux.HandleFunc("POST /docs/exclusions", s.docsExclusionsSave)
 	mux.HandleFunc("GET /api/settings", s.getSettings)
 	mux.HandleFunc("PUT /api/settings", s.putSettings)
 	mux.HandleFunc("GET /api/settings/options", s.settingsOptions)
@@ -102,6 +106,11 @@ func New(st *store.Store) *Server {
 	mux.HandleFunc("GET /explorer/tree", s.explorerTree)
 	mux.HandleFunc("GET /explorer/detail", s.explorerDetail)
 	mux.HandleFunc("POST /explorer/chat", s.explorerChat)
+	registerSetupRoutes(mux, &setupEnv{
+		dir:  st.Dir,
+		rend: s.rend,
+		oc:   func() *opencode.Client { return s.oc },
+	})
 	if sh, err := staticHandler(); err == nil {
 		mux.Handle("GET /static/", sh)
 	}
@@ -116,7 +125,11 @@ func (s *Server) SetOpencode(c *opencode.Client) {
 	if c != nil && s.docsQ != nil {
 		gr := &gardenerRunner{oc: c, root: s.st.Dir, cfg: s.docsQ.cfg}
 		gr.spawn = func(ctx context.Context, title string) (*opencode.Session, error) {
-			return spawnSession(ctx, c, s.st.Dir, title)
+			model := GardenerModel(s.st.Dir)
+			if model != "" {
+				slog.Info("gardener session model", "model", model)
+			}
+			return spawnSessionWithModel(ctx, c, s.st.Dir, title, model)
 		}
 		s.docsQ.setRunner(gr)
 	}
@@ -201,7 +214,7 @@ func (s *Server) index(w http.ResponseWriter, r *http.Request) {
 	// compare it numerically.
 	sort.Slice(rows, func(i, j int) bool { return changeIDLess(rows[j].ID, rows[i].ID) })
 	if wantsHTML(r) {
-		view := indexView{Changes: rows}
+		view := indexView{Changes: rows, OnboardingPending: onboardingPending(s.st.Dir)}
 		if gs := gitStatus(s.st.Dir); gs.Repo {
 			view.GitRepo = true
 			view.GitDirty = len(gs.Changes) > 0
@@ -442,7 +455,13 @@ func (s *Server) validate(w http.ResponseWriter, r *http.Request) {
 	if df == nil {
 		df = []docs.Finding{}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"violations": v, "docs": df})
+	payload := map[string]any{"violations": v, "docs": df}
+	// Dirs missing their doc files: the bell's "Run missing docs" button
+	// hides at zero; -1 means the lookup failed (walk trouble).
+	if missing, err := docs.MissingDocDirs(s.st.Dir); err == nil {
+		payload["docsSeedPending"] = len(missing)
+	}
+	writeJSON(w, http.StatusOK, payload)
 }
 
 func (s *Server) events(w http.ResponseWriter, r *http.Request) {

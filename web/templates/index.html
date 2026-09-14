@@ -1,4 +1,13 @@
 {{define "content"}}
+{{if .Data.OnboardingPending}}
+<div class="banner warn onboarding-banner" id="onboarding-banner">
+  <span>Finish setting up lessmess — check prerequisites, pick a default agent, and choose your docs options.</span>
+  <span class="onboarding-actions">
+    <a class="btn-accent" href="/setup">Finish setup</a>
+    <button type="button" class="btn-ghost" id="onboarding-dismiss">Dismiss</button>
+  </span>
+</div>
+{{end}}
 <section class="changes">
   <div class="section-head">
     <h2>Changes</h2>

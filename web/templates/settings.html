@@ -14,6 +14,7 @@
   </p>
   <p id="settings-load-error" class="settings-error" hidden></p>
   <p id="settings-options-hint" class="muted" hidden>opencode service unavailable — agent and model are free text; values are saved as typed.</p>
+  <p class="muted">First-time setup? <a href="/setup">Re-run the onboarding wizard</a> — prerequisites, bootstrap, default agent, and optional docs seeding.</p>
 
   <div class="settings-body">
     <nav class="settings-nav" aria-label="Settings groups">
@@ -137,6 +138,18 @@
         <option value="false">Off</option>
       </select>
       <p class="muted field-help">Run the doc gardener automatically when a change is closed.</p>
+    </div>
+    <div class="settings-field" data-field="docs.gardenerModel" data-kind="string">
+      <label>Gardener model <span class="src-badge" data-badge></span><button type="button" class="settings-change" title="Discuss changing this setting">✦ change</button></label>
+      <input type="text" list="settings-model-list" data-input autocomplete="off" spellcheck="false">
+      <p class="muted field-help">Model for doc-gardener sessions, as provider/model. Empty inherits the session default model.</p>
+    </div>
+    <div class="settings-exclusions" id="docs-exclusions-field">
+      <label>Excluded folders</label>
+      <div id="docs-exclusions" class="exclusions-list"><span class="muted">Loading…</span></div>
+      <button type="button" id="docs-exclusions-save">Save exclusions</button>
+      <span id="docs-exclusions-status" class="muted"></span>
+      <p class="muted field-help">Folders without doc pairs. Saved to <code>agentsdocs.json</code>; the root directory is always covered, and hand-written glob patterns are preserved.</p>
     </div>
   </section>
     </div>

@@ -38,6 +38,10 @@ var (
 	ErrNotFound = errors.New("not found")
 	// ErrInvalid is returned when a write targets a file that fails to parse.
 	ErrInvalid = errors.New("file failed validation")
+	// ErrNoChanges is returned by Open when the repository has no changes/
+	// directory yet (the setup-mode trigger); a malformed tree is a
+	// different, non-sentinel error.
+	ErrNoChanges = errors.New("changes/ directory not found")
 )
 
 var changeIDRe = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}-\d+$`)
@@ -73,10 +77,17 @@ func Open(dir string) (*Store, error) {
 		closed:     make(chan struct{}),
 	}
 	if st, err := os.Stat(s.ChangesDir); err != nil || !st.IsDir() {
-		return nil, fmt.Errorf("changes/ directory not found under %s", abs)
+		return nil, fmt.Errorf("%w under %s", ErrNoChanges, abs)
 	}
 	s.Reload()
 	if s.rootErr != nil {
+		// A missing root ledger is a partial (uninitialized) tree: setup
+		// mode applies — init creates the ledger merge-safely. A ledger
+		// that exists but does not parse stays a plain fatal error.
+		if errors.Is(s.rootErr, os.ErrNotExist) {
+			return nil, fmt.Errorf("changes/ tree incomplete (no root ledger at %s): %w",
+				filepath.Join(s.ChangesDir, "ledger.md"), ErrNoChanges)
+		}
 		return nil, fmt.Errorf("root ledger: %w", s.rootErr)
 	}
 	return s, nil

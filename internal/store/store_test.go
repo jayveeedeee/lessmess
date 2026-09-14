@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -452,5 +453,43 @@ func TestWriteNotifies(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("no write event")
+	}
+}
+
+func TestOpenNoChangesSentinel(t *testing.T) {
+	_, err := Open(t.TempDir())
+	if !errors.Is(err, ErrNoChanges) {
+		t.Fatalf("Open err = %v, want errors.Is ErrNoChanges", err)
+	}
+	if !strings.Contains(err.Error(), "changes/ directory not found under") {
+		t.Fatalf("message changed: %v", err)
+	}
+}
+
+func TestOpenMissingRootLedgerSentinel(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "changes"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	_, err := Open(dir)
+	if !errors.Is(err, ErrNoChanges) {
+		t.Fatalf("partial tree Open err = %v, want errors.Is ErrNoChanges", err)
+	}
+}
+
+func TestOpenCorruptRootLedgerNotSentinel(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "changes"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "changes", "ledger.md"), []byte("garbage\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := Open(dir)
+	if err == nil {
+		t.Fatal("corrupt ledger must fail")
+	}
+	if errors.Is(err, ErrNoChanges) {
+		t.Fatalf("corrupt ledger must NOT be ErrNoChanges (stays fatal): %v", err)
 	}
 }

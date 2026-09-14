@@ -9,4 +9,5 @@
 - (2026-09-12-7) Docs validation deliberately lives in `internal/docs.ValidateDocs`, not here, despite the original DOC-07 file list; the store stays focused on the `changes/` contract and gains no docs dependency.
 - (manual) `statedir.go` exports `StateDirName` (`.lessmess`) and `MigrateStateDir`, called at CLI startup before `Open`; it renames a legacy `.tasktracker` dir only when `.lessmess` is absent, so an existing current dir always wins and nothing is merged or deleted.
 - (2026-09-13-0) `Watch` skips attribute-only events (`ev.Op&^ fsnotify.Chmod == 0`) before the debounce: git scans read modified files, and macOS reports the resulting atime updates as `CHMOD`, which would otherwise retrigger a reload on every index render. Create/Write/Remove/Rename still notify (`TestWatchIgnoresChmod`).
+- (2026-09-13-2) `CreateChange(title, prefix, branch, date)` writes `branch` verbatim into the root ledger's Branch column (`—` when empty); server callers pass the effective `git.defaultBranch` setting. The branch is informational only — the store never creates a git branch.
 <!-- tasktracker:end -->

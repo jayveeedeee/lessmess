@@ -1,0 +1,104 @@
+{{define "content"}}
+<section class="setup-wizard" id="setup-page">
+  <div class="section-head">
+    <h2>Set up lessmess</h2>
+    <span class="muted" id="setup-step-indicator"></span>
+  </div>
+
+  <ol class="setup-steps" id="setup-steps-nav">
+    <li data-step-nav="prereqs" class="active">Prerequisites</li>
+    <li data-step-nav="bootstrap">Bootstrap</li>
+    <li data-step-nav="agent">Default agent</li>
+    <li data-step-nav="docs">Docs</li>
+    <li data-step-nav="finish">Finish</li>
+  </ol>
+
+  <section class="setup-step" data-step="prereqs">
+    <h3>System prerequisites</h3>
+    <p class="muted">lessmess checks what it needs before anything runs. Fix any failing item, then Re-check.</p>
+    <ul id="setup-prereq-list" class="setup-prereq-list"></ul>
+    <div class="setup-actions">
+      <button id="setup-recheck-btn" type="button" class="btn-ghost">Re-check</button>
+      <button id="setup-prereqs-next" type="button" class="btn-accent" disabled>Continue</button>
+    </div>
+    <p class="muted" id="setup-prereqs-hint">Failing checks block the next steps; warnings do not.</p>
+  </section>
+
+  <section class="setup-step" data-step="bootstrap" hidden>
+    <h3>Bootstrap this repository</h3>
+    <p class="muted">Creates the workflow files. Everything is merge-safe — existing content is never clobbered:</p>
+    <ul class="muted setup-file-list">
+      <li><code>AGENTS.md</code> — the change-management workflow instructions</li>
+      <li><code>changes/ledger.md</code> — the root change ledger</li>
+      <li><code>.gitignore</code> — ignores <code>.lessmess/</code> tooling state</li>
+      <li><code>opencode.json</code> — starter agent permissions</li>
+    </ul>
+    <label class="setup-check">
+      <input type="checkbox" id="setup-coverage" checked>
+      <span>Enable agent-facing docs coverage (<code>agentsdocs.json</code>) — required for the Docs step and the Explorer</span>
+    </label>
+    <div id="setup-excludes" class="setup-excludes">
+      <p class="muted">Exclude from docs <span class="muted">(check a directory to skip its whole subtree; expand ▸ for nested ones — top-level picks also exclude same-named directories elsewhere)</span>:</p>
+      <div id="setup-exclude-list" class="setup-exclude-list"></div>
+    </div>
+    <div class="setup-actions">
+      <button id="setup-bootstrap-btn" type="button" class="btn-accent">Bootstrap</button>
+      <button id="setup-bootstrap-next" type="button" class="btn-accent" hidden>Continue</button>
+    </div>
+    <ul id="setup-bootstrap-result" class="setup-artifact-list"></ul>
+    <p class="muted" id="setup-bootstrap-done" hidden>Already bootstrapped — Bootstrap again only updates the docs exclusions, or Continue.</p>
+  </section>
+
+  <section class="setup-step" data-step="agent" hidden>
+    <h3>Default agent and model</h3>
+    <p class="muted">Sessions lessmess creates (discussions, changes, docs) start with these. Changeable anytime in Settings.</p>
+    <div class="settings-field" data-kind="text">
+      <label for="setup-agent">Agent</label>
+      <input id="setup-agent" list="setup-agent-list" placeholder="Service default" autocomplete="off">
+      <datalist id="setup-agent-list"></datalist>
+    </div>
+    <div class="settings-field" data-kind="text">
+      <label for="setup-model">Model</label>
+      <input id="setup-model" list="setup-model-list" placeholder="Service default" autocomplete="off">
+      <datalist id="setup-model-list"></datalist>
+    </div>
+    <p class="muted" id="setup-options-hint" hidden>Cannot reach the opencode service — names are saved unvalidated.</p>
+    <fieldset class="setup-scope">
+      <legend class="muted">Save to</legend>
+      <label><input type="radio" name="setup-scope" value="personal" checked> Personal — this machine only (<code>.lessmess/settings.json</code>, gitignored)</label>
+      <label><input type="radio" name="setup-scope" value="project"> Project — shared with the team (<code>lessmess.json</code>, committed)</label>
+    </fieldset>
+    <div class="setup-actions">
+      <button id="setup-agent-save" type="button" class="btn-accent">Save and continue</button>
+      <button id="setup-agent-skip" type="button" class="btn-ghost">Use service defaults</button>
+    </div>
+    <p class="muted" id="setup-agent-status"></p>
+  </section>
+
+  <section class="setup-step" data-step="docs" hidden>
+    <h3>Agent-facing docs</h3>
+    <p class="muted">lessmess can generate <code>STRUCTURE.md</code> / <code>AGENTS.md</code> doc pairs for every covered directory. This runs <strong>one opencode session per directory</strong> with your default agent and may take a while on large trees. Already-summarized directories are skipped on re-runs.</p>
+    <div class="settings-field" data-kind="text">
+      <label for="setup-seed-budget">Budget — max directories this run (0 = unlimited)</label>
+      <input id="setup-seed-budget" type="number" min="0" value="0">
+    </div>
+    <div class="setup-actions">
+      <button id="setup-seed-btn" type="button" class="btn-accent">Generate docs now</button>
+      <button id="setup-seed-skip" type="button" class="btn-ghost">Skip for now</button>
+      <button id="setup-seed-next" type="button" class="btn-accent" hidden>Continue</button>
+    </div>
+    <pre id="setup-seed-log" class="setup-seed-log" hidden></pre>
+    <p class="muted">You can always seed later via Settings → Re-run onboarding, the docs notification bell, or <code>lessmess docs seed</code>.</p>
+  </section>
+
+  <section class="setup-step" data-step="finish" hidden>
+    <h3>You're set</h3>
+    <ul class="setup-artifact-list" id="setup-finish-summary"></ul>
+    <div class="setup-actions">
+      <button id="setup-finish-btn" type="button" class="btn-accent">Open lessmess</button>
+    </div>
+  </section>
+
+  <p class="setup-error" id="setup-error" hidden></p>
+</section>
+{{end}}

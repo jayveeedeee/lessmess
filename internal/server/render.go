@@ -43,6 +43,7 @@ type renderer struct {
 	partial  *template.Template
 	explorer *template.Template
 	settings *template.Template
+	setup    *template.Template
 	assetsV  string
 }
 
@@ -71,6 +72,7 @@ func newRenderer() *renderer {
 		partial:  mustParse("templates/partials.html", "templates/explorer.html"),
 		explorer: mustParse("templates/layout.html", "templates/explorer.html"),
 		settings: mustParse("templates/layout.html", "templates/settings.html"),
+		setup:    mustParse("templates/layout.html", "templates/setup.html"),
 		assetsV:  assetsVersion(),
 	}
 }
@@ -101,6 +103,9 @@ type indexView struct {
 	// repo, disabled when the tree is clean.
 	GitRepo  bool
 	GitDirty bool
+	// OnboardingPending shows the finish-setup banner until onboarding is
+	// completed or dismissed (.lessmess/onboarding.json).
+	OnboardingPending bool
 }
 
 type tmplColumn struct {

@@ -18,10 +18,12 @@ import (
 // DocsJob is one queued doc-gardener unit of work: refresh the doc pairs of
 // Dirs on behalf of a closed change (or a manual reconciliation).
 type DocsJob struct {
-	Change   string   `json:"change"`   // change ID, or "manual"
-	Title    string   `json:"title"`    // change title, for prompt context
-	Dirs     []string `json:"dirs"`     // covered repo-relative dirs, sorted; may contain "."
-	Enqueued string   `json:"enqueued"` // RFC3339
+	Change    string            `json:"change"`              // change ID, or "manual"
+	Title     string            `json:"title"`               // change title, for prompt context
+	Dirs      []string          `json:"dirs"`                // covered repo-relative dirs, sorted; may contain "."
+	Ancestors []string          `json:"ancestors,omitempty"` // covered ancestors of Dirs: review-and-fix targets
+	LintRefs  map[string][]string `json:"lintRefs,omitempty"` // manual jobs: dir → missing paths flagged by the reference lint
+	Enqueued  string            `json:"enqueued"`            // RFC3339
 }
 
 // DocsRunner executes one job. Implemented by the doc gardener (DOC-06);
@@ -178,22 +180,22 @@ func (q *docsQueue) run(job DocsJob) {
 		return
 	}
 	q.mu.Lock()
-	for _, d := range job.Dirs {
+	for _, d := range append(append([]string{}, job.Dirs...), job.Ancestors...) {
 		delete(q.state.Stale, d)
 	}
-	q.persistLocked()
 	q.mu.Unlock()
-	slog.Info("docs job done", "change", job.Change, "dirs", job.Dirs)
+	slog.Info("docs job done", "change", job.Change, "dirs", job.Dirs, "ancestors", job.Ancestors)
 }
 
+// failStale flags the job's dirs and ancestors with the failure reason.
 func (q *docsQueue) failStale(job DocsJob, reason string) {
 	q.mu.Lock()
-	for _, d := range job.Dirs {
+	for _, d := range append(append([]string{}, job.Dirs...), job.Ancestors...) {
 		q.state.Stale[d] = reason
 	}
 	q.persistLocked()
 	q.mu.Unlock()
-	slog.Warn("docs dirs stale", "change", job.Change, "dirs", job.Dirs, "reason", reason)
+	slog.Warn("docs dirs stale", "change", job.Change, "dirs", job.Dirs, "ancestors", job.Ancestors, "reason", reason)
 }
 
 // staleDirs returns the sorted stale set.
@@ -242,7 +244,13 @@ func (s *Server) enqueueDocsRefresh(changeID string) {
 			}
 		}
 	}
-	s.docsQ.enqueue(DocsJob{Change: changeID, Title: title, Dirs: dirs, Enqueued: time.Now().Format(time.RFC3339)})
+	s.docsQ.enqueue(DocsJob{
+		Change:    changeID,
+		Title:     title,
+		Dirs:      dirs,
+		Ancestors: coveredAncestors(dirs, s.docsQ.cfg),
+		Enqueued:  time.Now().Format(time.RFC3339),
+	})
 }
 
 // SetDocsRunner attaches the job executor (tests and, via SetOpencode, the
@@ -253,8 +261,28 @@ func (s *Server) SetDocsRunner(r DocsRunner) {
 	}
 }
 
-// docsRefresh handles POST /docs/refresh: enqueue one manual reconciliation
-// job for the union of queue-stale and hash-stale dirs.
+// docsJobMaxDirs bounds one manual reconciliation job: a union covering
+// dozens of directories would otherwise become a single giant gardener
+// session whose failure flags every dir stale at once. The serialized
+// queue drains the chunks sequentially.
+const docsJobMaxDirs = 10
+
+// chunkDirs splits dirs into consecutive chunks of at most size entries.
+func chunkDirs(dirs []string, size int) [][]string {
+	var out [][]string
+	for i := 0; i < len(dirs); i += size {
+		end := i + size
+		if end > len(dirs) {
+			end = len(dirs)
+		}
+		out = append(out, dirs[i:end])
+	}
+	return out
+}
+
+// docsRefresh handles POST /docs/refresh: enqueue manual reconciliation
+// jobs for the union of queue-stale, hash-stale, and lint-flagged dirs,
+// chunked to at most docsJobMaxDirs directories per job.
 func (s *Server) docsRefresh(w http.ResponseWriter, r *http.Request) {
 	if s.docsQ == nil {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "docs system disabled"})
@@ -272,6 +300,14 @@ func (s *Server) docsRefresh(w http.ResponseWriter, r *http.Request) {
 			set[d] = true
 		}
 	}
+	lintRefs, err := docs.StaleLearningRefs(s.st.Dir)
+	if err != nil {
+		slog.Warn("docs refresh: reference lint", "err", err)
+	} else {
+		for d := range lintRefs {
+			set[d] = true
+		}
+	}
 	dirs := make([]string, 0, len(set))
 	for d := range set {
 		dirs = append(dirs, d)
@@ -281,6 +317,22 @@ func (s *Server) docsRefresh(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "nothing to refresh"})
 		return
 	}
-	s.docsQ.enqueue(DocsJob{Change: "manual", Title: "manual reconciliation", Dirs: dirs, Enqueued: time.Now().Format(time.RFC3339)})
+	for _, chunk := range chunkDirs(dirs, docsJobMaxDirs) {
+		// Lint refs ride along only for dirs this job covers, so the
+		// gardener prompt names exactly the flagged references it can fix.
+		chunkRefs := map[string][]string{}
+		for _, d := range chunk {
+			if refs := lintRefs[d]; len(refs) > 0 {
+				chunkRefs[d] = refs
+			}
+		}
+		s.docsQ.enqueue(DocsJob{
+			Change:   "manual",
+			Title:    "manual reconciliation",
+			Dirs:     chunk,
+			LintRefs: chunkRefs,
+			Enqueued: time.Now().Format(time.RFC3339),
+		})
+	}
 	writeJSON(w, http.StatusAccepted, map[string]any{"enqueued": dirs})
 }

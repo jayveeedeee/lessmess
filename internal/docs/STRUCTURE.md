@@ -1,7 +1,7 @@
 <!-- tasktracker:begin -->
 # Structure: internal/docs
 
-<!-- tasktracker-meta: refreshed=2026-09-12 source=manual tree=2c217e09fdfe -->
+<!-- tasktracker-meta: refreshed=2026-09-13 source=manual tree=d0a9e98c968f -->
 
 Implements agentsdocs management: coverage config, per-folder STRUCTURE.md/AGENTS.md generation, seeding, summarization, validation, and refresh.
 
@@ -21,6 +21,7 @@ Implements agentsdocs management: coverage config, per-folder STRUCTURE.md/AGENT
 | `structure.go` | STRUCTURE.md rendering and carry-forward logic |
 | `structure_test.go` | tests for structure generation |
 | `summarize.go` | LLM summarizer interface and opencode session runner |
+| `summarize_test.go` | Tests for the opencode summarizer's configured agent and model defaults. |
 | `validate.go` | docs health checks and freshness findings |
 | `validate_test.go` | tests for docs validation |
 | `walk.go` | covered-tree walk, Dir model, and post-order |

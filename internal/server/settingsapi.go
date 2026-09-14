@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"lessmess/internal/opencode"
 	"lessmess/internal/store"
 )
 
@@ -62,23 +63,29 @@ func (s *Server) getSettings(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, settingsAPIView(s.st.Dir))
 }
 
-// putSettings handles PUT /api/settings?scope=project|personal: replace
-// the submitted sections in one layer, then return the updated view.
-// Submitted agent/model values are validated against the live service
-// when it is reachable — the service accepts unknown names at creation
-// and then never runs the session, so a typo must be caught here. When
-// the service cannot be queried, values are saved unvalidated.
+// putSettings handles PUT /api/settings?scope=project|personal.
 func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
+	putSettingsWith(s.oc, s.st.Dir, w, r)
+}
+
+// putSettingsWith is the PUT /api/settings handler shared by the normal
+// server and the setup-mode shell (which has no store, only a dir):
+// replace the submitted sections in one layer, then return the updated
+// view. Submitted agent/model values are validated against the live service
+// when it is reachable — the service accepts unknown names at creation and
+// then never runs the session, so a typo must be caught here. When the
+// service cannot be queried, values are saved unvalidated.
+func putSettingsWith(oc *opencode.Client, repoDir string, w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "read body: " + err.Error()})
 		return
 	}
-	if verr := s.validateSessionSettings(r.Context(), body); verr != nil {
+	if verr := validateSessionSettings(r.Context(), oc, repoDir, body); verr != nil {
 		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": verr.Error()})
 		return
 	}
-	if err := applySettingsPatch(s.st.Dir, r.URL.Query().Get("scope"), body); err != nil {
+	if err := applySettingsPatch(repoDir, r.URL.Query().Get("scope"), body); err != nil {
 		switch {
 		case errors.Is(err, errSettingsBadScope):
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
@@ -91,36 +98,72 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	slog.Info("settings saved", "scope", r.URL.Query().Get("scope"))
-	writeJSON(w, http.StatusOK, settingsAPIView(s.st.Dir))
+	writeJSON(w, http.StatusOK, settingsAPIView(repoDir))
 }
 
-// validateSessionSettings checks a PUT body's session section against the
-// live service: a non-empty agent must be a primary, non-hidden agent and
-// a non-empty model must exist (both scoped to the served repository, so
-// project-defined agents/providers count). A nil error means "save". Any
-// query failure skips validation — offline saves stay possible.
-func (s *Server) validateSessionSettings(ctx context.Context, body []byte) error {
-	if s.oc == nil {
+// listPrimaryAgents returns the primary, non-hidden agents usable for
+// sessions in repoDir. The location-scoped list carries project-defined
+// agents, but outside the service's home location it omits the built-in
+// primaries — which the service nevertheless accepts for sessions in any
+// directory — so the default-location list is merged in, deduped by ID
+// (scoped entries win).
+func listPrimaryAgents(ctx context.Context, oc *opencode.Client, repoDir string) ([]opencode.AgentInfo, error) {
+	scoped, err := oc.ListAgentsFor(ctx, repoDir)
+	if err != nil {
+		return nil, err
+	}
+	seen := map[string]bool{}
+	var out []opencode.AgentInfo
+	for _, a := range scoped {
+		if a.Mode != "primary" || a.Hidden || seen[a.ID] {
+			continue
+		}
+		seen[a.ID] = true
+		out = append(out, a)
+	}
+	global, err := oc.ListAgents(ctx)
+	if err != nil {
+		return out, nil // the scoped list alone is better than failing
+	}
+	for _, a := range global {
+		if a.Mode != "primary" || a.Hidden || seen[a.ID] {
+			continue
+		}
+		seen[a.ID] = true
+		out = append(out, a)
+	}
+	return out, nil
+}
+
+// validateSessionSettings checks a PUT body's model-carrying sections
+// against the live service: a non-empty agent must be a primary,
+// non-hidden agent, and non-empty models (session.model,
+// docs.gardenerModel) must exist — both scoped to the served repository,
+// so project-defined agents/providers count. A nil error means "save".
+// Any query failure skips validation — offline saves stay possible.
+func validateSessionSettings(ctx context.Context, oc *opencode.Client, repoDir string, body []byte) error {
+	if oc == nil {
 		return nil
 	}
 	var submitted struct {
 		Session *SessionSettings `json:"session"`
+		Docs    *DocsSettings    `json:"docs"`
 	}
-	if err := json.Unmarshal(body, &submitted); err != nil || submitted.Session == nil {
+	if err := json.Unmarshal(body, &submitted); err != nil {
 		return nil // malformed bodies are rejected by applySettingsPatch
 	}
-	agent, model := strings.TrimSpace(submitted.Session.Agent), strings.TrimSpace(submitted.Session.Model)
-	if agent == "" && model == "" {
+	if submitted.Session == nil && submitted.Docs == nil {
 		return nil
 	}
 	qctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	if agent != "" {
-		agents, err := s.oc.ListAgentsFor(qctx, s.st.Dir)
+	if submitted.Session != nil && strings.TrimSpace(submitted.Session.Agent) != "" {
+		agent := strings.TrimSpace(submitted.Session.Agent)
+		agents, err := listPrimaryAgents(qctx, oc, repoDir)
 		if err == nil {
 			valid := false
 			for _, a := range agents {
-				if a.ID == agent && a.Mode == "primary" && !a.Hidden {
+				if a.ID == agent {
 					valid = true
 					break
 				}
@@ -130,22 +173,36 @@ func (s *Server) validateSessionSettings(ctx context.Context, body []byte) error
 			}
 		}
 	}
-	if model != "" {
-		models, err := s.oc.ListModelsFor(qctx, s.st.Dir)
-		if err == nil {
-			valid := false
-			for _, m := range models {
-				if m.ProviderID+"/"+m.ID == model {
-					valid = true
-					break
-				}
+	if submitted.Session != nil {
+		if model := strings.TrimSpace(submitted.Session.Model); model != "" {
+			if err := validateModelChoice(qctx, oc, repoDir, model); err != nil {
+				return err
 			}
-			if !valid {
-				return fmt.Errorf("unknown model %q (not available for this repository)", model)
+		}
+	}
+	if submitted.Docs != nil {
+		if model := strings.TrimSpace(submitted.Docs.GardenerModel); model != "" {
+			if err := validateModelChoice(qctx, oc, repoDir, model); err != nil {
+				return fmt.Errorf("gardener %w", err)
 			}
 		}
 	}
 	return nil
+}
+
+// validateModelChoice rejects a model name the live service does not offer
+// for repoDir. Query failures return nil (offline saves stay possible).
+func validateModelChoice(ctx context.Context, oc *opencode.Client, repoDir, model string) error {
+	models, err := oc.ListModelsFor(ctx, repoDir)
+	if err != nil {
+		return nil
+	}
+	for _, m := range models {
+		if m.ProviderID+"/"+m.ID == model {
+			return nil
+		}
+	}
+	return fmt.Errorf("unknown model %q (not available for this repository)", model)
 }
 
 // settingsOptionsResponse is the payload of GET /api/settings/options.
@@ -174,32 +231,35 @@ type settingsModelOpt struct {
 	Value      string `json:"value"`
 }
 
-// settingsOptions handles GET /api/settings/options: live agents and
-// models from the opencode service, degrading to available:false.
+// settingsOptions handles GET /api/settings/options.
 func (s *Server) settingsOptions(w http.ResponseWriter, r *http.Request) {
+	settingsOptionsWith(s.oc, s.st.Dir, w, r)
+}
+
+// settingsOptionsWith is the GET /api/settings/options handler shared by
+// the normal server and the setup-mode shell: live agents and models from
+// the opencode service, degrading to available:false.
+func settingsOptionsWith(oc *opencode.Client, repoDir string, w http.ResponseWriter, r *http.Request) {
 	resp := settingsOptionsResponse{Agents: []settingsAgentOpt{}, Models: []settingsModelOpt{}}
-	if s.oc == nil {
+	if oc == nil {
 		writeJSON(w, http.StatusOK, resp)
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
-	agents, err := s.oc.ListAgentsFor(ctx, s.st.Dir)
+	agents, err := listPrimaryAgents(ctx, oc, repoDir)
 	if err != nil {
 		slog.Warn("settings options: list agents", "err", err)
 		writeJSON(w, http.StatusOK, resp)
 		return
 	}
-	models, err := s.oc.ListModelsFor(ctx, s.st.Dir)
+	models, err := oc.ListModelsFor(ctx, repoDir)
 	if err != nil {
 		slog.Warn("settings options: list models", "err", err)
 		writeJSON(w, http.StatusOK, resp)
 		return
 	}
 	for _, a := range agents {
-		if a.Mode != "primary" || a.Hidden {
-			continue
-		}
 		resp.Agents = append(resp.Agents, settingsAgentOpt{ID: a.ID, Name: a.Name, Description: a.Description})
 	}
 	for _, m := range models {
@@ -208,7 +268,7 @@ func (s *Server) settingsOptions(w http.ResponseWriter, r *http.Request) {
 			Value: m.ProviderID + "/" + m.ID,
 		})
 	}
-	if def, err := s.oc.DefaultModel(ctx); err == nil && def != nil && def.ID != "" {
+	if def, err := oc.DefaultModel(ctx); err == nil && def != nil && def.ID != "" {
 		resp.DefaultModel = def.ProviderID + "/" + def.ID
 	}
 	resp.Available = true

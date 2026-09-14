@@ -278,7 +278,7 @@ func TestGardenerRunnerSpawnAndAddendum(t *testing.T) {
 	// With a settings addendum and no spawn: plain create, addendum appended.
 	writeSettingsFile(t, root, Settings{Prompts: PromptSettings{Gardener: "GARDENER-ADDENDUM"}})
 	r := &gardenerRunner{oc: fake, root: root, cfg: cfg}
-	if err := r.garden(context.Background(), DocsJob{Change: "manual", Title: "manual"}, nil); err != nil {
+	if err := r.garden(context.Background(), DocsJob{Change: "manual", Title: "manual"}, nil, nil); err != nil {
 		t.Fatalf("garden: %v", err)
 	}
 	if len(fake.prompts) != 1 || !strings.HasSuffix(fake.prompts[0], "\n\nGARDENER-ADDENDUM") {
@@ -291,10 +291,44 @@ func TestGardenerRunnerSpawnAndAddendum(t *testing.T) {
 		spawned++
 		return &opencode.Session{ID: "ses_spawn", Title: title}, nil
 	}
-	if err := r.garden(context.Background(), DocsJob{Change: "manual", Title: "manual"}, nil); err != nil {
+	if err := r.garden(context.Background(), DocsJob{Change: "manual", Title: "manual"}, nil, nil); err != nil {
 		t.Fatalf("garden with spawn: %v", err)
 	}
 	if spawned != 1 {
 		t.Errorf("spawn called %d times, want 1", spawned)
+	}
+}
+
+func TestGardenerSpawnUsesGardenerModel(t *testing.T) {
+	cap := &ocCapture{}
+	s := mappingServer(t, cap.handler())
+	writeSettingsFile(t, s.st.Dir, Settings{
+		Session: SessionSettings{Agent: "build", Model: "prov/session-m"},
+		Docs:    DocsSettings{GardenerModel: "prov/gardener-m"},
+	})
+
+	// The gardener closure resolves docs.gardenerModel over session.model.
+	if _, err := spawnSessionWithModel(context.Background(), s.oc, s.st.Dir, "t — docs", GardenerModel(s.st.Dir)); err != nil {
+		t.Fatalf("spawn: %v", err)
+	}
+	if len(cap.creates) != 1 {
+		t.Fatalf("creates = %d", len(cap.creates))
+	}
+	body := cap.creates[0]
+	if body["agent"] != "build" {
+		t.Errorf("agent = %v, want the session agent (override is model-only)", body["agent"])
+	}
+	m, _ := body["model"].(map[string]any)
+	if m["providerID"] != "prov" || m["id"] != "gardener-m" {
+		t.Errorf("model = %v, want the gardener override", body["model"])
+	}
+
+	// Without the override, the closure falls back to the session model.
+	if _, err := spawnSessionWithModel(context.Background(), s.oc, s.st.Dir, "t — docs", ""); err != nil {
+		t.Fatalf("spawn without override: %v", err)
+	}
+	m, _ = cap.creates[1]["model"].(map[string]any)
+	if m["providerID"] != "prov" || m["id"] != "session-m" {
+		t.Errorf("fallback model = %v, want the session model", cap.creates[1]["model"])
 	}
 }

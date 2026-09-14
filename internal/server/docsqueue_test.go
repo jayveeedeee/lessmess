@@ -145,6 +145,48 @@ func TestCloseEnqueuesAndRunsJob(t *testing.T) {
 	if strings.Join(job.Dirs, ",") != strings.Join(want, ",") {
 		t.Errorf("job dirs %v, want %v", job.Dirs, want)
 	}
+	// "internal/model" contributes "internal"; "." is the root and has none.
+	if got, wantAnc := strings.Join(job.Ancestors, ","), "internal"; got != wantAnc {
+		t.Errorf("job ancestors %v, want %v", job.Ancestors, wantAnc)
+	}
+}
+
+func TestCoveredAncestors(t *testing.T) {
+	cfg := docs.DefaultConfig()
+	cases := []struct {
+		name string
+		dirs []string
+		want []string
+	}{
+		{"nested", []string{"internal/model"}, []string{".", "internal"}},
+		{"siblings dedup", []string{"internal/model", "internal/docs"}, []string{".", "internal"}},
+		{"root dir has none", []string{"."}, nil},
+		{"primary dirs excluded", []string{"internal", "internal/model"}, []string{"."}},
+		{"empty", nil, nil},
+	}
+	for _, tc := range cases {
+		got := coveredAncestors(tc.dirs, cfg)
+		if strings.Join(got, ",") != strings.Join(tc.want, ",") {
+			t.Errorf("%s: got %v, want %v", tc.name, got, tc.want)
+		}
+	}
+
+	// Uncovered intermediates are skipped, but the walk still bubbles to
+	// the covered root.
+	tmp := t.TempDir()
+	raw := []byte(`{"include":["**"],"exclude":["internal"]}` + "\n")
+	if err := os.WriteFile(filepath.Join(tmp, docs.ConfigFile), raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// LoadConfig only reads the config; coverage of missing dirs is lexical.
+	cfg2, err := docs.LoadConfig(tmp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := coveredAncestors([]string{"internal/model"}, cfg2)
+	if strings.Join(got, ",") != "." {
+		t.Errorf("uncovered intermediate: got %v, want [.]", got)
+	}
 }
 
 func TestCloseWithoutRunnerMarksStale(t *testing.T) {
@@ -155,8 +197,10 @@ func TestCloseWithoutRunnerMarksStale(t *testing.T) {
 	if w.Code != 200 {
 		t.Fatalf("close: %d %s", w.Code, w.Body)
 	}
-	waitForCond(t, "stale flags", func() bool { return len(s.docsQ.staleDirs()) == 1 })
-	if got := s.docsQ.staleDirs(); got[0] != "internal/model" {
+	// Ancestors are review-and-fix targets, so they stale alongside the
+	// primary dirs and are reconcilable the same way.
+	waitForCond(t, "stale flags", func() bool { return len(s.docsQ.staleDirs()) == 3 })
+	if got := strings.Join(s.docsQ.staleDirs(), ","); got != ".,internal,internal/model" {
 		t.Errorf("stale %v", got)
 	}
 	// State persisted.
@@ -184,7 +228,7 @@ func TestDocsRefreshReconcilesStale(t *testing.T) {
 	if w.Code != 200 {
 		t.Fatalf("close: %d", w.Code)
 	}
-	waitForCond(t, "stale flags", func() bool { return len(s.docsQ.staleDirs()) == 1 })
+	waitForCond(t, "stale flags", func() bool { return len(s.docsQ.staleDirs()) == 3 })
 
 	runner := &fakeRunner{}
 	s.SetDocsRunner(runner)
@@ -194,7 +238,7 @@ func TestDocsRefreshReconcilesStale(t *testing.T) {
 	}
 	waitForCond(t, "reconciliation job", func() bool { return len(runner.got()) == 1 })
 	job := runner.got()[0]
-	if job.Change != "manual" || strings.Join(job.Dirs, ",") != "internal/model" {
+	if job.Change != "manual" || strings.Join(job.Dirs, ",") != ".,internal,internal/model" {
 		t.Errorf("reconciliation job: %+v", job)
 	}
 	waitForCond(t, "stale cleared", func() bool { return len(s.docsQ.staleDirs()) == 0 })
@@ -273,6 +317,56 @@ func TestDocsDisabledWithoutConfig(t *testing.T) {
 	}
 }
 
+func TestChunkDirs(t *testing.T) {
+	var dirs []string
+	for i := 0; i < 25; i++ {
+		dirs = append(dirs, "dir")
+	}
+	chunks := chunkDirs(dirs, 10)
+	if len(chunks) != 3 {
+		t.Fatalf("chunks = %d, want 3", len(chunks))
+	}
+	for i, c := range chunks[:2] {
+		if len(c) != 10 {
+			t.Errorf("chunk %d len = %d, want 10", i, len(c))
+		}
+	}
+	if len(chunks[2]) != 5 {
+		t.Errorf("last chunk len = %d, want 5", len(chunks[2]))
+	}
+	if got := chunkDirs(nil, 10); len(got) != 0 {
+		t.Errorf("empty input: %v", got)
+	}
+}
+
+// A union larger than docsJobMaxDirs splits into several sequential jobs
+// so one fragile giant session cannot flag everything stale at once.
+func TestDocsRefreshChunksLargeUnions(t *testing.T) {
+	s, dir := docsServer(t)
+	// 12 covered subdirs, none seeded: the hash-stale union is 13 dirs.
+	for i := 0; i < 12; i++ {
+		d := filepath.Join(dir, "pkg"+string(rune('a'+i)))
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(d, "x.go"), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runner := &fakeRunner{}
+	s.SetDocsRunner(runner)
+	w := do(t, s.Handler(), "POST", "/docs/refresh", "")
+	if w.Code != 202 {
+		t.Fatalf("refresh: %d %s", w.Code, w.Body)
+	}
+	waitForCond(t, "chunked jobs", func() bool { return len(runner.got()) == 2 })
+	for _, job := range runner.got() {
+		if len(job.Dirs) > 10 {
+			t.Errorf("job dir count %d exceeds the chunk bound", len(job.Dirs))
+		}
+	}
+}
+
 func TestDocsQueueStatePersistsAcrossRestart(t *testing.T) {
 	_, dir := docsServer(t) // only for the fixture repo layout
 	cfg := docs.DefaultConfig()
@@ -294,4 +388,67 @@ func TestDocsQueueStatePersistsAcrossRestart(t *testing.T) {
 	defer q2.stop()
 	q2.setRunner(runner)
 	waitForCond(t, "restored job", func() bool { return len(runner.got()) == 1 })
+}
+
+func TestDocsQueueRoundtripAncestorsAndRefs(t *testing.T) {
+	_, dir := docsServer(t)
+	cfg := docs.DefaultConfig()
+
+	q1 := newDocsQueue(dir, cfg)
+	q1.enqueue(DocsJob{
+		Change:    "2026-09-10-0",
+		Title:     "T",
+		Dirs:      []string{"internal/model"},
+		Ancestors: []string{".", "internal"},
+		LintRefs:  map[string][]string{"internal/model": {"gone/x.go"}},
+		Enqueued:  time.Now().Format(time.RFC3339),
+	})
+
+	q2 := newDocsQueue(dir, cfg)
+	q2.mu.Lock()
+	pending := append([]DocsJob{}, q2.state.Pending...)
+	q2.mu.Unlock()
+	if len(pending) != 1 {
+		t.Fatalf("pending not restored: %v", pending)
+	}
+	job := pending[0]
+	if strings.Join(job.Ancestors, ",") != ".,internal" {
+		t.Errorf("ancestors = %v", job.Ancestors)
+	}
+	if len(job.LintRefs["internal/model"]) != 1 || job.LintRefs["internal/model"][0] != "gone/x.go" {
+		t.Errorf("lintRefs = %v", job.LintRefs)
+	}
+}
+
+func TestDocsRefreshUnionCoversLintStale(t *testing.T) {
+	s, dir := docsServer(t)
+	if err := os.MkdirAll(filepath.Join(dir, "internal", "model"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Seed skeletons so the only staleness is the lint's (the union would
+	// otherwise include every undocumented dir as hash-stale).
+	if _, err := docs.RefreshSkeletons(dir, s.docsQ.cfg, model.DocMeta{Refreshed: "2026-09-12", Source: "seed"}); err != nil {
+		t.Fatal(err)
+	}
+	// A learning citing a path that does not exist.
+	agents := model.DocMarkerBegin + "\n- (2026-09-10-0) see `gone/deleted.go` for details\n" + model.DocMarkerEnd + "\n"
+	if err := os.WriteFile(filepath.Join(dir, "internal", "model", docs.AgentsFile), []byte(agents), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	runner := &fakeRunner{}
+	s.SetDocsRunner(runner)
+	w := do(t, s.Handler(), "POST", "/docs/refresh", "")
+	if w.Code != 202 {
+		t.Fatalf("refresh: %d %s", w.Code, w.Body)
+	}
+	waitForCond(t, "lint union job", func() bool { return len(runner.got()) == 1 })
+	job := runner.got()[0]
+	if job.Change != "manual" || strings.Join(job.Dirs, ",") != "internal/model" {
+		t.Fatalf("union job: %+v", job)
+	}
+	refs := job.LintRefs["internal/model"]
+	if len(refs) != 1 || refs[0] != "gone/deleted.go" {
+		t.Errorf("lintRefs = %v, want [gone/deleted.go]", refs)
+	}
 }

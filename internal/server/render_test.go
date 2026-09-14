@@ -52,6 +52,39 @@ func TestIndexHTML(t *testing.T) {
 	}
 }
 
+func TestIndexOnboardingBanner(t *testing.T) {
+	st, dir := fixtureStore(t)
+	h := New(st).Handler()
+
+	// No onboarding state file: pending, banner shows.
+	w := htmlGet(t, h, "/", false)
+	if !strings.Contains(w.Body.String(), `id="onboarding-banner"`) {
+		t.Error("banner missing while onboarding is pending")
+	}
+
+	// Dismissed: banner gone.
+	if err := saveOnboarding(dir, onboardingState{Version: 1, Dismissed: true}); err != nil {
+		t.Fatal(err)
+	}
+	w = htmlGet(t, h, "/", false)
+	if strings.Contains(w.Body.String(), `id="onboarding-banner"`) {
+		t.Error("banner present after dismiss")
+	}
+
+	// Completed: banner gone as well (and JSON is unaffected).
+	if err := saveOnboarding(dir, onboardingState{Version: 1, CompletedAt: "2026-09-13T10:00:00Z"}); err != nil {
+		t.Fatal(err)
+	}
+	w = htmlGet(t, h, "/", false)
+	if strings.Contains(w.Body.String(), `id="onboarding-banner"`) {
+		t.Error("banner present after completion")
+	}
+	w = do(t, h, "GET", "/", "")
+	if strings.Contains(w.Body.String(), "onboarding") {
+		t.Error("JSON index must not carry onboarding state")
+	}
+}
+
 func TestSettingsPageHTML(t *testing.T) {
 	st, _ := fixtureStore(t)
 	w := htmlGet(t, New(st).Handler(), "/settings", false)
@@ -82,6 +115,37 @@ func TestSettingsPageHTML(t *testing.T) {
 	}
 	if !strings.Contains(body, `<a href="/settings" class="active">Settings</a>`) {
 		t.Error("active Settings nav link missing")
+	}
+}
+
+func TestSetupPageHTML(t *testing.T) {
+	st, _ := fixtureStore(t)
+	w := htmlGet(t, New(st).Handler(), "/setup", false)
+	if w.Code != 200 {
+		t.Fatalf("code = %d", w.Code)
+	}
+	body := w.Body.String()
+	for _, want := range []string{
+		`id="setup-page"`, `data-page="setup"`, "Set up lessmess",
+		`data-step="prereqs"`, `data-step="bootstrap"`, `data-step="agent"`,
+		`data-step="docs"`, `data-step="finish"`,
+		`id="setup-prereq-list"`, `id="setup-recheck-btn"`, `id="setup-prereqs-next"`,
+		`id="setup-coverage"`, `id="setup-bootstrap-btn"`,
+		`id="setup-exclude-list"`,
+		`id="setup-agent"`, `id="setup-model"`, `name="setup-scope"`,
+		`id="setup-seed-budget"`, `id="setup-seed-btn"`, `id="setup-seed-skip"`,
+		`id="setup-seed-log"`, `id="setup-finish-btn"`, `id="setup-error"`,
+		`id="setup-steps-nav"`, `id="setup-step-indicator"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("setup HTML missing %q", want)
+		}
+	}
+	// Onboarding shows no other app chrome: no navs, docs bell, or banner.
+	for _, absent := range []string{`class="topnav"`, `topnav-right`, `id="notif-bell"`, `id="banner"`, `>Changes</a>`, `>Explorer</a>`, `>Settings</a>`} {
+		if strings.Contains(body, absent) {
+			t.Errorf("setup HTML must not contain app chrome %q", absent)
+		}
 	}
 }
 

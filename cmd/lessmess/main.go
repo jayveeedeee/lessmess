@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -79,52 +80,58 @@ func runServe(args []string) int {
 	if err := store.MigrateStateDir(c.dir); err != nil {
 		slog.Warn("state dir migration skipped", "err", err)
 	}
-	st, err := store.Open(c.dir)
-	if err != nil {
-		slog.Error("open store", "err", err)
-		return 1
-	}
-	defer st.Close()
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	if err := st.Watch(ctx); err != nil {
-		slog.Error("watch", "err", err)
-		return 1
-	}
-	if changes := st.Changes(); true {
-		tasks := 0
-		for _, ch := range changes {
-			if ch.Ledger != nil {
-				tasks += len(ch.Ledger.Rows)
-			}
+	var cleanups []func()
+	defer func() {
+		for i := len(cleanups) - 1; i >= 0; i-- {
+			cleanups[i]()
 		}
-		slog.Info("scanned", "changes", len(changes), "tasks", tasks)
-	}
-	if v := st.Validate(); len(v) > 0 {
-		slog.Warn("validation violations found", "count", len(v))
-		for _, vv := range v {
-			slog.Warn("violation", "file", vv.File, "rule", vv.Rule, "msg", vv.Msg)
+	}()
+
+	// boot builds the full handler for an initialized repository. It is the
+	// single store-open path: used directly for a normal start, and by the
+	// setup-mode server for its hot-open swap after bootstrap.
+	boot := func(dir string) (http.Handler, error) {
+		st, err := store.Open(dir)
+		if err != nil {
+			return nil, err
 		}
-	} else {
-		slog.Info("validation ok")
+		if err := st.Watch(ctx); err != nil {
+			st.Close()
+			return nil, err
+		}
+		cleanups = append(cleanups, st.Close)
+		logStoreSummary(st)
+		app := server.New(st)
+		app.PublicBase = net.JoinHostPort(c.host, fmt.Sprint(c.port))
+		if oc, err := opencode.DiscoverClient(ctx); err != nil {
+			slog.Warn("opencode integration disabled", "err", err)
+		} else {
+			slog.Info("opencode service connected", "url", oc.BaseURL())
+			app.SetOpencode(oc)
+		}
+		cleanups = append(cleanups, app.Close)
+		return app.Handler(), nil
 	}
 
-	app := server.New(st)
-	app.PublicBase = net.JoinHostPort(c.host, fmt.Sprint(c.port))
-	if oc, err := opencode.DiscoverClient(ctx); err != nil {
-		slog.Warn("opencode integration disabled", "err", err)
-	} else {
-		slog.Info("opencode service connected", "url", oc.BaseURL())
-		app.SetOpencode(oc)
+	handler, err := boot(c.dir)
+	if err != nil {
+		if !errors.Is(err, store.ErrNoChanges) {
+			slog.Error("open store", "err", err)
+			return 1
+		}
+		slog.Info("no changes/ tree; starting in setup mode", "dir", c.dir)
+		handler = server.NewSetup(c.dir, boot)
 	}
+
 	srv := &http.Server{
 		Addr:              net.JoinHostPort(c.host, fmt.Sprint(c.port)),
-		Handler:           app.Handler(),
+		Handler:           handler,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
-	defer app.Close()
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -148,6 +155,26 @@ func runServe(args []string) int {
 			return 1
 		}
 		return 0
+	}
+}
+
+// logStoreSummary logs the scan and validation results of a freshly opened
+// store (normal start and setup-mode hot-open alike).
+func logStoreSummary(st *store.Store) {
+	tasks := 0
+	for _, ch := range st.Changes() {
+		if ch.Ledger != nil {
+			tasks += len(ch.Ledger.Rows)
+		}
+	}
+	slog.Info("scanned", "changes", len(st.Changes()), "tasks", tasks)
+	if v := st.Validate(); len(v) > 0 {
+		slog.Warn("validation violations found", "count", len(v))
+		for _, vv := range v {
+			slog.Warn("violation", "file", vv.File, "rule", vv.Rule, "msg", vv.Msg)
+		}
+	} else {
+		slog.Info("validation ok")
 	}
 }
 
@@ -188,6 +215,7 @@ func runDocsSeed(args []string) int {
 	dir := fs.String("dir", ".", "repository root")
 	dry := fs.Bool("dry-run", false, "print the plan without writing or calling the LLM")
 	budget := fs.Int("budget", 0, "max LLM sessions this run (0 = unlimited)")
+	force := fs.Bool("force", false, "redo every covered directory, ignoring the resume cursor")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -217,10 +245,11 @@ func runDocsSeed(args []string) int {
 		if err != nil {
 			slog.Warn("opencode service unavailable; writing skeletons only", "err", err)
 		} else {
-			sum = docs.NewOpenCodeSummarizer(oc, 0)
+			agent, model := server.SessionDefaults(root)
+			sum = docs.NewOpenCodeSummarizerWith(oc, 0, agent, model)
 		}
 	}
-	if err := docs.Seed(context.Background(), root, cfg, sum, docs.SeedOptions{DryRun: *dry, Budget: *budget}, os.Stdout); err != nil {
+	if err := docs.Seed(context.Background(), root, cfg, sum, docs.SeedOptions{DryRun: *dry, Budget: *budget, Force: *force}, os.Stdout); err != nil {
 		fmt.Fprintln(os.Stderr, "docs seed:", err)
 		return 1
 	}

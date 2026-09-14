@@ -18,6 +18,37 @@ func findingsByFile(fs []Finding) map[string]Finding {
 	return m
 }
 
+func TestMissingDocDirs(t *testing.T) {
+	root := mkSeedTree(t)
+	got, err := MissingDocDirs(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) == 0 {
+		t.Fatal("unseeded tree must report missing dirs")
+	}
+	// After a full seed every covered dir has the pair: nothing missing.
+	var out strings.Builder
+	if err := Seed(context.Background(), root, DefaultConfig(), &stubSummarizer{}, SeedOptions{Date: "2026-09-12"}, &out); err != nil {
+		t.Fatal(err)
+	}
+	got, err = MissingDocDirs(root)
+	if err != nil || len(got) != 0 {
+		t.Errorf("after seed: %v, %v; want empty", got, err)
+	}
+	// Deleting one doc file makes exactly that dir missing again.
+	if err := os.Remove(filepath.Join(root, "internal", "model", AgentsFile)); err != nil {
+		t.Fatal(err)
+	}
+	got, err = MissingDocDirs(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0] != "internal/model" {
+		t.Errorf("after delete: %v, want [internal/model]", got)
+	}
+}
+
 func TestValidateDocsDisabled(t *testing.T) {
 	if got := ValidateDocs(t.TempDir(), nil); got != nil {
 		t.Errorf("disabled repo must yield no findings, got %v", got)

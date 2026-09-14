@@ -19,6 +19,13 @@ type SeedOptions struct {
 	DryRun bool   // plan only: no writes, no summarizer calls
 	Budget int    // max summarizer calls this run; 0 = unlimited
 	Date   string // freshness date stamp; empty = today
+	// Dirs restricts summarization to these covered repo-relative dirs. A
+	// dir listed here runs even when the cursor marks it summarized — an
+	// explicit request overrides the cursor. Empty = every covered dir.
+	Dirs []string
+	// Force ignores the cursor entirely: every covered dir is redone
+	// regardless of prior state ("redo the entire thing").
+	Force bool
 }
 
 // seedCursorPath is the resumable-seed state file (gitignored tooling state).
@@ -93,6 +100,10 @@ func Seed(ctx context.Context, root string, cfg *Config, sum Summarizer, opts Se
 	}
 
 	// Phase 2: summarization.
+	want := map[string]bool{}
+	for _, d := range opts.Dirs {
+		want[d] = true
+	}
 	for _, d := range dirs {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -101,8 +112,12 @@ func Seed(ctx context.Context, root string, cfg *Config, sum Summarizer, opts Se
 		if !built {
 			continue // skeleton failed; already recorded
 		}
+		explicit := want[d.Rel]
+		if len(want) > 0 && !explicit {
+			continue // restricted run: dir not requested
+		}
 		switch {
-		case cursor.Summarized[d.Rel]:
+		case cursor.Summarized[d.Rel] && !opts.Force && !explicit:
 			fmt.Fprintf(out, "%-9s %s (already summarized)\n", label, d.Rel)
 		case opts.DryRun:
 			fmt.Fprintf(out, "%-9s %s (would summarize)\n", label, d.Rel)
@@ -149,6 +164,41 @@ func Seed(ctx context.Context, root string, cfg *Config, sum Summarizer, opts Se
 		return fmt.Errorf("seed failed for: %s", strings.Join(failures, ", "))
 	}
 	return nil
+}
+
+// MissingDocDirs returns the covered directories that do not yet have the
+// doc pair: STRUCTURE.md or AGENTS.md is absent. Deliberately
+// file-existence based — the seed cursor is ignored, because it can mark
+// dirs whose files were later deleted or never written. Sorted; nil when
+// the docs system is disabled.
+func MissingDocDirs(root string) ([]string, error) {
+	cfg, err := LoadConfig(root)
+	if err != nil {
+		return nil, err
+	}
+	if cfg == nil {
+		return nil, nil
+	}
+	tree, err := Walk(root, cfg)
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, d := range PostOrder(tree) {
+		_, serr := os.Stat(filepath.Join(d.Abs, StructureFile))
+		_, aerr := os.Stat(filepath.Join(d.Abs, AgentsFile))
+		if (serr != nil && !os.IsNotExist(serr)) || (aerr != nil && !os.IsNotExist(aerr)) {
+			if serr != nil && !os.IsNotExist(serr) {
+				return nil, serr
+			}
+			return nil, aerr
+		}
+		if os.IsNotExist(serr) || os.IsNotExist(aerr) {
+			out = append(out, d.Rel)
+		}
+	}
+	sort.Strings(out)
+	return out, nil
 }
 
 // refreshPurpose re-reads d's purpose line from its on-disk STRUCTURE.md
