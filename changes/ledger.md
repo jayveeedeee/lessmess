@@ -27,4 +27,6 @@ One row per change directory. This file is authoritative for change existence, t
 | [2026-09-13-3](2026-09-13-3/plan.md) | Discussion prompt question policy | DQP | — | Done | 2026-09-13 | 2026-09-13 |
 | [2026-09-13-4](2026-09-13-4/plan.md) | Onboarding wizard | ONB | — | Done | 2026-09-13 | 2026-09-14 |
 | [2026-09-13-5](2026-09-13-5/plan.md) | Learning staleness: ancestor gardening, reference lint, gardener model | LRN | — | Done | 2026-09-13 | 2026-09-14 |
-| [2026-09-14-0](2026-09-14-0/plan.md) | Settings split-shell layout and sticky header | SPS | — | In progress | 2026-09-14 | 2026-09-14 |
+| [2026-09-14-0](2026-09-14-0/plan.md) | Settings split-shell layout and sticky header | SPS | — | Done | 2026-09-14 | 2026-09-14 |
+| [2026-09-14-1](2026-09-14-1/plan.md) | Discussion sessions open fresh | DSC | — | In progress | 2026-09-14 | 2026-09-14 |
+| [2026-09-14-2](2026-09-14-2/plan.md) | Terminal persistence verification | TPV | — | Cancelled | 2026-09-14 | 2026-09-14 |

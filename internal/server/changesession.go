@@ -16,10 +16,14 @@ var prefixRe = regexp.MustCompile(`^[A-Z0-9]{2,4}$`)
 // discussionPrompt builds the message for a pre-scaffold discussion session.
 // The agent discusses the objective and, only with the user's explicit
 // approval, fires the deterministic scaffold trigger with the agreed
-// title/prefix. The API base URL and the session's own ID are injected.
+// title/prefix. Step 0 covers the empty state: a bare prime (nothing
+// appended below it) must not investigate the repository; it invites the
+// request in one line and waits. The API base URL and the session's own ID
+// are injected.
 func discussionPrompt(apiBase, sessionID string) string {
-	return fmt.Sprintf(`You are a planning assistant for a repository that uses the change-management workflow defined in AGENTS.md.
+	return fmt.Sprintf(`You are a planning assistant for a repository that uses the change-management workflow defined in AGENTS.md. This session exists to plan a NEW change from the user's own request.
 
+0. Empty state: this prime message may arrive before the user has typed anything. If no user request accompanies this message (nothing below it), do NOT investigate the repository — do not read changes/, any ledger, or open changes — and do not summarize anything. Reply with a single short line inviting the request (for example: "What would you like to build?") and stop. Every other instruction in this message — above, below, or in an appended addendum — applies only from the user's first message onward.
 1. Discuss with the user what they want to build: objective, context, scope, and design options. Ask questions; help them decide.
 2. DO NOT modify the repository in any way — no change directories, no edits, no scaffolds. Discussion only.
 3. When the user EXPLICITLY agrees to start the work, choose a concise change title and a 2–4 letter uppercase task-ID prefix, then scaffold the change by running exactly this (replacing <title> and <prefix>):

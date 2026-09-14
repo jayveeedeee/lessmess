@@ -97,27 +97,49 @@
 
   // --- SSE live updates ----------------------------------------------------
 
-  if (typeof EventSource !== "undefined") {
-    var es = new EventSource("/events");
-    var timer = null;
+  var es = typeof EventSource !== "undefined" ? new EventSource("/events") : null;
+  var timer = null;
+  if (es) {
     es.addEventListener("fs", scheduleRefresh);
     es.addEventListener("write", scheduleRefresh);
     es.addEventListener("docs", scheduleDocsRefresh);
-    function scheduleRefresh() {
-      clearTimeout(timer);
-      timer = setTimeout(function () {
-        checkValidation();
-        if (page === "board" && boardEl()) refreshBoard();
-        else if (page === "index") location.reload();
-        // Terminal task panel: re-mirror an open panel, and pick up a
-        // fresh binding (a discussion that just scaffolded a change —
-        // the scaffold writes changes/, which fired this event).
-        if (terminalOpen()) {
-          if (terminalPanelChange) loadTerminalTasks(terminalPanelChange);
-          else if (!(page === "board" && boardEl()) && tstate.session) resolveTerminalPanel(tstate.session);
-        }
-      }, 250);
-    }
+  }
+
+  function scheduleRefresh() {
+    clearTimeout(timer);
+    timer = setTimeout(function () {
+      checkValidation();
+      if (page === "board" && boardEl()) refreshBoard();
+      // While the terminal is open on the index, a full reload would
+      // destroy it — and the common cause of this event is the open
+      // discussion scaffolding a change right now. Follow the session
+      // to its new board instead of reloading.
+      else if (page === "index" && terminalOpen() && tstate.session) followSession();
+      else if (page === "index") location.reload();
+      // Terminal task panel: re-mirror an open panel, and pick up a
+      // fresh binding (a discussion that just scaffolded a change —
+      // the scaffold writes changes/, which fired this event).
+      if (terminalOpen()) {
+        if (terminalPanelChange) loadTerminalTasks(terminalPanelChange);
+        else if (!(page === "board" && boardEl()) && tstate.session) resolveTerminalPanel(tstate.session);
+      }
+    }, 250);
+  }
+
+  // followSession: the open terminal's session was likely just scaffolded
+  // into a change. Once the mapping says so, navigate to that change's
+  // board with ?session= — autoOpenSession reopens the same session there
+  // with its task panel. Until it binds, skip the refresh entirely; the
+  // stale list self-heals on navigation or when the terminal closes.
+  function followSession() {
+    fetch("/api/sessions/" + encodeURIComponent(tstate.session) + "/change", { headers: { Accept: "application/json" } })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (j) {
+        if (!j || !j.change) return;
+        if (!terminalOpen() || !tstate.session) return; // user moved on
+        location.assign("/changes/" + encodeURIComponent(j.change) + "?session=" + encodeURIComponent(tstate.session));
+      })
+      .catch(function () {});
   }
 
   // --- explorer: live tree refresh + directory chat -------------------------
@@ -681,6 +703,9 @@
     if (overlay) overlay.hidden = true;
     var panel = terminalTasksEl();
     if (panel) { panel.hidden = true; panel.innerHTML = ""; }
+    // On the index a refresh was deferred while the terminal was open
+    // (see followSession); now that a reload is safe again, catch up.
+    if (page === "index") scheduleRefresh();
   }
 
   function terminalOpen() {

@@ -42,6 +42,10 @@ func TestDiscussionSession(t *testing.T) {
 	// Prompt: discussion-only + exact scaffold call with injected base and session ID.
 	for _, want := range []string{
 		"AGENTS.md",
+		"plan a NEW change",
+		"Empty state",
+		"do NOT investigate the repository",
+		`"What would you like to build?"`,
 		"DO NOT modify the repository",
 		"EXPLICITLY agrees",
 		"curl -s -X POST http://127.0.0.1:9090/changes/scaffold",
