@@ -28,5 +28,6 @@ One row per change directory. This file is authoritative for change existence, t
 | [2026-09-13-4](2026-09-13-4/plan.md) | Onboarding wizard | ONB | — | Done | 2026-09-13 | 2026-09-14 |
 | [2026-09-13-5](2026-09-13-5/plan.md) | Learning staleness: ancestor gardening, reference lint, gardener model | LRN | — | Done | 2026-09-13 | 2026-09-14 |
 | [2026-09-14-0](2026-09-14-0/plan.md) | Settings split-shell layout and sticky header | SPS | — | Done | 2026-09-14 | 2026-09-14 |
-| [2026-09-14-1](2026-09-14-1/plan.md) | Discussion sessions open fresh | DSC | — | In progress | 2026-09-14 | 2026-09-14 |
+| [2026-09-14-1](2026-09-14-1/plan.md) | Discussion sessions open fresh | DSC | — | Done | 2026-09-14 | 2026-09-15 |
 | [2026-09-14-2](2026-09-14-2/plan.md) | Terminal persistence verification | TPV | — | Cancelled | 2026-09-14 | 2026-09-14 |
+| [2026-09-15-0](2026-09-15-0/plan.md) | Modal TOC and in-modal navigation | MTOC | — | In progress | 2026-09-15 | 2026-09-15 |

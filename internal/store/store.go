@@ -511,3 +511,16 @@ func (s *Store) PlanFile(changeID string) (string, error) {
 	}
 	return string(data), nil
 }
+
+// LedgerFile returns the raw markdown of a change's ledger.md.
+func (s *Store) LedgerFile(changeID string) (string, error) {
+	c, err := s.Change(changeID)
+	if err != nil {
+		return "", err
+	}
+	data, err := os.ReadFile(filepath.Join(c.Dir, "ledger.md"))
+	if err != nil {
+		return "", ErrNotFound
+	}
+	return string(data), nil
+}

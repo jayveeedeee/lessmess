@@ -220,6 +220,32 @@ func TestTaskDetailHTML(t *testing.T) {
 	}
 }
 
+func TestLedgerDetailHTML(t *testing.T) {
+	st, _ := fixtureStore(t)
+	w := htmlGet(t, New(st).Handler(), "/changes/2026-09-10-0/ledger", true)
+	if w.Code != 200 {
+		t.Fatalf("code = %d", w.Code)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, `data-close-detail`) {
+		t.Error("ledger detail missing modal chrome")
+	}
+	// The ledger's task table rendered as HTML, with the leading H1 dropped.
+	if !strings.Contains(body, "<table") {
+		t.Error("ledger detail did not render markdown table")
+	}
+	if strings.Contains(body, "<h1") {
+		t.Error("ledger detail should drop the leading H1")
+	}
+}
+
+func TestMarkdownHeadingIDs(t *testing.T) {
+	html := string(renderMarkdown("## Objective and context\n\ntext"))
+	if !strings.Contains(html, `<h2 id="objective-and-context">`) {
+		t.Errorf("heading id missing: %s", html)
+	}
+}
+
 func TestStaticAssets(t *testing.T) {
 	st, _ := fixtureStore(t)
 	h := New(st).Handler()

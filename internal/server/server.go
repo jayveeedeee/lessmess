@@ -70,6 +70,7 @@ func New(st *store.Store) *Server {
 	mux.HandleFunc("GET /{$}", s.index)
 	mux.HandleFunc("GET /changes/{id}", s.board)
 	mux.HandleFunc("GET /changes/{id}/plan", s.planDetail)
+	mux.HandleFunc("GET /changes/{id}/ledger", s.ledgerDetail)
 	mux.HandleFunc("GET /changes/{id}/tasks/{file}", s.taskDetail)
 	mux.HandleFunc("POST /changes/{id}/tasks", s.createTask)
 	mux.HandleFunc("POST /changes/{id}/move", s.moveTask)
@@ -327,6 +328,21 @@ func (s *Server) planDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	if wantsHTML(r) || isHX(r) {
 		s.rend.render(w, s.rend.partial, "planDetail", planView{ID: id, Body: body})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"id": id, "body": body})
+}
+
+// ledgerDetail serves the change's ledger.md rendered in the detail modal.
+func (s *Server) ledgerDetail(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	body, err := s.st.LedgerFile(id)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	if wantsHTML(r) || isHX(r) {
+		s.rend.render(w, s.rend.partial, "ledgerDetail", ledgerView{ID: id, Body: dropLeadingH1(body, id)})
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"id": id, "body": body})

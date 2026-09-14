@@ -934,7 +934,136 @@
   });
 
   document.addEventListener("htmx:afterSwap", function (e) {
-    if (e.target && e.target.id === "detail") e.target.hidden = false;
+    if (e.target && e.target.id === "detail") {
+      e.target.hidden = false;
+      buildDetailTOC();
+    }
+  });
+
+  // --- detail modal TOC --------------------------------------------------------
+  // The server renders headings with ids (goldmark auto heading IDs); we build
+  // the left-rail contents from the swapped DOM so plan, task, and ledger
+  // modals all share one code path.
+
+  function currentChangeID() {
+    var m = location.pathname.match(/^\/changes\/([^\/]+)/);
+    return m ? decodeURIComponent(m[1]) : null;
+  }
+
+  // Offset of an element inside its scrolling pane, for click-to-scroll and
+  // the scroll-spy (offsetTop is unreliable: .modal-body is not positioned).
+  function paneOffset(body, el) {
+    return el.getBoundingClientRect().top - body.getBoundingClientRect().top + body.scrollTop;
+  }
+
+  function buildDetailTOC() {
+    var d = document.getElementById("detail");
+    var modal = d && d.querySelector(".modal");
+    var toc = d && d.querySelector(".modal-toc");
+    var body = d && d.querySelector(".modal-body");
+    if (!modal || !toc || !body) return;
+    var heads = body.querySelectorAll("h2, h3");
+    toc.innerHTML = "";
+    if (heads.length < 2) {
+      toc.hidden = true;
+      modal.classList.remove("has-toc");
+      return;
+    }
+    var seen = {};
+    var label = document.createElement("div");
+    label.className = "toc-title";
+    label.textContent = "Contents";
+    toc.appendChild(label);
+    Array.prototype.forEach.call(heads, function (h) {
+      if (!h.id) {
+        var slug = h.textContent.toLowerCase().replace(/[^\w\s-]/g, "").trim().replace(/\s+/g, "-") || "section";
+        var base = slug, n = 2;
+        while (seen[slug]) slug = base + "-" + n++;
+        h.id = slug;
+      }
+      seen[h.id] = true;
+      var a = document.createElement("a");
+      a.href = "#" + h.id;
+      a.textContent = h.textContent;
+      if (h.tagName === "H3") a.classList.add("toc-h3");
+      a.addEventListener("click", function (e) {
+        e.preventDefault();
+        body.scrollTo({ top: paneOffset(body, h) - 12, behavior: "smooth" });
+      });
+      toc.appendChild(a);
+    });
+    toc.hidden = false;
+    modal.classList.add("has-toc");
+
+    var links = toc.querySelectorAll("a");
+    function spy() {
+      var top = body.getBoundingClientRect().top + 24;
+      var cur = heads[0];
+      Array.prototype.forEach.call(heads, function (h) {
+        if (h.getBoundingClientRect().top <= top) cur = h;
+      });
+      var idx = Array.prototype.indexOf.call(heads, cur);
+      links.forEach(function (l, i) { l.classList.toggle("active", i === idx); });
+    }
+    var raf = null;
+    body.addEventListener("scroll", function () {
+      if (raf) return;
+      raf = requestAnimationFrame(function () { raf = null; spy(); });
+    });
+    spy();
+  }
+
+  // --- detail modal links ------------------------------------------------------
+  // Relative .md links in the markdown (ledger, tasks, plan) open in this
+  // modal instead of navigating to a nonexistent URL.
+
+  function detailLinkTarget(href) {
+    if (!href || !/\.md$/i.test(href.split("#")[0])) return null;
+    if (/^[a-z][a-z0-9+.-]*:/i.test(href) || href.charAt(0) === "/") return null; // absolute: leave alone
+    var hash = href.indexOf("#") >= 0 ? href.slice(href.indexOf("#") + 1) : "";
+    var path = href.split("#")[0];
+    var id = currentChangeID();
+    var m;
+    if ((m = path.match(/^tasks\/(.+\.md)$/i)) && id) {
+      return { url: "/changes/" + id + "/tasks/" + m[1], frag: hash };
+    }
+    if ((m = path.match(/^(\d{4}-\d{2}-\d{2}-\d+)\/plan\.md$/i))) {
+      return { url: "/changes/" + m[1] + "/plan", frag: hash };
+    }
+    if (/^(\.\.\/)?ledger\.md$/i.test(path) && id) {
+      return { url: "/changes/" + id + "/ledger", frag: hash };
+    }
+    if (/^plan\.md$/i.test(path) && id) {
+      return { url: "/changes/" + id + "/plan", frag: hash };
+    }
+    return null;
+  }
+
+  document.addEventListener("click", function (e) {
+    var link = e.target.closest("#detail a[href]");
+    if (!link) return;
+    var d = document.getElementById("detail");
+    if (!d || d.hidden) return;
+    var t = detailLinkTarget(link.getAttribute("href"));
+    if (!t) return;
+    e.preventDefault();
+    fetch(t.url, { headers: { Accept: "text/html" } })
+      .then(function (r) {
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.text();
+      })
+      .then(function (html) {
+        d.innerHTML = html;
+        buildDetailTOC();
+        if (t.frag) {
+          var body = d.querySelector(".modal-body");
+          var el = body && body.querySelector('[id="' + CSS.escape(t.frag) + '"]');
+          if (el) body.scrollTop = paneOffset(body, el) - 12;
+        }
+      })
+      .catch(function (err) {
+        alert("Could not open " + t.url + " (" + err.message + ")");
+      });
   });
 
   // --- commit-all modal (index page) ------------------------------------------

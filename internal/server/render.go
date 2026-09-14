@@ -11,6 +11,8 @@ import (
 	"strings"
 
 	"github.com/yuin/goldmark"
+	"github.com/yuin/goldmark/extension"
+	"github.com/yuin/goldmark/parser"
 
 	"lessmess/internal/model"
 	"lessmess/internal/store"
@@ -19,7 +21,12 @@ import (
 
 // --- templates ---
 
-var md = goldmark.New()
+// md enables auto heading IDs (TOC anchors) and GFM tables (the ledger is
+// table-shaped, so it needs table rendering to be readable in the modal).
+var md = goldmark.New(
+	goldmark.WithParserOptions(parser.WithAutoHeadingID()),
+	goldmark.WithExtensions(extension.Table),
+)
 
 func renderMarkdown(s string) template.HTML {
 	var buf bytes.Buffer
@@ -147,6 +154,11 @@ type taskView struct {
 }
 
 type planView struct {
+	ID   string
+	Body string
+}
+
+type ledgerView struct {
 	ID   string
 	Body string
 }

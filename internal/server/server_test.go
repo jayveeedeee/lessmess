@@ -184,6 +184,24 @@ func TestTaskDetail(t *testing.T) {
 	}
 }
 
+func TestLedgerDetail(t *testing.T) {
+	st, _ := fixtureStore(t)
+	h := New(st).Handler()
+	w := do(t, h, "GET", "/changes/2026-09-10-0/ledger", "")
+	if w.Code != 200 {
+		t.Fatalf("code = %d body = %s", w.Code, w.Body)
+	}
+	var resp map[string]string
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp["id"] != "2026-09-10-0" || !strings.Contains(resp["body"], "## Tasks") {
+		t.Fatalf("resp = %v", resp)
+	}
+	// Unknown change ids 404 like planDetail.
+	if w := do(t, h, "GET", "/changes/2099-01-01-0/ledger", ""); w.Code != http.StatusNotFound {
+		t.Fatalf("unknown change code = %d", w.Code)
+	}
+}
+
 func TestMoveTaskRoute(t *testing.T) {
 	st, dir := fixtureStore(t)
 	h := New(st).Handler()

@@ -421,6 +421,9 @@ body[data-page="board"] .board {
   flex-direction: column;
   animation: pop-in 0.15s ease;
 }
+/* Detail modals with a table of contents widen so the content pane keeps
+   roughly the original reading width. */
+.modal.has-toc { width: min(880px, 100%); }
 @keyframes pop-in {
   from { transform: translateY(8px) scale(0.985); opacity: 0; }
   to { transform: none; opacity: 1; }
@@ -450,6 +453,54 @@ body[data-page="board"] .board {
   padding: 1.1rem 1.4rem 1.4rem;
   overflow-y: auto;
 }
+
+/* Detail modal two-pane layout: TOC on the left, content on the right,
+   each scrolling independently, separated by a 1px vertical line. */
+.modal-panes {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+.modal-panes .modal-body {
+  flex: 1;
+  min-width: 0;
+}
+.modal-toc {
+  flex: none;
+  width: 210px;
+  overflow-y: auto;
+  border-right: 1px solid var(--border);
+  padding: 1rem 0.9rem 1.2rem;
+}
+.modal-toc[hidden] { display: none; }
+.modal-toc .toc-title {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--muted);
+  margin: 0 0 0.6rem;
+}
+.modal-toc a {
+  display: block;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  color: var(--muted);
+  text-decoration: none;
+  padding: 0.18rem 0.5rem;
+  border-left: 2px solid transparent;
+  border-radius: 0 2px 2px 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.modal-toc a.toc-h3 { padding-left: 1.15rem; font-size: 0.74rem; }
+.modal-toc a:hover { color: var(--text); background: var(--surface-2); }
+.modal-toc a.active {
+  color: var(--accent);
+  border-left-color: var(--accent);
+}
+.modal-body h2, .modal-body h3 { scroll-margin-top: 0.75rem; }
 
 /* prose (rendered markdown) */
 .prose { font-size: 0.9rem; line-height: 1.65; color: var(--text); }
