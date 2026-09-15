@@ -11,26 +11,24 @@ Read-only investigation, explanation, and review work does not require a change 
 Every new change gets one directory directly under `changes/` using this exact format:
 
 ```text
-changes/YYYY-MM-DD-ChangeNumber/
+changes/YYYY-MM-DD-xxxxx/
 ```
 
 Rules:
 
 1. Use the current local date in `YYYY-MM-DD` format.
-2. `ChangeNumber` is a zero-based integer scoped to that date.
-3. The first change created on a date is `0`.
-4. Each additional change on the same date increments the highest existing number by one.
-5. Do not reuse an earlier number if a directory was removed or a numbering gap exists.
-6. Before allocating a number, inspect existing `changes/YYYY-MM-DD-*` directories.
-7. Continue using an existing change directory when the request is a continuation of the same objective. Create a new number for an independent objective.
+2. `xxxxx` is a random suffix of exactly five lowercase alphanumeric characters (`[a-z0-9]`), generated when the change is scaffolded. Never choose it by hand or encode meaning or ordering in it.
+3. Uniqueness comes from random generation: scaffolding checks existing directories for the date (including `changes/archive/`) and regenerates on the astronomically unlikely collision. Never allocate a sequential counter.
+4. Directories with legacy numeric suffixes (`YYYY-MM-DD-N`, any number of digits) remain valid and are never renamed; mixed formats are normal.
+5. Continue using an existing change directory when the request is a continuation of the same objective. Create a new change directory for an independent objective.
 
 Example:
 
 ```text
 changes/
-├── 2026-09-09-0/
-├── 2026-09-09-1/
-└── 2026-09-10-0/
+├── 2026-09-09-k3x9q/
+├── 2026-09-09-mz7t2/
+└── 2026-09-10-0/          (legacy numeric IDs remain valid)
 ```
 
 ### Required structure
@@ -41,7 +39,7 @@ The `changes/` tree has this layout:
 changes/
 ├── ledger.md
 ├── archive/                  (optional; see "Archival")
-├── YYYY-MM-DD-ChangeNumber/
+├── YYYY-MM-DD-xxxxx/
 │   ├── plan.md
 │   ├── ledger.md
 │   └── tasks/
@@ -246,7 +244,7 @@ Recommended overall statuses are `Planned`, `In progress`, `Blocked`, `Done`, an
 
 The workflow rules are machine-checkable. Tooling (validators, servers) must enforce them, and agents should self-check against them before marking work done:
 
-1. Change directories match `changes/YYYY-MM-DD-N/` with correct zero-based per-date allocation.
+1. Change directories match `changes/YYYY-MM-DD-(N|xxxxx)/` with a valid date — `N` is the legacy numeric suffix (any digits) and `xxxxx` is exactly five lowercase alphanumeric characters.
 2. Every change directory contains `plan.md`, `ledger.md`, and `tasks/`.
 3. Every task file has exactly one ledger row and vice versa; frontmatter `id`, ledger `Task` cell, and filename sequence agree.
 4. Task and change statuses use only the defined vocabularies.

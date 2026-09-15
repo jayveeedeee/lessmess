@@ -1,7 +1,9 @@
 package server
 
 import (
+	"bytes"
 	"hash/fnv"
+	"html/template"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -49,6 +51,48 @@ func TestIndexHTML(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Errorf("index HTML missing %q", want)
 		}
+	}
+}
+
+func TestIndexSortableMarkup(t *testing.T) {
+	st, _ := fixtureStore(t)
+	w := htmlGet(t, New(st).Handler(), "/", false)
+	if w.Code != 200 {
+		t.Fatalf("code = %d", w.Code)
+	}
+	body := w.Body.String()
+	// Six sortable data-column headers, each a sort button with an indicator.
+	for _, col := range []string{"id", "title", "prefix", "status", "tasks", "updated"} {
+		if !strings.Contains(body, `data-sort-col="`+col+`"`) {
+			t.Errorf("index HTML missing sort button for column %q", col)
+		}
+	}
+	if got := strings.Count(body, `class="sort-btn"`); got != 6 {
+		t.Errorf("sort button count = %d, want 6", got)
+	}
+	// Rows carry machine-readable sort keys.
+	for _, attr := range []string{"data-tasks=", "data-status-rank=", "data-updated="} {
+		if !strings.Contains(body, attr) {
+			t.Errorf("index rows missing %q sort key", attr)
+		}
+	}
+	// The Plan button column stays a plain header (not sortable).
+	if strings.Contains(body, `data-sort-col="plan"`) {
+		t.Error("plan column unexpectedly sortable")
+	}
+}
+
+func TestStatusRankTemplateFunc(t *testing.T) {
+	// Workflow order: Not started(0) … Cancelled(5); unknown sorts last.
+	tmpl := template.Must(template.New("t").Funcs(templateFuncs).Parse(
+		`{{range .}}{{. | statusRank }} {{end}}`))
+	statuses := []string{"Not started", "In progress", "Blocked", "Test", "Done", "Cancelled", "Weird"}
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, statuses); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := buf.String(), "0 1 2 3 4 5 6 "; got != want {
+		t.Fatalf("statusRank output = %q, want %q", got, want)
 	}
 }
 

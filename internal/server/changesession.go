@@ -42,7 +42,8 @@ func changePrompt(changeID string) string {
 
 1. Read changes/%[1]s/plan.md and changes/%[1]s/ledger.md first — they hold the authoritative scope, design, and task status for this change.
 2. Everything the user asks for in this conversation is work on THIS change: refine changes/%[1]s/plan.md, add or update task files and ledger rows under its existing task-ID prefix, and keep ledger statuses current per AGENTS.md.
-3. NEVER create a new change directory and NEVER call the /changes/scaffold endpoint. If the user asks for genuinely unrelated work, explain that it belongs in a separate change and ask them to start a new discussion from the index page.`, changeID)
+3. NEVER create a new change directory and NEVER call the /changes/scaffold endpoint. If the user asks for genuinely unrelated work, explain that it belongs in a separate change and ask them to start a new discussion from the index page.
+4. Delegation is optional — do small tasks inline. When you delegate a task to a subagent, prefix the task tool's description with the task's real ID from the ledger — for example "TSK-01: implement the bind endpoint", where TSK is this change's actual prefix: that description becomes the subagent session's title verbatim, and the board uses it to attach the session to the task. Prefer a subagent with write access over a read-only explorer when the user may want to continue that session directly afterwards.`, changeID)
 }
 
 // apiBase returns the lessmess base URL used in agent-facing prompts.
@@ -97,6 +98,106 @@ func (s *Server) createDiscussionSession(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	slog.Info("discussion session created", "session", sess.ID)
+	writeJSON(w, http.StatusCreated, sessionResponse{Session: entry.Session, Title: entry.Title, Created: entry.Created, Live: true})
+}
+
+// taskSessionRequest is the body of POST /changes/{id}/task-sessions. Task
+// is a task ID from the change's ledger, Sub the subagent session ID to
+// bind, and Session an optional caller that must be bound to the change
+// when supplied (agent calls are rare: the parent model cannot know the
+// sub's session ID — PSB-00).
+type taskSessionRequest struct {
+	Task    string `json:"task"`
+	Sub     string `json:"sub"`
+	Session string `json:"session,omitempty"`
+}
+
+// bindTaskSession handles POST /changes/{id}/task-sessions: record that a
+// subagent session belongs to one of the change's tasks. The sub's live
+// parentID and title are captured so the mapping is self-describing.
+func (s *Server) bindTaskSession(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	c, err := s.st.Change(id)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	if s.oc == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "opencode service unavailable"})
+		return
+	}
+	if s.mapErr != nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "session mapping unreadable: " + s.mapErr.Error()})
+		return
+	}
+	var req taskSessionRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad JSON body"})
+		return
+	}
+	req.Task = strings.TrimSpace(req.Task)
+	req.Sub = strings.TrimSpace(req.Sub)
+	if req.Task == "" || !strings.HasPrefix(req.Sub, "ses_") {
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "task and a ses_ sub session id are required"})
+		return
+	}
+	// The task must exist in the change's ledger rows.
+	known := false
+	if c.Ledger != nil {
+		for _, row := range c.Ledger.Rows {
+			if row.ID == req.Task {
+				known = true
+				break
+			}
+		}
+	}
+	if !known {
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "unknown task " + req.Task + " in change " + id})
+		return
+	}
+	// A supplied caller must belong to this change.
+	if req.Session != "" {
+		if bound, ok := s.sessions.changeOf(req.Session); ok && bound != id {
+			writeJSON(w, http.StatusConflict, map[string]string{
+				"change": bound,
+				"error":  "session already bound to change " + bound,
+			})
+			return
+		}
+	}
+	// The sub must exist; capture its live parent and title.
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+	sub, err := s.oc.GetSession(ctx, req.Sub)
+	if err != nil {
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "unknown sub session: " + err.Error()})
+		return
+	}
+	// Idempotent on exact retries; conflicting on a different task or change.
+	for _, e := range s.sessions.list(id) {
+		if e.Session != req.Sub {
+			continue
+		}
+		if e.Task == req.Task {
+			writeJSON(w, http.StatusOK, sessionResponse{Session: e.Session, Title: e.Title, Created: e.Created, Live: true})
+			return
+		}
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "session already bound to task " + e.Task + " in " + id})
+		return
+	}
+	if other, ok := s.sessions.changeOf(req.Sub); ok && other != id {
+		writeJSON(w, http.StatusConflict, map[string]string{
+			"change": other,
+			"error":  "session already bound to change " + other,
+		})
+		return
+	}
+	entry := SessionEntry{Session: sub.ID, Title: sub.Title, Created: time.Now().Format(time.RFC3339), Task: req.Task, Parent: sub.ParentID}
+	if err := s.sessions.add(id, entry); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "persist mapping: " + err.Error()})
+		return
+	}
+	slog.Info("task session bound", "change", id, "task", req.Task, "session", req.Sub, "parent", sub.ParentID)
 	writeJSON(w, http.StatusCreated, sessionResponse{Session: entry.Session, Title: entry.Title, Created: entry.Created, Live: true})
 }
 

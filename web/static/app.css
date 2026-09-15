@@ -267,6 +267,26 @@ button:disabled {
   border-bottom: 1px solid var(--border);
 }
 .change-table td { padding: 0.7rem 1rem; border-bottom: 1px solid var(--border); font-size: 0.88rem; }
+.change-table thead .sort-btn {
+  appearance: none;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  text-transform: inherit;
+  letter-spacing: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+.change-table thead .sort-btn:hover { color: var(--accent); }
+.change-table thead .sort-btn:focus-visible { outline: 1px solid var(--accent); outline-offset: 2px; }
+.change-table thead .sort-ind::after { content: "↕"; opacity: 0.35; font-size: 0.75em; }
+.change-table thead .sort-btn.sort-asc .sort-ind::after { content: "↑"; opacity: 1; color: var(--accent); }
+.change-table thead .sort-btn.sort-desc .sort-ind::after { content: "↓"; opacity: 1; color: var(--accent); }
 .change-table tbody tr:last-child td { border-bottom: none; }
 .change-table tbody tr { transition: background-color 0.1s ease; }
 .change-table tbody tr:hover { background: var(--surface-2); }
@@ -1177,3 +1197,55 @@ body[data-page="setup"] main {
   display: flex; align-items: center; gap: 0.8rem; justify-content: space-between;
 }
 .onboarding-actions { display: flex; gap: 0.5rem; flex-shrink: 0; }
+
+/* --- subagent session chips (2026-09-15-2) -------------------------------- */
+
+/* Strip under the board header for subagent sessions with no task binding */
+.board-subs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  padding: 0.35rem 0 0.6rem;
+}
+
+/* Per-task chip row inside a task card */
+.card-subs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.55rem;
+}
+
+.sub-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  max-width: 100%;
+  padding: 0.15rem 0.2rem 0.15rem 0.45rem;
+  background: var(--surface-3, var(--surface-2));
+  border-radius: 2px;
+  box-shadow: var(--shadow-sm);
+  font-size: 0.78rem;
+}
+
+.sub-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.sub-dead .sub-dot { background: color-mix(in srgb, currentColor 35%, transparent); }
+.sub-dead .sub-label { opacity: 0.55; }
+
+.sub-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sub-talk {
+  font-size: 0.72rem;
+  padding: 0.05rem 0.4rem;
+}

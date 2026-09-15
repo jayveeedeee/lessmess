@@ -169,6 +169,14 @@ calls are made server-side).
 - **Sessions panel** on each board: create, list, open, and unlink multiple
   opencode sessions per change. Mappings persist in
   `.lessmess/sessions.json` (gitignored tooling state).
+- **Subagent sessions per task**: a change session may delegate a task to an
+  opencode subagent. When it titles the subagent's description `TSK-NN: …`
+  (the change prompt teaches this), the board attaches the subagent session
+  to that task card with a **Talk** button — opening a terminal chat on the
+  subagent directly, including after it has finished. Unbound subagent
+  sessions surface on the board header; bindings live in
+  `.lessmess/sessions.json` (`task`/`parent` fields), never in `changes/`.
+  `POST /changes/{id}/task-sessions` binds a subagent session explicitly.
 - **Continue session** button on each board: one click resumes the session
   you last opened for that change — or starts a new one when the change has
   none.
@@ -192,6 +200,11 @@ calls are made server-side).
 - **New change session** (index page): scaffolds a change, creates and
   primes an opencode session, and opens the board with the terminal
   attached. The agent works the `changes/` workflow; the board updates live.
+- **Sortable change list** (index page): click a column header (Change,
+  Title, Prefix, Status, Tasks, Updated) to sort the table; click again to
+  flip direction. Status sorts in board workflow order, and your chosen
+  sort is remembered across reloads. Without a selection the list stays
+  newest-first.
 - **Commit all** (index page, next to New change session): one click commits
   every uncommitted change in the repository. The button is disabled when
   the working tree is clean and hidden outside git repositories. It opens a

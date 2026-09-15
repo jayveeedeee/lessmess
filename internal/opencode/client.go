@@ -185,11 +185,13 @@ func (c *Client) Healthy(ctx context.Context) error {
 	return nil
 }
 
-// Session is an opencode session as returned by the API.
+// Session is an opencode session as returned by the API. ParentID is set on
+// subagent child sessions and names the session that spawned them.
 type Session struct {
 	ID       string `json:"id"`
 	Title    string `json:"title"`
 	Agent    string `json:"agent"`
+	ParentID string `json:"parentID,omitempty"`
 	Location struct {
 		Directory string `json:"directory"`
 	} `json:"location"`

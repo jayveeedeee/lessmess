@@ -134,13 +134,13 @@ func TestScaffoldFlow(t *testing.T) {
 func TestScaffoldValidation(t *testing.T) {
 	s := mappingServer(t, func(w http.ResponseWriter, r *http.Request) {})
 	for body, want := range map[string]int{
-		`{"title":"","session":"ses_x"}`:                       422,
-		`{"title":"a|b","session":"ses_x"}`:                    422,
-		`{"title":"x","prefix":"abc","session":"ses_x"}`:       422,
-		`{"title":"x","prefix":"TOOLONG","session":"ses_x"}`:   422,
-		`{"title":"x","session":"nope"}`:                       422,
-		`{"title":"x","prefix":"OK","session":"ses_ok"}`:       201,
-		`{"title":"y","prefix":"","session":"ses_ok2"}`:        201,
+		`{"title":"","session":"ses_x"}`:                     422,
+		`{"title":"a|b","session":"ses_x"}`:                  422,
+		`{"title":"x","prefix":"abc","session":"ses_x"}`:     422,
+		`{"title":"x","prefix":"TOOLONG","session":"ses_x"}`: 422,
+		`{"title":"x","session":"nope"}`:                     422,
+		`{"title":"x","prefix":"OK","session":"ses_ok"}`:     201,
+		`{"title":"y","prefix":"","session":"ses_ok2"}`:      201,
 	} {
 		if w := do(t, s.Handler(), "POST", "/changes/scaffold", body); w.Code != want {
 			t.Errorf("%s → %d, want %d", body, w.Code, want)
@@ -203,5 +203,84 @@ func TestScaffoldBoundSessionRefused(t *testing.T) {
 	}
 	if v := s.st.Validate(); len(v) != 0 {
 		t.Fatalf("violations after refused scaffold: %v", v)
+	}
+}
+
+func TestBindTaskSession(t *testing.T) {
+	s := mappingServer(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/api/session/ses_kid":
+			w.Write([]byte(`{"data":{"id":"ses_kid","title":"FIX-00: do the work","parentID":"ses_main"}}`))
+		case r.URL.Path == "/api/session/ses_taken":
+			w.Write([]byte(`{"data":{"id":"ses_taken","title":"elsewhere","parentID":"ses_other"}}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+
+	// Happy path: no caller session, sub exists, task exists.
+	w := do(t, s.Handler(), "POST", "/changes/2026-09-10-0/task-sessions", `{"task":"FIX-00","sub":"ses_kid"}`)
+	if w.Code != 201 {
+		t.Fatalf("code = %d body = %s", w.Code, w.Body)
+	}
+	entries := s.sessions.list("2026-09-10-0")
+	if len(entries) != 1 || entries[0].Session != "ses_kid" || entries[0].Task != "FIX-00" || entries[0].Parent != "ses_main" {
+		t.Fatalf("entries = %+v", entries)
+	}
+
+	// Idempotent exact retry → 200 reused.
+	w = do(t, s.Handler(), "POST", "/changes/2026-09-10-0/task-sessions", `{"task":"FIX-00","sub":"ses_kid"}`)
+	if w.Code != 200 {
+		t.Fatalf("retry code = %d body = %s", w.Code, w.Body)
+	}
+
+	// Rebinding to a different task → 409.
+	w = do(t, s.Handler(), "POST", "/changes/2026-09-10-0/task-sessions", `{"task":"FIX-01","sub":"ses_kid"}`)
+	if w.Code != http.StatusConflict {
+		t.Fatalf("rebind code = %d body = %s", w.Code, w.Body)
+	}
+
+	// Unknown task → 422.
+	w = do(t, s.Handler(), "POST", "/changes/2026-09-10-0/task-sessions", `{"task":"NOPE-99","sub":"ses_kid"}`)
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("unknown task code = %d body = %s", w.Code, w.Body)
+	}
+
+	// Dead sub → 422.
+	w = do(t, s.Handler(), "POST", "/changes/2026-09-10-0/task-sessions", `{"task":"FIX-01","sub":"ses_ghost"}`)
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("dead sub code = %d body = %s", w.Code, w.Body)
+	}
+
+	// A supplied caller bound elsewhere → 409 naming that change.
+	if err := s.sessions.add("2026-09-09-9", SessionEntry{Session: "ses_out", Title: "x", Created: "x"}); err != nil {
+		t.Fatal(err)
+	}
+	w = do(t, s.Handler(), "POST", "/changes/2026-09-10-0/task-sessions", `{"task":"FIX-01","sub":"ses_kid","session":"ses_out"}`)
+	if w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "2026-09-09-9") {
+		t.Fatalf("caller code = %d body = %s", w.Code, w.Body)
+	}
+
+	// A sub already mapped to another change → 409.
+	if err := s.sessions.add("2026-09-09-9", SessionEntry{Session: "ses_taken", Title: "x", Created: "x"}); err != nil {
+		t.Fatal(err)
+	}
+	w = do(t, s.Handler(), "POST", "/changes/2026-09-10-0/task-sessions", `{"task":"FIX-01","sub":"ses_taken"}`)
+	if w.Code != http.StatusConflict {
+		t.Fatalf("taken sub code = %d body = %s", w.Code, w.Body)
+	}
+
+	// Unknown change → 404.
+	w = do(t, s.Handler(), "POST", "/changes/1999-01-01-0/task-sessions", `{"task":"FIX-00","sub":"ses_kid"}`)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("unknown change code = %d body = %s", w.Code, w.Body)
+	}
+}
+
+func TestBindTaskSessionNoService(t *testing.T) {
+	s := mappingServer(t, nil)
+	w := do(t, s.Handler(), "POST", "/changes/2026-09-10-0/task-sessions", `{"task":"FIX-00","sub":"ses_kid"}`)
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("code = %d, want 503", w.Code)
 	}
 }

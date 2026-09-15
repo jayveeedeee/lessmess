@@ -3,8 +3,10 @@
 package store
 
 import (
+	"crypto/rand"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -44,7 +46,26 @@ var (
 	ErrNoChanges = errors.New("changes/ directory not found")
 )
 
-var changeIDRe = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}-\d+$`)
+// changeIDRe accepts both change-ID formats: the legacy numeric suffix
+// (any digits, never reused for new changes) and the current five-character
+// lowercase alphanumeric suffix.
+var changeIDRe = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}-(\d+|[a-z0-9]{5})$`)
+
+// randSuffix mints one random five-character lowercase alphanumeric suffix
+// with crypto/rand. Package-level so tests can force deterministic
+// sequences; the modulo fold has a negligible bias that is irrelevant here
+// (IDs are uniqueness tokens, not secrets).
+var randSuffix = func() string {
+	const alphabet = "abcdefghijklmnopqrstuvwxyz0123456789"
+	b := make([]byte, 5)
+	if _, err := rand.Read(b); err != nil {
+		panic("store: crypto/rand unavailable: " + err.Error())
+	}
+	for i := range b {
+		b[i] = alphabet[int(b[i])%len(alphabet)]
+	}
+	return string(b)
+}
 
 // Store is the in-memory model plus watcher for one repository.
 type Store struct {
@@ -366,10 +387,10 @@ func (s *Store) CreateTask(changeID, title string) (model.TaskRow, error) {
 	return row, nil
 }
 
-// CreateChange allocates the next change number for date (YYYY-MM-DD),
-// scaffolds the directory, and appends the root-ledger row. Numbers are
-// never reused: the next number is the highest existing for the date + 1.
-// branch is recorded in the root row's Branch column (empty = —); it is
+// CreateChange scaffolds a change directory for date (YYYY-MM-DD) with a
+// random five-character lowercase alphanumeric suffix, unique among the
+// date's directories including archived ones, and appends the root-ledger
+// row. branch is recorded in the root row's Branch column (empty = —); it is
 // informational only — no git branch is created.
 func (s *Store) CreateChange(title, prefix, branch, date string) (string, error) {
 	title = strings.TrimSpace(title)
@@ -387,20 +408,30 @@ func (s *Store) CreateChange(title, prefix, branch, date string) (string, error)
 		branch = model.Empty
 	}
 
-	maxNum := -1
+	// Mint a random suffix unique among this date's directories (including
+	// archived ones). Random generation replaced the per-date counter so
+	// parallel workers never collide on the same next number.
+	existing := map[string]bool{}
 	for _, base := range []string{s.ChangesDir, filepath.Join(s.ChangesDir, "archive")} {
 		entries, _ := os.ReadDir(base)
 		for _, e := range entries {
-			if !e.IsDir() || !strings.HasPrefix(e.Name(), date+"-") {
-				continue
-			}
-			var n int
-			if _, err := fmt.Sscanf(strings.TrimPrefix(e.Name(), date+"-"), "%d", &n); err == nil && n > maxNum {
-				maxNum = n
+			if e.IsDir() && strings.HasPrefix(e.Name(), date+"-") {
+				existing[e.Name()] = true
 			}
 		}
 	}
-	id := fmt.Sprintf("%s-%d", date, maxNum+1)
+	var id string
+	for retry := 0; ; retry++ {
+		if retry >= 10 {
+			return "", fmt.Errorf("%w: could not mint a unique change id for %s", ErrInvalid, date)
+		}
+		candidate := date + "-" + randSuffix()
+		if !existing[candidate] {
+			id = candidate
+			break
+		}
+		slog.Debug("change id collision; regenerating", "date", date)
+	}
 
 	dir := filepath.Join(s.ChangesDir, id)
 	if err := os.MkdirAll(filepath.Join(dir, "tasks"), 0o755); err != nil {

@@ -79,7 +79,7 @@ func (s *Store) validateDirNames() []Violation {
 			continue
 		}
 		if !validChangeDirName(e.Name()) {
-			out = append(out, Violation{Rule: 1, File: "changes/" + e.Name(), Msg: "not a valid change directory name (want YYYY-MM-DD-N)"})
+			out = append(out, Violation{Rule: 1, File: "changes/" + e.Name(), Msg: "not a valid change directory name (want YYYY-MM-DD-N or YYYY-MM-DD-xxxxx, five lowercase alphanumerics)"})
 		}
 	}
 	return out

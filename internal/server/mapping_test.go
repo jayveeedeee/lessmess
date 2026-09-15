@@ -210,6 +210,9 @@ func TestCreateSessionEndpoint(t *testing.T) {
 		"NEVER create a new change directory",
 		"/changes/scaffold",
 		"new discussion from the index page",
+		"Delegation is optional",
+		"prefix the task tool's description with the task's real ID",
+		"becomes the subagent session's title verbatim",
 	} {
 		if !strings.Contains(promptedText, want) {
 			t.Errorf("prompt missing %q:\n%s", want, promptedText)
@@ -327,5 +330,162 @@ func TestMappingPathUsesToolingDir(t *testing.T) {
 	}
 	if !strings.HasPrefix(s.sessions.path, dir) {
 		t.Fatalf("path = %s not under repo %s", s.sessions.path, dir)
+	}
+}
+
+func TestMappingTaskFields(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".lessmess", "sessions.json")
+
+	// A pre-change-shaped file (no task/parent keys) loads cleanly.
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	old := `{"2026-09-15-2":[{"session":"ses_old","title":"plain","created":"x"}]}`
+	if err := os.WriteFile(path, []byte(old), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m, err := loadMapping(path)
+	if err != nil {
+		t.Fatalf("load old file: %v", err)
+	}
+	got := m.list("2026-09-15-2")
+	if len(got) != 1 || got[0].Task != "" || got[0].Parent != "" {
+		t.Fatalf("old entries = %+v", got)
+	}
+
+	// New-shaped entries round-trip with their annotations.
+	if err := m.add("2026-09-15-2", SessionEntry{Session: "ses_sub", Title: "PSB-01: work", Created: "x", Task: "PSB-01", Parent: "ses_main"}); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var raw map[string][]map[string]string
+	if err := json.Unmarshal(b, &raw); err != nil {
+		t.Fatal(err)
+	}
+	var oldRaw, subRaw map[string]string
+	for _, e := range raw["2026-09-15-2"] {
+		if e["session"] == "ses_old" {
+			oldRaw = e
+		}
+		if e["session"] == "ses_sub" {
+			subRaw = e
+		}
+	}
+	if oldRaw == nil {
+		t.Fatal("old entry lost")
+	}
+	if _, ok := oldRaw["task"]; ok {
+		t.Error("task key written for annotation-free entry")
+	}
+	if _, ok := oldRaw["parent"]; ok {
+		t.Error("parent key written for annotation-free entry")
+	}
+	if subRaw == nil || subRaw["task"] != "PSB-01" || subRaw["parent"] != "ses_main" {
+		t.Fatalf("sub entry = %+v", subRaw)
+	}
+
+	// Persistence across reload.
+	m2, err := loadMapping(path)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	got = m2.listByTask("2026-09-15-2", "PSB-01")
+	if len(got) != 1 || got[0].Session != "ses_sub" || got[0].Parent != "ses_main" {
+		t.Fatalf("listByTask = %+v", got)
+	}
+	if got := m2.listByTask("2026-09-15-2", "PSB-99"); len(got) != 0 {
+		t.Fatalf("listByTask unknown = %+v", got)
+	}
+	// Empty task matches taskless entries.
+	if got := m2.listByTask("2026-09-15-2", ""); len(got) != 1 || got[0].Session != "ses_old" {
+		t.Fatalf("listByTask empty = %+v", got)
+	}
+}
+
+func TestReconcileTaskSessions(t *testing.T) {
+	s := mappingServer(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/session":
+			w.Write([]byte(`{"data":[
+				{"id":"ses_main","title":"main","parentID":""},
+				{"id":"ses_kid","title":"FIX-00: do the work","parentID":"ses_main","time":{"created":1789000000000}},
+				{"id":"ses_weird","title":"no prefix here","parentID":"ses_main","time":{"created":1789000001000}},
+				{"id":"ses_foreign","title":"FIX-00: elsewhere","parentID":"ses_other"},
+				{"id":"ses_dup","title":"FIX-01: already mapped","parentID":"ses_main"},
+				{"id":"ses_badtask","title":"NOPE-99: unknown task","parentID":"ses_main"}
+			]}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+	// ses_main is the change's bound session; ses_dup is already mapped.
+	if err := s.sessions.add("2026-09-10-0", SessionEntry{Session: "ses_main", Title: "main", Created: "x"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.sessions.add("2026-09-10-0", SessionEntry{Session: "ses_dup", Title: "FIX-01: already mapped", Created: "x", Task: "FIX-01", Parent: "ses_main"}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Serving the session list reconciles the unmapped children.
+	w := do(t, s.Handler(), "GET", "/changes/2026-09-10-0/sessions", "")
+	if w.Code != 200 {
+		t.Fatalf("code = %d body = %s", w.Code, w.Body)
+	}
+	entries := s.sessions.list("2026-09-10-0")
+	byID := map[string]SessionEntry{}
+	for _, e := range entries {
+		byID[e.Session] = e
+	}
+	if len(entries) != 5 {
+		t.Fatalf("entries = %+v", entries)
+	}
+	if e := byID["ses_kid"]; e.Task != "FIX-00" || e.Parent != "ses_main" {
+		t.Errorf("ses_kid = %+v", e)
+	}
+	if e := byID["ses_weird"]; e.Task != "" || e.Parent != "ses_main" {
+		t.Errorf("ses_weird = %+v", e)
+	}
+	if e := byID["ses_badtask"]; e.Task != "" {
+		t.Errorf("ses_badtask = %+v", e)
+	}
+	if _, ok := byID["ses_foreign"]; ok {
+		t.Error("child of another parent was mapped")
+	}
+	// Known tasks map exactly; created stamps come from the live session.
+	if e := byID["ses_kid"]; !strings.HasPrefix(e.Created, "2026-") {
+		t.Errorf("created = %q, want live stamp", e.Created)
+	}
+
+	// Serving again must not duplicate anything.
+	w = do(t, s.Handler(), "GET", "/changes/2026-09-10-0/sessions", "")
+	if w.Code != 200 {
+		t.Fatalf("second code = %d body = %s", w.Code, w.Body)
+	}
+	if got := s.sessions.list("2026-09-10-0"); len(got) != 5 {
+		t.Fatalf("after re-serve = %+v", got)
+	}
+}
+
+func TestReconcileFailOpen(t *testing.T) {
+	s := mappingServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/session" {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	})
+	if err := s.sessions.add("2026-09-10-0", SessionEntry{Session: "ses_main", Title: "main", Created: "x"}); err != nil {
+		t.Fatal(err)
+	}
+	w := do(t, s.Handler(), "GET", "/changes/2026-09-10-0/sessions", "")
+	if w.Code != 200 {
+		t.Fatalf("code = %d body = %s", w.Code, w.Body)
+	}
+	if got := s.sessions.list("2026-09-10-0"); len(got) != 1 {
+		t.Fatalf("mapping changed on failed reconcile: %+v", got)
 	}
 }

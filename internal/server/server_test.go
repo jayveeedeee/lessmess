@@ -109,9 +109,10 @@ func TestIndexNewestFirst(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	addChange("2026-09-11-0", "Newer change")
-	addChange("2026-09-11-2", "Two")
-	addChange("2026-09-11-10", "Ten") // unpadded counter must sort numerically
+	addChange("2026-09-11-k3x9q", "Random A")
+	addChange("2026-09-11-0", "Legacy numeric")
+	addChange("2026-09-11-mz7t2", "Random B") // appended last → newest of the date
+	addChange("2026-09-10-4", "Older date")
 	st.Reload()
 
 	w := do(t, New(st).Handler(), "GET", "/", "")
@@ -124,7 +125,10 @@ func TestIndexNewestFirst(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"2026-09-11-10", "2026-09-11-2", "2026-09-11-0", "2026-09-10-0"}
+	// Newest first: the older date sorts last; within 2026-09-11 the
+	// root-ledger append order is reversed (last row = newest). The suffix
+	// itself (random or legacy numeric) carries no ordering.
+	want := []string{"2026-09-11-mz7t2", "2026-09-11-0", "2026-09-11-k3x9q", "2026-09-10-4", "2026-09-10-0"}
 	if len(resp.Changes) != len(want) {
 		t.Fatalf("changes = %v, want %v", resp.Changes, want)
 	}

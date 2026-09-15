@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -86,6 +85,7 @@ func New(st *store.Store) *Server {
 	mux.HandleFunc("GET /terminal/ws", s.terminalWS)
 	mux.HandleFunc("GET /changes/{id}/sessions", s.listChangeSessions)
 	mux.HandleFunc("POST /changes/{id}/sessions", s.createChangeSession)
+	mux.HandleFunc("POST /changes/{id}/task-sessions", s.bindTaskSession)
 	mux.HandleFunc("DELETE /changes/{id}/sessions/{sessionID}", s.unlinkChangeSession)
 	mux.HandleFunc("GET /api/discussions", s.listDiscussions)
 	mux.HandleFunc("DELETE /api/discussions/{sessionID}", s.unlinkDiscussion)
@@ -196,11 +196,12 @@ func (s *Server) index(w http.ResponseWriter, r *http.Request) {
 	}
 	showArchived := s.effectiveSettings().UI.ShowArchived
 	rows := make([]changeSummary, 0, len(root.Rows))
+	pos := make([]int, 0, len(root.Rows))
 	byID := map[string]*store.Change{}
 	for _, c := range s.st.Changes() {
 		byID[c.ID] = c
 	}
-	for _, rr := range root.Rows {
+	for i, rr := range root.Rows {
 		if !showArchived && strings.HasPrefix(rr.Href, "archive/") {
 			continue
 		}
@@ -209,11 +210,24 @@ func (s *Server) index(w http.ResponseWriter, r *http.Request) {
 			sum.Tasks = len(c.Ledger.Rows)
 		}
 		rows = append(rows, sum)
+		pos = append(pos, i)
 	}
-	// Newest change first: date prefixes compare lexicographically, but the
-	// counter is unpadded ("2026-09-12-9" > "2026-09-12-12" as strings), so
-	// compare it numerically.
-	sort.Slice(rows, func(i, j int) bool { return changeIDLess(rows[j].ID, rows[i].ID) })
+	// Newest change first: the date prefix dominates, and within a date the
+	// root-ledger row position decides (rows are append-mostly, so a later
+	// position is newer). Change IDs end in a random five-character suffix
+	// with no inherent order, and legacy numeric suffixes are no longer
+	// allocation-ordered either, so the position is the only chronological
+	// signal; ID ascending breaks ties deterministically.
+	sort.Slice(rows, func(i, j int) bool {
+		ai, aj := datePrefixOf(rows[i].ID), datePrefixOf(rows[j].ID)
+		if ai != aj {
+			return ai > aj
+		}
+		if pos[i] != pos[j] {
+			return pos[i] > pos[j]
+		}
+		return rows[i].ID < rows[j].ID
+	})
 	if wantsHTML(r) {
 		view := indexView{Changes: rows, OnboardingPending: onboardingPending(s.st.Dir)}
 		if gs := gitStatus(s.st.Dir); gs.Repo {
@@ -226,27 +240,13 @@ func (s *Server) index(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"changes": rows})
 }
 
-// changeIDLess orders change IDs chronologically: the YYYY-MM-DD prefix
-// compares lexicographically and the unpadded counter numerically.
-func changeIDLess(a, b string) bool {
-	ad, an := splitChangeID(a)
-	bd, bn := splitChangeID(b)
-	if ad != bd {
-		return ad < bd
+// datePrefixOf returns the YYYY-MM-DD prefix of a change ID, or "" when the
+// ID is too short to have one.
+func datePrefixOf(id string) string {
+	if len(id) < 10 {
+		return ""
 	}
-	return an < bn
-}
-
-func splitChangeID(id string) (string, int) {
-	i := strings.LastIndex(id, "-")
-	if i < 0 {
-		return id, 0
-	}
-	n, err := strconv.Atoi(id[i+1:])
-	if err != nil {
-		return id, 0
-	}
-	return id[:i], n
+	return id[:10]
 }
 
 type boardResponse struct {

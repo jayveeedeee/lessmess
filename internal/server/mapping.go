@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -16,11 +17,15 @@ import (
 	"lessmess/internal/store"
 )
 
-// SessionEntry links one opencode session to a change.
+// SessionEntry links one opencode session to a change. Task and Parent are
+// optional subagent annotations: Task names the change task (e.g. "PSB-01")
+// the session was delegated to, Parent names the session that spawned it.
 type SessionEntry struct {
 	Session string `json:"session"`
 	Title   string `json:"title"`
 	Created string `json:"created"`
+	Task    string `json:"task,omitempty"`
+	Parent  string `json:"parent,omitempty"`
 }
 
 // mapping is the .lessmess/sessions.json file (tooling state, gitignored).
@@ -67,11 +72,64 @@ func (m *mapping) list(change string) []SessionEntry {
 	return out
 }
 
+// listByTask returns the change's entries for one task; an empty task matches
+// taskless entries (sessions bound to the change without a task annotation).
+func (m *mapping) listByTask(change, task string) []SessionEntry {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []SessionEntry
+	for _, e := range m.data[change] {
+		if e.Task == task {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
 func (m *mapping) add(change string, e SessionEntry) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.data[change] = append(m.data[change], e)
 	return m.save()
+}
+
+// addAll appends entries under one change, skipping sessions already mapped
+// there (a concurrent reconcile or bind may have won the race). It reports
+// how many entries were actually added and saves at most once.
+func (m *mapping) addAll(change string, entries []SessionEntry) (int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	existing := make(map[string]bool, len(m.data[change]))
+	for _, e := range m.data[change] {
+		existing[e.Session] = true
+	}
+	var add []SessionEntry
+	for _, e := range entries {
+		if !existing[e.Session] {
+			add = append(add, e)
+			existing[e.Session] = true
+		}
+	}
+	if len(add) == 0 {
+		return 0, nil
+	}
+	m.data[change] = append(m.data[change], add...)
+	return len(add), m.save()
+}
+
+// knows reports whether a session id appears anywhere in the mapping,
+// including the unassigned bucket.
+func (m *mapping) knows(session string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, entries := range m.data {
+		for _, e := range entries {
+			if e.Session == session {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (m *mapping) remove(change, session string) (bool, error) {
@@ -148,6 +206,8 @@ type sessionResponse struct {
 	Session string `json:"session"`
 	Title   string `json:"title"`
 	Created string `json:"created"`
+	Task    string `json:"task,omitempty"`
+	Parent  string `json:"parent,omitempty"`
 	Live    bool   `json:"live"` // title enriched from the service
 }
 
@@ -155,7 +215,7 @@ type sessionResponse struct {
 func (s *Server) enrich(r *http.Request, entries []SessionEntry) []sessionResponse {
 	out := make([]sessionResponse, 0, len(entries))
 	for _, e := range entries {
-		resp := sessionResponse{Session: e.Session, Title: e.Title, Created: e.Created}
+		resp := sessionResponse{Session: e.Session, Title: e.Title, Created: e.Created, Task: e.Task, Parent: e.Parent}
 		if s.oc != nil {
 			ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
 			if live, err := s.oc.GetSession(ctx, e.Session); err == nil {
@@ -169,9 +229,72 @@ func (s *Server) enrich(r *http.Request, entries []SessionEntry) []sessionRespon
 	return out
 }
 
+// taskTitleRe parses the task-ID prefix the change prompt teaches: a spawned
+// subagent's description becomes the child session's title verbatim, so
+// "FIX-00: do the work" is how a child carries its task association.
+var taskTitleRe = regexp.MustCompile(`^([A-Z][A-Z0-9]{1,3}-\d+):`)
+
+// reconcileTaskSessions maps subagent children that were spawned by one of
+// the change's sessions but never mapped: one ListSessions call finds
+// sessions whose parentID points at a bound session, and the task comes
+// from the title prefix above (unknown prefixes map taskless). Purely
+// additive and fail-open: a service error leaves the stored list untouched.
+func (s *Server) reconcileTaskSessions(r *http.Request, c *store.Change) {
+	if s.oc == nil || s.mapErr != nil {
+		return
+	}
+	bound := s.sessions.list(c.ID)
+	if len(bound) == 0 {
+		return
+	}
+	parents := make(map[string]bool, len(bound))
+	for _, e := range bound {
+		parents[e.Session] = true
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	all, err := s.oc.ListSessions(ctx)
+	if err != nil {
+		slog.Debug("task session reconcile skipped", "change", c.ID, "err", err)
+		return
+	}
+	knownTasks := map[string]bool{}
+	if c.Ledger != nil {
+		for _, row := range c.Ledger.Rows {
+			knownTasks[row.ID] = true
+		}
+	}
+	var fresh []SessionEntry
+	for _, sess := range all {
+		if sess.ParentID == "" || !parents[sess.ParentID] || s.sessions.knows(sess.ID) {
+			continue
+		}
+		task := ""
+		if m := taskTitleRe.FindStringSubmatch(sess.Title); m != nil && knownTasks[m[1]] {
+			task = m[1]
+		}
+		fresh = append(fresh, SessionEntry{
+			Session: sess.ID,
+			Title:   sess.Title,
+			Created: time.UnixMilli(sess.Time.Created).UTC().Format(time.RFC3339),
+			Task:    task,
+			Parent:  sess.ParentID,
+		})
+	}
+	added, err := s.sessions.addAll(c.ID, fresh)
+	if err != nil {
+		slog.Warn("task session reconcile persist failed", "change", c.ID, "err", err)
+		return
+	}
+	if added > 0 {
+		slog.Info("reconciled task sessions", "change", c.ID, "count", added)
+	}
+}
+
 func (s *Server) listChangeSessions(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	if _, err := s.st.Change(id); err != nil {
+	c, err := s.st.Change(id)
+	if err != nil {
 		writeErr(w, err)
 		return
 	}
@@ -179,6 +302,7 @@ func (s *Server) listChangeSessions(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "session mapping unreadable: " + s.mapErr.Error()})
 		return
 	}
+	s.reconcileTaskSessions(r, c)
 	writeJSON(w, http.StatusOK, map[string]any{"sessions": s.enrich(r, s.sessions.list(id))})
 }
 

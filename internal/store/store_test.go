@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -266,8 +267,8 @@ func TestCreateChange(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateChange: %v", err)
 	}
-	if id != "2026-09-12-0" {
-		t.Fatalf("id = %q", id)
+	if !regexp.MustCompile(`^2026-09-12-[a-z0-9]{5}$`).MatchString(id) {
+		t.Fatalf("id = %q, want a 2026-09-12 date prefix with a five-character lowercase alphanumeric suffix", id)
 	}
 	for _, f := range []string{"plan.md", "ledger.md", "tasks"} {
 		if _, err := os.Stat(filepath.Join(dir, "changes", id, f)); err != nil {
@@ -309,21 +310,88 @@ func TestCreateChangeEmptyBranch(t *testing.T) {
 	}
 }
 
-func TestCreateChangeGapRule(t *testing.T) {
-	s, dir := openFixture(t)
-	// Existing 2026-09-12-0 and -2 (gap: -1 removed) → next must be -3,
-	// per the no-reuse rule in AGENTS.md.
-	for _, n := range []string{"2026-09-12-0", "2026-09-12-2"} {
-		if err := os.MkdirAll(filepath.Join(dir, "changes", n, "tasks"), 0o755); err != nil {
-			t.Fatal(err)
+func TestCreateChangeSuffixUniqueness(t *testing.T) {
+	s, _ := openFixture(t)
+	seen := map[string]bool{}
+	for i := 0; i < 50; i++ {
+		id, err := s.CreateChange("Objective", "—", "", "2026-09-12")
+		if err != nil {
+			t.Fatalf("CreateChange %d: %v", i, err)
 		}
+		if seen[id] {
+			t.Fatalf("duplicate id %q minted", id)
+		}
+		seen[id] = true
 	}
-	id, err := s.CreateChange("Third", "—", "", "2026-09-12")
-	if err != nil {
+}
+
+func TestCreateChangeCollisionRegenerates(t *testing.T) {
+	s, dir := openFixture(t)
+	// Pre-occupy the suffix the stubbed source returns first; CreateChange
+	// must regenerate instead of colliding or failing.
+	occupied := filepath.Join(dir, "changes", "2026-09-12-abcde", "tasks")
+	if err := os.MkdirAll(occupied, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if id != "2026-09-12-3" {
-		t.Fatalf("id = %q, want 2026-09-12-3 (highest + 1, gaps not reused)", id)
+	orig := randSuffix
+	defer func() { randSuffix = orig }()
+	suffixes := []string{"abcde", "zz9x9"}
+	randSuffix = func() string {
+		next := suffixes[0]
+		if len(suffixes) > 1 {
+			suffixes = suffixes[1:]
+		}
+		return next
+	}
+	id, err := s.CreateChange("After collision", "—", "", "2026-09-12")
+	if err != nil {
+		t.Fatalf("CreateChange: %v", err)
+	}
+	if id != "2026-09-12-zz9x9" {
+		t.Fatalf("id = %q, want 2026-09-12-zz9x9 (second candidate)", id)
+	}
+}
+
+func TestCreateChangeSuffixExhausted(t *testing.T) {
+	s, dir := openFixture(t)
+	occupied := filepath.Join(dir, "changes", "2026-09-12-abcde", "tasks")
+	if err := os.MkdirAll(occupied, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	orig := randSuffix
+	defer func() { randSuffix = orig }()
+	randSuffix = func() string { return "abcde" }
+	if _, err := s.CreateChange("Doomed", "—", "", "2026-09-12"); err == nil {
+		t.Fatal("expected an error when every mint collides")
+	}
+}
+
+func TestValidChangeDirName(t *testing.T) {
+	valid := []string{
+		"2026-09-10-0",     // legacy numeric
+		"2026-09-10-12",    // legacy numeric, multi-digit
+		"2026-09-10-a1b2c", // new five-char lowercase alphanumeric
+		"2026-09-10-00012", // five digits (matches both forms)
+	}
+	for _, name := range valid {
+		if !validChangeDirName(name) {
+			t.Errorf("validChangeDirName(%q) = false, want true", name)
+		}
+	}
+	invalid := []string{
+		"bogus",
+		"2026-09-10",
+		"2026-09-10-",
+		"2026-09-10-ABCDE",  // uppercase
+		"2026-09-10-abcd",   // four chars
+		"2026-09-10-abcdef", // six chars
+		"2026-13-40-abcde",  // invalid date
+		"2026-09-10-ab1",    // three chars
+	}
+	for _, name := range invalid {
+		if validChangeDirName(name) {
+			t.Errorf("validChangeDirName(%q) = true, want false", name)
+		}
 	}
 }
 

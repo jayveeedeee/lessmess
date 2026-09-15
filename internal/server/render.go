@@ -40,6 +40,17 @@ var templateFuncs = template.FuncMap{
 	"statusClass": func(s string) string {
 		return strings.ToLower(strings.ReplaceAll(s, " ", "-"))
 	},
+	// statusRank maps a task status to its workflow-order index so the
+	// index table can sort the Status column in board order (unknown
+	// statuses sort last, deterministically).
+	"statusRank": func(s string) int {
+		for i, st := range model.TaskStatusOrder {
+			if string(st) == s {
+				return i
+			}
+		}
+		return len(model.TaskStatusOrder)
+	},
 	"base":     filepath.Base,
 	"markdown": renderMarkdown,
 }

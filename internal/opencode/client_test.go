@@ -89,6 +89,22 @@ func TestListSessions(t *testing.T) {
 	}
 }
 
+func TestListSessionsParsesParentID(t *testing.T) {
+	c, _ := fakeServer(t, "opencode", "pw", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"data":[{"id":"ses_child","title":"TSK-01: work","parentID":"ses_parent"},{"id":"ses_root","title":"root"}]}`))
+	})
+	ss, err := c.ListSessions(context.Background())
+	if err != nil || len(ss) != 2 {
+		t.Fatalf("ss = %v, %v", ss, err)
+	}
+	if ss[0].ParentID != "ses_parent" {
+		t.Fatalf("child parentID = %q, want ses_parent", ss[0].ParentID)
+	}
+	if ss[1].ParentID != "" {
+		t.Fatalf("root parentID = %q, want empty", ss[1].ParentID)
+	}
+}
+
 func TestCreateSessionWithAgentAndModel(t *testing.T) {
 	c, _ := fakeServer(t, "opencode", "pw", func(w http.ResponseWriter, r *http.Request) {
 		var body map[string]any

@@ -21,17 +21,25 @@
   </div>
   <table class="change-table-wrap change-table">
     <thead>
-      <tr><th>Change</th><th>Title</th><th>Prefix</th><th>Status</th><th>Tasks</th><th>Updated</th><th></th></tr>
+      <tr>
+        <th data-col="id"><button type="button" class="sort-btn" data-sort-col="id">Change<span class="sort-ind" aria-hidden="true"></span></button></th>
+        <th data-col="title"><button type="button" class="sort-btn" data-sort-col="title">Title<span class="sort-ind" aria-hidden="true"></span></button></th>
+        <th data-col="prefix"><button type="button" class="sort-btn" data-sort-col="prefix">Prefix<span class="sort-ind" aria-hidden="true"></span></button></th>
+        <th data-col="status"><button type="button" class="sort-btn" data-sort-col="status">Status<span class="sort-ind" aria-hidden="true"></span></button></th>
+        <th data-col="tasks"><button type="button" class="sort-btn" data-sort-col="tasks">Tasks<span class="sort-ind" aria-hidden="true"></span></button></th>
+        <th data-col="updated"><button type="button" class="sort-btn" data-sort-col="updated">Updated<span class="sort-ind" aria-hidden="true"></span></button></th>
+        <th></th>
+      </tr>
     </thead>
     <tbody>
       {{range .Data.Changes}}
-      <tr>
-        <td><a href="/changes/{{.ID}}">{{.ID}}</a></td>
-        <td>{{.Title}}</td>
-        <td>{{.Prefix}}</td>
-        <td><span class="pill status-{{.Status | statusClass}}">{{.Status}}</span></td>
-        <td>{{.Tasks}}</td>
-        <td>{{.Updated}}</td>
+      <tr data-tasks="{{.Tasks}}" data-status-rank="{{.Status | statusRank}}" data-updated="{{.Updated}}">
+        <td data-col="id"><a href="/changes/{{.ID}}">{{.ID}}</a></td>
+        <td data-col="title">{{.Title}}</td>
+        <td data-col="prefix">{{.Prefix}}</td>
+        <td data-col="status"><span class="pill status-{{.Status | statusClass}}">{{.Status}}</span></td>
+        <td data-col="tasks">{{.Tasks}}</td>
+        <td data-col="updated">{{.Updated}}</td>
         <td><button type="button" class="btn-ghost"
                 hx-get="/changes/{{.ID}}/plan"
                 hx-target="#detail"

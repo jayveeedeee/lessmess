@@ -71,6 +71,7 @@
     if (e.target && e.target.id === "board") {
       initSortable();
       if (boardEl()) syncTerminalTasks(boardEl(), boardEl().dataset.change);
+      refreshSubs();
     }
   });
 
@@ -504,53 +505,113 @@
   }
 
   function loadSessions() {
-    fetch("/changes/" + changeID() + "/sessions", { headers: { Accept: "application/json" } })
-      .then(function (r) { return r.json(); })
-      .then(function (j) {
-        var ul = document.getElementById("sessions-list");
-        if (!ul) return;
-        ul.innerHTML = "";
-        var sessions = j.sessions || [];
-        if (!sessions.length) {
-          var empty = document.createElement("li");
-          empty.className = "session-empty";
-          empty.textContent = "No sessions yet — start one.";
-          ul.appendChild(empty);
-          return;
-        }
-        sessions.forEach(function (s) {
-          var li = document.createElement("li");
-          li.className = "session-item";
-          var title = document.createElement("span");
-          title.className = "session-title";
-          title.textContent = s.title;
-          var meta = document.createElement("span");
-          meta.className = "session-meta";
-          meta.textContent = (s.created || "").slice(0, 10);
-          var actions = document.createElement("span");
-          actions.className = "session-actions";
-          var openBtn = document.createElement("button");
-          openBtn.className = "btn-ghost";
-          openBtn.textContent = "Open";
-          openBtn.addEventListener("click", function () { markOpened(s.session); openTerminal(s.session, s.title); });
-          var unBtn = document.createElement("button");
-          unBtn.className = "btn-ghost";
-          unBtn.textContent = "✕";
-          unBtn.title = "Unlink from change (session stays in opencode)";
-          unBtn.addEventListener("click", function () {
-            fetch("/changes/" + changeID() + "/sessions/" + s.session, { method: "DELETE" })
-              .then(function (r) { if (!r.ok) throw 0; loadSessions(); })
-              .catch(function () { alert("Unlink failed"); });
-          });
-          actions.appendChild(openBtn);
-          actions.appendChild(unBtn);
-          li.appendChild(title);
-          li.appendChild(meta);
-          li.appendChild(actions);
-          ul.appendChild(li);
+    fetchSessions(function (sessions) {
+      var ul = document.getElementById("sessions-list");
+      if (!ul) return;
+      ul.innerHTML = "";
+      if (!sessions || !sessions.length) {
+        var empty = document.createElement("li");
+        empty.className = "session-empty";
+        empty.textContent = "No sessions yet — start one.";
+        ul.appendChild(empty);
+        return;
+      }
+      renderSubs(sessions);
+      sessions.forEach(function (s) {
+        var li = document.createElement("li");
+        li.className = "session-item";
+        var title = document.createElement("span");
+        title.className = "session-title";
+        title.textContent = s.title;
+        var meta = document.createElement("span");
+        meta.className = "session-meta";
+        meta.textContent = (s.created || "").slice(0, 10);
+        var actions = document.createElement("span");
+        actions.className = "session-actions";
+        var openBtn = document.createElement("button");
+        openBtn.className = "btn-ghost";
+        openBtn.textContent = "Open";
+        openBtn.addEventListener("click", function () { markOpened(s.session); openTerminal(s.session, s.title); });
+        var unBtn = document.createElement("button");
+        unBtn.className = "btn-ghost";
+        unBtn.textContent = "✕";
+        unBtn.title = "Unlink from change (session stays in opencode)";
+        unBtn.addEventListener("click", function () {
+          fetch("/changes/" + changeID() + "/sessions/" + s.session, { method: "DELETE" })
+            .then(function (r) { if (!r.ok) throw 0; loadSessions(); })
+            .catch(function () { alert("Unlink failed"); });
         });
-      })
-      .catch(function () {});
+        actions.appendChild(openBtn);
+        actions.appendChild(unBtn);
+        li.appendChild(title);
+        li.appendChild(meta);
+        li.appendChild(actions);
+        ul.appendChild(li);
+      });
+    });
+  }
+
+  // --- subagent session chips -------------------------------------------------
+
+  // refreshSubs re-renders the subagent chips from the sessions endpoint;
+  // called on board load and after every board fragment swap.
+  function refreshSubs() {
+    fetchSessions(renderSubs);
+  }
+
+  // renderSubs attaches subagent sessions to their task cards (via the
+  // task-ID title prefix the server maps into `task`); bound sessions
+  // without a task fall back to the header strip. Sessions without a
+  // parent are plain change sessions and render in the Sessions panel only.
+  function renderSubs(sessions) {
+    var byTask = {};
+    var stray = [];
+    (sessions || []).forEach(function (s) {
+      if (s.task) (byTask[s.task] = byTask[s.task] || []).push(s);
+      else if (s.parent) stray.push(s);
+    });
+    document.querySelectorAll("#board .card[data-task]").forEach(function (card) {
+      var old = card.querySelector(".card-subs");
+      if (old) old.remove();
+      var subs = byTask[card.dataset.task];
+      if (!subs || !subs.length) return;
+      var wrap = document.createElement("div");
+      wrap.className = "card-subs";
+      subs.forEach(function (s) { wrap.appendChild(subChip(s)); });
+      card.appendChild(wrap);
+    });
+    var strip = document.getElementById("board-subs");
+    if (!strip) return;
+    strip.innerHTML = "";
+    if (!stray.length) { strip.hidden = true; return; }
+    strip.hidden = false;
+    stray.forEach(function (s) { strip.appendChild(subChip(s)); });
+  }
+
+  // subChip is one subagent session: a live dot, its title, and a Talk
+  // button opening the terminal overlay on that session id. Dead sessions
+  // (gone from the opencode service) render dimmed but stay openable.
+  function subChip(s) {
+    var chip = document.createElement("span");
+    chip.className = "sub-chip" + (s.live ? "" : " sub-dead");
+    var dot = document.createElement("span");
+    dot.className = "sub-dot";
+    chip.appendChild(dot);
+    var label = document.createElement("span");
+    label.className = "sub-label";
+    label.textContent = s.title || s.session;
+    label.title = s.session;
+    chip.appendChild(label);
+    var talk = document.createElement("button");
+    talk.type = "button";
+    talk.className = "btn-ghost sub-talk";
+    talk.textContent = "Talk";
+    talk.title = s.live
+      ? "Open a terminal chat on this subagent session"
+      : "Session not found in the opencode service";
+    talk.addEventListener("click", function () { markOpened(s.session); openTerminal(s.session, s.title); });
+    chip.appendChild(talk);
+    return chip;
   }
 
   function initSessions() {
@@ -586,6 +647,7 @@
     if (!btn) return;
     fetchSessions(function (sessions) {
       if (sessions) btn.textContent = sessions.length ? "Continue session" : "Start session";
+      renderSubs(sessions);
     });
     btn.addEventListener("click", function () {
       if (btn.disabled) return;
@@ -1545,6 +1607,85 @@
     });
   }
 
+  // --- index table sorting --------------------------------------------------
+
+  // First-click direction per sortable column: text columns start ascending,
+  // Updated and Tasks start descending (newest / most tasks first).
+  var indexSortCols = {
+    id: "asc", title: "asc", prefix: "asc", status: "asc",
+    tasks: "desc", updated: "desc"
+  };
+  var INDEX_SORT_KEY = "tt-index-sort";
+
+  function indexSortState() {
+    // Restores {col, dir} from localStorage; anything corrupt or unknown
+    // falls back to the server's default order (no override).
+    try {
+      var raw = JSON.parse(localStorage.getItem(INDEX_SORT_KEY) || "null");
+      if (raw && indexSortCols[raw.col] && (raw.dir === "asc" || raw.dir === "desc")) {
+        return raw;
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  function indexCellKey(tr, col) {
+    if (col === "tasks") return parseInt(tr.getAttribute("data-tasks"), 10) || 0;
+    if (col === "status") return parseInt(tr.getAttribute("data-status-rank"), 10) || 0;
+    if (col === "updated") return tr.getAttribute("data-updated") || "";
+    var cell = tr.querySelector('td[data-col="' + col + '"]');
+    return cell ? cell.textContent.trim() : "";
+  }
+
+  function applyIndexSort(col, dir) {
+    var table = document.querySelector(".change-table");
+    if (!table) return;
+    var tbody = table.tBodies[0];
+    if (!tbody) return;
+    var rows = Array.prototype.slice.call(tbody.rows);
+    var mul = dir === "asc" ? 1 : -1;
+    // Array#sort is stable, so equal keys keep the server's default order.
+    rows.sort(function (a, b) {
+      var ka = indexCellKey(a, col), kb = indexCellKey(b, col);
+      if (ka < kb) return -mul;
+      if (ka > kb) return mul;
+      return 0;
+    });
+    rows.forEach(function (tr) { tbody.appendChild(tr); });
+
+    table.querySelectorAll("thead th").forEach(function (th) {
+      th.removeAttribute("aria-sort");
+    });
+    table.querySelectorAll(".sort-btn").forEach(function (btn) {
+      btn.classList.remove("sort-asc", "sort-desc");
+    });
+    var th = table.querySelector('thead th[data-col="' + col + '"]');
+    if (th) th.setAttribute("aria-sort", dir === "asc" ? "ascending" : "descending");
+    var btn = table.querySelector('.sort-btn[data-sort-col="' + col + '"]');
+    if (btn) btn.classList.add(dir === "asc" ? "sort-asc" : "sort-desc");
+  }
+
+  function initIndexSort() {
+    var table = document.querySelector(".change-table");
+    if (!table) return;
+    table.querySelectorAll(".sort-btn").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var col = btn.getAttribute("data-sort-col");
+        if (!indexSortCols[col]) return;
+        var cur = indexSortState();
+        var dir = (cur && cur.col === col)
+          ? (cur.dir === "asc" ? "desc" : "asc")
+          : indexSortCols[col];
+        try {
+          localStorage.setItem(INDEX_SORT_KEY, JSON.stringify({ col: col, dir: dir }));
+        } catch (_) {}
+        applyIndexSort(col, dir);
+      });
+    });
+    var stored = indexSortState();
+    if (stored) applyIndexSort(stored.col, stored.dir);
+  }
+
   // --- setup wizard ---------------------------------------------------------
 
   function initSetup() {
@@ -1992,6 +2133,7 @@
     initContinue();
     initLifecycle();
     initCommitAll();
+    initIndexSort();
     initSettings();
     initSetup();
     initOnboardingBanner();
