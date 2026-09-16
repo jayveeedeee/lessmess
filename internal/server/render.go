@@ -66,6 +66,9 @@ type renderer struct {
 	// accent resolves the palette entry for the page head; nil until the
 	// owning server wires it (then defaults to the built-in orange).
 	accent func() AccentColor
+	// projectName resolves the project display name for the header and
+	// tab title; nil until wired (then renders empty).
+	projectName func() string
 }
 
 func mustParse(files ...string) *template.Template {
@@ -103,6 +106,9 @@ func (r *renderer) render(w http.ResponseWriter, tmpl *template.Template, name s
 	if pd, ok := data.(pageData); ok {
 		pd.AssetsV = r.assetsV
 		pd.AccentStyle = accentStyle(r.accentColor())
+		if r.projectName != nil {
+			pd.ProjectName = r.projectName()
+		}
 		data = pd
 	}
 	if err := tmpl.ExecuteTemplate(w, name, data); err != nil {
@@ -121,20 +127,25 @@ func (r *renderer) accentColor() AccentColor {
 
 // accentStyle renders the head <style> overriding the accent CSS
 // variables for both themes. Values are palette constants, so the
-// template.HTML escape-out is safe.
+// template.HTML escape-out is safe. The id lets the settings picker
+// live-preview a pending pick by rewriting the element's text.
 func accentStyle(a AccentColor) template.HTML {
 	return template.HTML(fmt.Sprintf(
-		`<style>:root{--accent:%[1]s;--accent-hover:%[2]s}[data-theme="light"]{--accent:%[3]s;--accent-hover:%[4]s}</style>`,
+		`<style id="accent-style">:root{--accent:%[1]s;--accent-hover:%[2]s}[data-theme="light"]{--accent:%[3]s;--accent-hover:%[4]s}</style>`,
 		a.Dark, a.DarkHover, a.Light, a.LightHover))
 }
 
 // --- view data ---
 
 type pageData struct {
-	Title   string
-	Page    string
-	Data    any
-	AssetsV string
+	Title string
+	Page  string
+	Data  any
+	// ProjectName is the project display name rendered next to the logo
+	// and as the tab title; filled centrally by render() through the
+	// renderer hook.
+	ProjectName string
+	AssetsV     string
 	// AccentStyle is the head <style> overriding the accent CSS
 	// variables for the resolved palette; filled centrally by render().
 	AccentStyle template.HTML

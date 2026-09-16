@@ -7,6 +7,7 @@
 
   <ol class="setup-steps" id="setup-steps-nav">
     <li data-step-nav="prereqs" class="active">Prerequisites</li>
+    <li data-step-nav="name">Project name</li>
     <li data-step-nav="bootstrap">Bootstrap</li>
     <li data-step-nav="agent">Default agent</li>
     <li data-step-nav="docs">Docs</li>
@@ -22,6 +23,25 @@
       <button id="setup-prereqs-next" type="button" class="btn-accent" disabled>Continue</button>
     </div>
     <p class="muted" id="setup-prereqs-hint">Failing checks block the next steps; warnings do not.</p>
+  </section>
+
+  <section class="setup-step" data-step="name" hidden>
+    <h3>Project name</h3>
+    <p class="muted">Shown next to the logo (including the terminal) and as the browser tab title. Defaults to the repository folder's name.</p>
+    <div class="settings-field" data-kind="text">
+      <label for="setup-project-name">Project name</label>
+      <input id="setup-project-name" type="text" autocomplete="off" spellcheck="false">
+    </div>
+    <fieldset class="setup-scope">
+      <legend class="muted">Save to</legend>
+      <label><input type="radio" name="setup-name-scope" value="project" checked> Project — shared with the team (<code>lessmess.json</code>, committed)</label>
+      <label><input type="radio" name="setup-name-scope" value="personal"> Personal — this machine only (<code>.lessmess/settings.json</code>, gitignored)</label>
+    </fieldset>
+    <div class="setup-actions">
+      <button id="setup-name-save" type="button" class="btn-accent">Save and continue</button>
+      <button id="setup-name-skip" type="button" class="btn-ghost">Use the folder name</button>
+    </div>
+    <p class="muted" id="setup-name-status"></p>
   </section>
 
   <section class="setup-step" data-step="bootstrap" hidden>

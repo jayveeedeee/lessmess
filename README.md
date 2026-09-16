@@ -152,6 +152,7 @@ values apply to new activity immediately — no restart.
 
 | Setting | Effect |
 | --- | --- |
+| `general.projectName` | Project display name shown next to the logo (including the terminal overlay) and used as the browser tab title on every page. Empty uses the repository folder's basename, so renaming the folder updates the default until you set an explicit name. Also collected by the onboarding wizard. |
 | `session.agent` | opencode agent for newly spawned sessions (change sessions, discussions, explorer chats, commits, doc gardener). Unknown values are rejected at save time when the service is reachable. |
 | `session.model` | Model for new sessions as `provider/model` (e.g. `anthropic/claude-sonnet-4-5`). Same validation. |
 | `session.autoOpenTerminal` | Open the embedded terminal automatically after a session is created (default on). |
@@ -273,9 +274,10 @@ the local learnings. Two files per covered folder:
 - **`STRUCTURE.md`** — a machine-owned navigation map (entries, purposes,
   child rollups, freshness metadata). Regenerated wholesale, deterministically;
   never hand-edit inside its `<!-- tasktracker:begin/end -->` markers.
-- **`AGENTS.md`** — curated learnings and instructions for that area. Refined
-  and appended, never regenerated; everything outside the markers is
-  human/agent-authored and preserved byte-for-byte.
+- **`AGENTS.md`** — curated learnings and instructions for that area: a short,
+  bounded set of current-state facts (at most 15 per file) that the doc
+  gardener consolidates in place rather than appends to. Everything outside the
+  markers is human/agent-authored and preserved byte-for-byte.
 
 Coverage is configured by a committed [`agentsdocs.json`](agentsdocs.json)
 (include/exclude globs; hidden dirs and `changes/` are never covered). Without
@@ -305,13 +307,16 @@ skeleton, `.gitignore` handling, and a starter `opencode.json`.
   covered and never listed.
 - **Refresh**: closing a change computes the touched folders from its tasks'
   "Files affected" and enqueues a serialized doc-gardener job — one unattended
-  session updates those folders' docs, with each new learning citing the
-  change ID. The job also names **ancestor directories** as review-and-fix
-  targets: the gardener checks whether the change invalidated learnings in
-  the parents (a removed feature, a moved file) and fixes or deletes those
-  learnings, accounting for every removal in its reply. If the service is
-  down, folders are flagged stale and reconciled by the next run or
-  `POST /docs/refresh`.
+  session updates those folders' docs by **consolidating** the learnings
+  section: adding only durable knowledge, rewording or deleting entries the
+  change superseded, keeping every learning phrased as how the code works now
+  (never change narration, no change-ID prefixes — attribution lives in git
+  history), and holding each section to at most 15 entries. The job also names
+  **ancestor directories** as review-and-fix targets: the gardener checks
+  whether the change invalidated learnings in the parents (a removed feature, a
+  moved file) and fixes or deletes those learnings, accounting for every
+  removal in its reply. If the service is down, folders are flagged stale and
+  reconciled by the next run or `POST /docs/refresh`.
 - **Stale-reference lint**: a deterministic check scans every covered
   `AGENTS.md`'s learnings for backticked path-like references that no longer
   resolve anywhere in the repository and surfaces them as warnings. The

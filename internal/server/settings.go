@@ -46,11 +46,20 @@ var errSettingsBadScope = errors.New("settings scope must be project or personal
 // pointers (nil = unset, inherit from the lower layer); empty strings mean
 // unset.
 type Settings struct {
+	General GeneralSettings `json:"general"`
 	Session SessionSettings `json:"session"`
 	Prompts PromptSettings  `json:"prompts"`
 	Git     GitSettings     `json:"git"`
 	UI      UISettings      `json:"ui"`
 	Docs    DocsSettings    `json:"docs"`
+}
+
+// GeneralSettings holds repository-identity fields. ProjectName is the
+// display name shown next to the logo and as the browser tab title; empty
+// means the served directory's basename (computed at read time, never
+// persisted — see effectiveProjectName).
+type GeneralSettings struct {
+	ProjectName string `json:"projectName,omitempty"`
 }
 
 // SessionSettings configure defaults for newly spawned opencode sessions.
@@ -95,11 +104,19 @@ type DocsSettings struct {
 
 // EffectiveSettings is the concrete view with all defaults materialized.
 type EffectiveSettings struct {
+	General EffectiveGeneralSettings `json:"general"`
 	Session EffectiveSessionSettings `json:"session"`
 	Prompts PromptSettings           `json:"prompts"`
 	Git     GitSettings              `json:"git"`
 	UI      EffectiveUISettings      `json:"ui"`
 	Docs    EffectiveDocsSettings    `json:"docs"`
+}
+
+// EffectiveGeneralSettings resolves GeneralSettings to concrete values.
+// ProjectName is always non-empty: unset layers fall back to the served
+// directory's basename.
+type EffectiveGeneralSettings struct {
+	ProjectName string `json:"projectName"`
 }
 
 // EffectiveSessionSettings resolves SessionSettings to concrete values.
@@ -229,6 +246,8 @@ func mergeSettings(project, personal Settings) (EffectiveSettings, map[string]st
 		return def
 	}
 
+	eff.General.ProjectName = pickStr("general.projectName", project.General.ProjectName, personal.General.ProjectName)
+
 	eff.Session.Agent = pickStr("session.agent", project.Session.Agent, personal.Session.Agent)
 	eff.Session.Model = pickStr("session.model", project.Session.Model, personal.Session.Model)
 	eff.Session.AutoOpenTerminal = pickBool("session.autoOpenTerminal", true, project.Session.AutoOpenTerminal, personal.Session.AutoOpenTerminal)
@@ -251,16 +270,41 @@ func mergeSettings(project, personal Settings) (EffectiveSettings, map[string]st
 }
 
 // loadEffectiveSettings is the read path for behavior wiring: effective
-// view, sources map, and a non-fatal load error string.
+// view, sources map, and a non-fatal load error string. The project name
+// falls back to the served directory's basename when no layer sets it, so
+// the display name always exists and follows folder renames until
+// overridden.
 func loadEffectiveSettings(repoDir string) (EffectiveSettings, map[string]string, string) {
 	st := loadSettingsState(repoDir)
 	eff, sources := mergeSettings(st.Project, st.Personal)
+	if eff.General.ProjectName == "" {
+		eff.General.ProjectName = fallbackProjectName(repoDir)
+	}
 	return eff, sources, st.LoadErr
+}
+
+// fallbackProjectName is the default project display name: the repository
+// directory's basename, with a degenerate-empty guard.
+func fallbackProjectName(repoDir string) string {
+	if name := filepath.Base(repoDir); name != "" && name != "." && name != string(filepath.Separator) {
+		return name
+	}
+	return "lessmess"
+}
+
+// effectiveProjectName is the single read path for the displayed project
+// name: layered setting, falling back to the directory basename.
+func effectiveProjectName(repoDir string) string {
+	eff, _, loadErr := loadEffectiveSettings(repoDir)
+	if loadErr != "" {
+		slog.Warn("settings load failed; using defaults", "err", loadErr)
+	}
+	return eff.General.ProjectName
 }
 
 // applySettingsPatch validates a settings API body and writes one layer.
 // The body is a JSON object whose top-level keys are section names
-// ("session", "prompts", "git", "ui", "docs"); each present section
+// ("general", "session", "prompts", "git", "ui", "docs"); each present section
 // replaces that whole section in the layer (empty fields are dropped by
 // omitempty, so clearing a field restores inheritance). Sections absent
 // from the body are left untouched. Unknown sections or fields are
@@ -318,6 +362,8 @@ func patchSection(layer *Settings, section string, payload json.RawMessage) erro
 		return nil
 	}
 	switch section {
+	case "general":
+		return strict(&layer.General)
 	case "session":
 		return strict(&layer.Session)
 	case "prompts":

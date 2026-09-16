@@ -35,5 +35,7 @@ One row per change directory. This file is authoritative for change existence, t
 | [2026-09-15-2](2026-09-15-2/plan.md) | Per-task subagent sessions | PSB | — | Done | 2026-09-15 | 2026-09-16 |
 | [2026-09-15-lk9or](2026-09-15-lk9or/plan.md) | Sortable change index columns | IDX | — | Done | 2026-09-15 | 2026-09-15 |
 | [2026-09-16-le45q](2026-09-16-le45q/plan.md) | Nested task decomposition | NTD | — | Done | 2026-09-16 | 2026-09-16 |
-| [2026-09-16-7ueiv](2026-09-16-7ueiv/plan.md) | Accent color palette | ACC | — | Done | 2026-09-16 | 2026-09-16 |
+| [2026-09-16-7ueiv](2026-09-16-7ueiv/plan.md) | Accent color palette | ACC | — | Done | 2026-09-16 | 2026-09-17 |
 | [2026-09-16-j2g58](2026-09-16-j2g58/plan.md) | Deterministic change status endpoint | STS | — | Done | 2026-09-16 | 2026-09-16 |
+| [2026-09-16-43mc0](2026-09-16-43mc0/plan.md) | Curated doc learnings | LRN | — | In progress | 2026-09-16 | 2026-09-16 |
+| [2026-09-17-4esfh](2026-09-17-4esfh/plan.md) | Project name branding | PROJ | — | Done | 2026-09-17 | 2026-09-17 |

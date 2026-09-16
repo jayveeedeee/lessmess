@@ -23,20 +23,31 @@ import (
 
 // settingsResponse is the payload of GET /api/settings (and of a
 // successful PUT). Project/Personal are null when that layer's file does
-// not exist.
+// not exist. DefaultProjectName is the repository directory's basename —
+// what an unset general.projectName displays — so the settings UI can
+// placeholder it.
 type settingsResponse struct {
-	Effective EffectiveSettings `json:"effective"`
-	Project   *Settings         `json:"project"`
-	Personal  *Settings         `json:"personal"`
-	Sources   map[string]string `json:"sources"`
-	LoadError string            `json:"loadError,omitempty"`
+	Effective          EffectiveSettings `json:"effective"`
+	Project            *Settings         `json:"project"`
+	Personal           *Settings         `json:"personal"`
+	Sources            map[string]string `json:"sources"`
+	DefaultProjectName string            `json:"defaultProjectName,omitempty"`
+	LoadError          string            `json:"loadError,omitempty"`
 }
 
 // settingsAPIView builds the current settings payload.
 func settingsAPIView(repoDir string) settingsResponse {
 	st := loadSettingsState(repoDir)
 	eff, sources := mergeSettings(st.Project, st.Personal)
-	resp := settingsResponse{Effective: eff, Sources: sources, LoadError: st.LoadErr}
+	if eff.General.ProjectName == "" {
+		eff.General.ProjectName = fallbackProjectName(repoDir)
+	}
+	resp := settingsResponse{
+		Effective:          eff,
+		Sources:            sources,
+		DefaultProjectName: fallbackProjectName(repoDir),
+		LoadError:          st.LoadErr,
+	}
 	if fileExists(settingsProjectPath(repoDir)) {
 		resp.Project = &st.Project
 	}
@@ -225,12 +236,16 @@ type settingsOptionsResponse struct {
 	DefaultModel string             `json:"defaultModel,omitempty"`
 }
 
-// settingsAccentOpt is one palette entry for the accent picker; Hex is
-// the dark-theme base value (representative swatch color).
+// settingsAccentOpt is one palette entry for the accent picker; the four
+// color values let the client live-preview a pick by rewriting the head
+// style element without a round trip.
 type settingsAccentOpt struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-	Hex  string `json:"hex"`
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	Hex        string `json:"hex"`
+	DarkHover  string `json:"darkHover"`
+	Light      string `json:"light"`
+	LightHover string `json:"lightHover"`
 }
 
 // settingsAgentOpt is one selectable agent (primary, non-hidden only).
@@ -297,7 +312,10 @@ func settingsOptionsWith(oc *opencode.Client, repoDir string, w http.ResponseWri
 func accentOptions() []settingsAccentOpt {
 	out := make([]settingsAccentOpt, 0, len(AccentPalette))
 	for _, a := range AccentPalette {
-		out = append(out, settingsAccentOpt{ID: a.ID, Name: a.Label, Hex: a.Dark})
+		out = append(out, settingsAccentOpt{
+			ID: a.ID, Name: a.Label, Hex: a.Dark,
+			DarkHover: a.DarkHover, Light: a.Light, LightHover: a.LightHover,
+		})
 	}
 	return out
 }

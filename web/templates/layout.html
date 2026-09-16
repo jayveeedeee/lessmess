@@ -8,7 +8,7 @@
 // Apply the stored theme before first paint to avoid a flash.
 document.documentElement.dataset.theme = localStorage.getItem("tt-theme") || "dark";
 </script>
-<title>{{.Title}} · lessmess</title>
+<title>{{.ProjectName}}</title>
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
 <link rel="alternate icon" href="/favicon.ico">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
@@ -23,7 +23,7 @@ document.documentElement.dataset.theme = localStorage.getItem("tt-theme") || "da
 </head>
 <body data-page="{{.Page}}">
 <header>
-  <a class="brand" href="/" aria-label="lessmess home"><img class="brand-icon" src="/icon.svg" alt="lessmess" width="28" height="28"></a>
+  <a class="brand" href="/" aria-label="lessmess home"><img class="brand-icon" src="/icon.svg" alt="lessmess" width="28" height="28"><span class="brand-name">{{.ProjectName}}</span></a>
   {{if ne .Page "setup"}}
   <nav class="topnav">
     <a href="/"{{if or (eq .Page "index") (eq .Page "board")}} class="active"{{end}}>Changes</a>
@@ -44,6 +44,7 @@ document.documentElement.dataset.theme = localStorage.getItem("tt-theme") || "da
   <div class="terminal-window">
     <div class="terminal-head">
       <img class="brand-icon" src="/icon.svg" alt="" width="28" height="28">
+      <span class="brand-name">{{.ProjectName}}</span>
       <span id="terminal-title" class="title"></span>
       <button type="button" class="modal-close" data-close-terminal aria-label="Close">✕</button>
     </div>

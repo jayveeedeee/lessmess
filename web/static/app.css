@@ -97,6 +97,7 @@ header {
 .brand {
   display: inline-flex;
   align-items: center;
+  gap: 0.5rem;
   text-decoration: none;
 }
 .brand-icon {
@@ -104,6 +105,20 @@ header {
   width: 28px;
   height: 28px;
   border-radius: 50%;
+}
+.brand-name {
+  font-size: 0.98rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  max-width: 34vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.terminal-head .brand-name {
+  font-size: 0.85rem;
+  font-weight: 600;
+  max-width: 30vw;
 }
 
 #theme-toggle {

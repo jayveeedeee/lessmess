@@ -440,8 +440,10 @@ func NewSetup(dir string, boot func(string) (http.Handler, error)) *SetupServer 
 	m.HandleFunc("PUT /api/settings", s.env.putSettings)
 	m.HandleFunc("GET /api/settings/options", s.env.settingsOptions)
 	// Brand assets resolve read-only here: setup mode never rolls an
-	// accent (no store yet), so the wizard shows the default orange.
+	// accent (no store yet), so the wizard shows the default orange. The
+	// project name reads the same layered settings the wizard edits.
 	s.env.rend.accent = func() AccentColor { return effectiveAccentColor(dir) }
+	s.env.rend.projectName = func() string { return effectiveProjectName(dir) }
 	brand := newBrandRenderer(s.env.rend.accent)
 	m.HandleFunc("GET /icon.svg", brand.svg)
 	m.HandleFunc("GET /favicon.ico", brand.ico)

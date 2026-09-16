@@ -1,7 +1,7 @@
 <!-- tasktracker:begin -->
 # Structure: internal/server
 
-<!-- tasktracker-meta: refreshed=2026-09-16 source=2026-09-16-7ueiv tree=e46912ae6a27 -->
+<!-- tasktracker-meta: refreshed=2026-09-17 source=2026-09-17-4esfh tree=a92805fc3c7a -->
 
 HTTP server over the store: HTML pages, JSON endpoints, SSE updates, session mapping, PTY terminal, and the docs refresh queue
 
@@ -39,6 +39,7 @@ HTTP server over the store: HTML pages, JSON endpoints, SSE updates, session map
 | `onboarding_test.go` | Tests for onboarding roundtrip, fail-open parsing, and pending detection. |
 | `prereqs.go` | Wizard prerequisite probes (opencode binary and service, git, writable repo) served at GET /api/setup/prereqs, with injectable fakes. |
 | `prereqs_test.go` | Tests for the prerequisite checks using faked probes. |
+| `projectnamechrome_test.go` | — |
 | `render.go` | HTML templates, markdown rendering, static assets |
 | `render_nested_test.go` | Tests for nested board markup, task-detail doc context, and the container ledger endpoint. |
 | `render_test.go` | Tests for rendering and HTML pages |
@@ -50,6 +51,7 @@ HTTP server over the store: HTML pages, JSON endpoints, SSE updates, session map
 | `settingsapi_test.go` | Tests for settings API reads, writes, validation, and degraded options responses. |
 | `settingschange.go` | Settings-page Change button: POST /api/settings/change starts or reuses a settings-primed discussion. |
 | `settingschange_test.go` | Tests for the settings Change flow: fresh, reused, and rejected discussions. |
+| `settingsgeneral_test.go` | — |
 | `settingswiring_test.go` | Tests for settings wiring into session spawn defaults, prompt addenda, branch recording, the gardener gate, and archived filtering. |
 | `setup.go` | First-run setup wizard: serves the wizard page and /api/setup/* endpoints when the repo has no changes/ tree, then hot-swaps to the full server after bootstrap. |
 | `setup_test.go` | Tests for the setup shell, its wizard page, and route guards. |

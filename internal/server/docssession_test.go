@@ -84,7 +84,7 @@ func goodAgent(root, dir string) {
 		}
 	}
 	os.WriteFile(p, []byte(strings.Join(lines, "\n")), 0o644)
-	agents := model.DocMarkerBegin + "\n## Learnings\n\n- (2026-09-10-0) fixture learning\n" + model.DocMarkerEnd + "\n"
+	agents := model.DocMarkerBegin + "\n## Learnings\n\n- fixture learning\n" + model.DocMarkerEnd + "\n"
 	os.WriteFile(filepath.Join(root, filepath.FromSlash(dir), docs.AgentsFile), []byte(agents), 0o644)
 }
 
@@ -102,7 +102,7 @@ func TestGardenerHappyPath(t *testing.T) {
 		t.Fatalf("prompts: %d", len(fake.prompts))
 	}
 	p := fake.prompts[0]
-	for _, want := range []string{"2026-09-10-0", "Fixture change", "internal/model", "tasktracker-meta", "(2026-09-10-0)"} {
+	for _, want := range []string{"2026-09-10-0", "Fixture change", "internal/model", "tasktracker-meta", "15 learnings", "no provenance prefixes"} {
 		if !strings.Contains(p, want) {
 			t.Errorf("prompt missing %q", want)
 		}
@@ -116,8 +116,8 @@ func TestGardenerHappyPath(t *testing.T) {
 		t.Error("meta not stamped with the change ID")
 	}
 	agents := readDocFile(t, root, "internal/model/AGENTS.md")
-	if !strings.Contains(agents, "(2026-09-10-0) fixture learning") {
-		t.Error("learning with change citation missing")
+	if !strings.Contains(agents, "- fixture learning") {
+		t.Error("consolidated learning missing")
 	}
 	// The root skeleton was built by the deterministic pass and quotes the
 	// freshly written child purpose after the settle pass.
@@ -220,7 +220,7 @@ func TestGardenerToleratesMissingDirs(t *testing.T) {
 
 func TestGardenerManualPrompt(t *testing.T) {
 	p := gardenerPrompt(DocsJob{Change: "manual", Title: "manual reconciliation"}, []*docs.Dir{{Rel: "web"}}, nil)
-	for _, want := range []string{"MANUAL reconciliation", "(manual)", "web"} {
+	for _, want := range []string{"MANUAL reconciliation", "no provenance prefixes", "15 learnings", "web"} {
 		if !strings.Contains(p, want) {
 			t.Errorf("manual prompt missing %q", want)
 		}
@@ -260,7 +260,7 @@ func TestGardenerPromptReviewSection(t *testing.T) {
 	for _, want := range []string{
 		"REVIEW-AND-FIX", "- internal\n", "- .\n",
 		"DELETE", "expected and correct", "account for your work",
-		"(2026-09-10-0)", "changes/2026-09-10-0/",
+		"no provenance prefix", "15 learnings", "changes/2026-09-10-0/",
 		"tasktracker-meta", // update-section step still intact
 	} {
 		if !strings.Contains(p, want) {

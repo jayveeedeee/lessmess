@@ -109,7 +109,7 @@ Do exactly this, and touch ONLY %[1]s/STRUCTURE.md and %[1]s/AGENTS.md:
    - Replace the — purpose line with ONE concise sentence describing the directory's role.
    - Replace every remaining — file-entry purpose with a concise phrase (a few words, no trailing period).
    - Do NOT add, remove, reorder, or rename entries. Do NOT touch the tasktracker-meta line, covered-subdirectory rows, the heading, or the table structure. Do not use the characters | or newlines inside table cells.
-3. In AGENTS.md (create it if needed), add or extend ONE `+"`<!-- tasktracker:begin -->`"+`/`+"`<!-- tasktracker:end -->`"+` auto section with 2–5 brief learnings for an agent working in this directory (purpose, key types/files, conventions, gotchas).
+3. In AGENTS.md (create it if needed), add or extend ONE `+"`<!-- tasktracker:begin -->`"+`/`+"`<!-- tasktracker:end -->`"+` auto section with 2–5 brief learnings for an agent working in this directory (purpose, key types/files, conventions, gotchas). Phrase each learning as a current-state fact about how the code works — no change narration, no provenance prefixes — and keep the section minimal.
    HARD RULES:
    - The file must end up with EXACTLY ONE begin marker and EXACTLY ONE end marker. Never write these marker strings anywhere else in the file — no prose mentions, no examples, no duplicates.
    - If AGENTS.md already exists, your ONLY edit is to append the auto section at the very END of the file (or extend the existing one in place). Do not re-read, reorganize, reformat, annotate, or "improve" any pre-existing content, however tempting — preserve it byte for byte.

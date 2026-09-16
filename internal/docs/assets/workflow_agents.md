@@ -284,7 +284,7 @@ Tools (servers, validators, UIs) keep their own state in a `.lessmess/` director
 lessmess maintains agent-facing docs in every covered folder (coverage is set by the committed `agentsdocs.json`; hidden dirs and `changes/` are never covered):
 
 - `STRUCTURE.md` is a machine-owned map of the folder's entries, their purposes, and child rollups, plus freshness metadata. It is regenerated wholesale. Never hand-edit inside its `tasktracker:begin` / `tasktracker:end` HTML-comment markers.
-- `AGENTS.md` (in a covered folder) holds curated learnings and instructions for that area. Content outside the markers is human/agent-authored and preserved byte-for-byte; the marker-guarded auto section is machine-maintained (new learnings cite their source change ID, `seed`, or `manual`).
+- `AGENTS.md` (in a covered folder) holds curated learnings and instructions for that area. Content outside the markers is human/agent-authored and preserved byte-for-byte; the marker-guarded auto section is machine-maintained — it holds only current-state learnings (how the code works now, never change narration), with no provenance prefixes, at most 15 entries per file, consolidated in place whenever a change supersedes existing content. Attribution lives in git history, not in the text.
 
 When entering a folder, read its `STRUCTURE.md` for orientation and its `AGENTS.md` for local learnings before editing. Keep both accurate when you change that area (per the update rule above): edit only outside the markers; the doc gardener maintains the auto sections when a change closes.
 

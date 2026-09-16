@@ -24,11 +24,18 @@
   <section class="settings-section" data-section="general">
     <div class="settings-section-head">
       <h2>General</h2>
+      <button type="button" data-save>Save</button>
+      <span class="settings-status" hidden></span>
+    </div>
+    <div class="settings-field" data-field="general.projectName" data-kind="string">
+      <label>Project name <span class="src-badge" data-badge></span><button type="button" class="settings-change" title="Discuss changing this setting">✦ change</button></label>
+      <input type="text" data-input autocomplete="off" spellcheck="false">
+      <p class="muted field-help">Shown next to the logo (including the terminal) and as the browser tab title. Empty uses the repository folder's name.</p>
     </div>
     <div class="settings-field">
       <label>Onboarding wizard</label>
       <a class="btn-ghost settings-wizard-btn" href="/setup">Re-run the onboarding wizard</a>
-      <p class="muted field-help">Five steps: prerequisites, bootstrap, default agent and model, optional docs seeding, finish. Runs on top of the current repository — existing artifacts are kept.</p>
+      <p class="muted field-help">Six steps: prerequisites, project name, bootstrap, default agent and model, optional docs seeding, finish. Runs on top of the current repository — existing artifacts are kept.</p>
     </div>
   </section>
 
@@ -132,7 +139,8 @@
     <div class="settings-field" data-field="ui.accent" data-kind="accent">
       <label>Accent color <span class="src-badge" data-badge></span><button type="button" class="settings-change" title="Discuss changing this setting">✦ change</button></label>
       <div class="accent-swatches" data-input data-value=""></div>
-      <p class="muted field-help">Brand color across the UI and favicon. Rolled randomly on first run; Auto in both layers rolls a fresh color on the next page load.</p>
+      <p class="accent-shadow-note muted" hidden></p>
+      <p class="muted field-help">Brand color across the UI and favicon. Pick to preview it instantly, then press Save to keep it. Auto in both layers rolls a fresh random color on the next page load.</p>
     </div>
   </section>
 

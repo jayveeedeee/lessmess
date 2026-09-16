@@ -114,6 +114,7 @@ func New(st *store.Store) *Server {
 	// Dynamic brand assets: the effective accent injected into the icon
 	// SVG, the favicon rasters, and the apple-touch tile.
 	s.rend.accent = func() AccentColor { return ResolveAccent(s.st.Dir) }
+	s.rend.projectName = func() string { return effectiveProjectName(s.st.Dir) }
 	brand := newBrandRenderer(s.rend.accent)
 	mux.HandleFunc("GET /icon.svg", brand.svg)
 	mux.HandleFunc("GET /favicon.ico", brand.ico)

@@ -1345,6 +1345,26 @@
     var view = null;
     var options = null;
     var scope = "project";
+    // True between a swatch click and the next legitimate re-sync (load,
+    // scope switch, successful save): render() must not clobber the
+    // pending pick with the layer's stored value in that window.
+    var accentTouched = false;
+    // Palette entries by id (filled when the swatches are built), so a
+    // pick can live-preview by rewriting the head style element.
+    var accentsById = {};
+
+    // previewAccent rewrites the #accent-style element so a pending pick
+    // is visible before saving; with no id it falls back to the effective
+    // accent (or the default), which is also how a pick is un-done.
+    function previewAccent(id) {
+      var el = document.getElementById("accent-style");
+      if (!el) return;
+      var effId = (view && view.effective && view.effective.ui && view.effective.ui.accent) || "orange";
+      var a = accentsById[id || effId] || accentsById.orange;
+      if (!a) return;
+      el.textContent = ':root{--accent:' + a.hex + ';--accent-hover:' + a.darkHover +
+        '}[data-theme="light"]{--accent:' + a.light + ';--accent-hover:' + a.lightHover + '}';
+    }
 
     var BOOL_DEFAULTS = {
       "session.autoOpenTerminal": true,
@@ -1365,6 +1385,7 @@
       var v = getPath(other, field);
       if (isSet(v)) return v;
       if (field === "docs.gardenerModel") return getPath(view.effective, "session.model");
+      if (field === "general.projectName") return (view && view.defaultProjectName) || undefined;
       if (field in BOOL_DEFAULTS) return BOOL_DEFAULTS[field];
       return undefined;
     }
@@ -1374,6 +1395,7 @@
         return isSet(fb) ? "Session model (" + fb + ")" : "Service default";
       }
       if (isSet(fb)) return String(fb);
+      if (field === "general.projectName") return (view && view.defaultProjectName) || "";
       if (field === "session.agent") return "Service default";
       if (field === "session.model") {
         return options && options.defaultModel ? "Service default (" + options.defaultModel + ")" : "Service default";
@@ -1398,16 +1420,30 @@
           var fbLabel = isSet(fb) ? boolLabel(fb) : boolLabel(BOOL_DEFAULTS[field]);
           input.options[0].textContent = "Inherit (" + fbLabel + ")";
         } else if (kind === "accent") {
-          // The picker's value lives on the container; chips are marked
-          // selected once renderOptions has built them.
-          input.setAttribute("data-value", isSet(lv) ? lv : "");
+          // The picker's pending selection lives on the container as
+          // data-value. Only sync it from the layer while untouched, and
+          // always mark the chip matching the current data-value.
+          if (!accentTouched) {
+            input.setAttribute("data-value", isSet(lv) ? lv : "");
+          }
+          var picked = input.getAttribute("data-value") || "";
           input.querySelectorAll(".accent-swatch").forEach(function (chip) {
             var id = chip.getAttribute("data-id") || "";
-            chip.classList.toggle("selected", id === (isSet(lv) ? lv : ""));
+            chip.classList.toggle("selected", id === picked);
             if (id === "") {
               chip.title = isSet(fb) ? "Auto — inherits " + fb + " until you roll again" : "Auto — a fresh random color";
             }
           });
+          // Surface layering: personal wins over project, so a save into
+          // the project scope is shadowed whenever the personal layer
+          // defines the accent — point the user at the right scope.
+          var note = f.querySelector(".accent-shadow-note");
+          if (note) {
+            var srcNow = (view.sources && view.sources[field]) || "default";
+            var shadowed = scope === "project" && srcNow === "personal";
+            note.textContent = shadowed ? "A personal-layer override wins over this scope — switch the scope to Personal to change the color." : "";
+            note.hidden = !shadowed;
+          }
         } else {
           input.value = isSet(lv) ? lv : "";
           input.placeholder = placeholderFor(field, fb);
@@ -1432,11 +1468,17 @@
 
     function renderOptions() {
       var hint = document.getElementById("settings-options-hint");
-      if (!options || !options.available) {
+      if (!options) {
         hint.hidden = false;
         return;
       }
-      hint.hidden = true;
+      // The accent palette is static server data — build the picker even
+      // when the opencode service is unreachable.
+      buildAccentSwatches();
+      if (!options.available) {
+        hint.hidden = false;
+        return;
+      }
       var al = document.getElementById("settings-agent-list");
       (options.agents || []).forEach(function (a) {
         var o = document.createElement("option");
@@ -1451,44 +1493,66 @@
         o.label = m.name;
         ml.appendChild(o);
       });
+      hint.hidden = true;
+    }
 
-      // Accent swatches: the palette is static server data (always present
-      // in the options payload, even when the service is offline).
+    // buildAccentSwatches fills the ui.accent picker once per options
+    // load: one chip per palette entry plus the Auto chip. Chips only set
+    // the container's pending data-value (and flag it as touched) — the
+    // actual PUT happens with the section's Save button.
+    function buildAccentSwatches() {
       var sw = root.querySelector('[data-field="ui.accent"] [data-input]');
-      if (sw) {
-        sw.innerHTML = "";
-        (options.accents || []).forEach(function (a) {
-          var chip = document.createElement("button");
-          chip.type = "button";
-          chip.className = "accent-swatch";
-          chip.style.background = a.hex;
-          chip.setAttribute("data-id", a.id);
-          chip.setAttribute("data-label", a.name);
-          chip.title = a.name;
-          chip.addEventListener("click", function () {
-            sw.setAttribute("data-value", a.id);
-            render();
-          });
-          sw.appendChild(chip);
-        });
-        var auto = document.createElement("button");
-        auto.type = "button";
-        auto.className = "accent-swatch accent-inherit";
-        auto.setAttribute("data-id", "");
-        auto.textContent = "Auto";
-        auto.title = "Auto — a fresh random color";
-        auto.addEventListener("click", function () {
-          sw.setAttribute("data-value", "");
+      if (!sw || sw.childElementCount) return;
+      accentsById = {};
+      (options.accents || []).forEach(function (a) {
+        accentsById[a.id] = a;
+        var chip = document.createElement("button");
+        chip.type = "button";
+        chip.className = "accent-swatch";
+        chip.style.background = a.hex;
+        chip.setAttribute("data-id", a.id);
+        chip.setAttribute("data-label", a.name);
+        chip.title = a.name + " — click to preview, Save to keep";
+        chip.addEventListener("click", function () {
+          accentTouched = true;
+          sw.setAttribute("data-value", a.id);
+          previewAccent(a.id);
           render();
         });
-        sw.appendChild(auto);
+        sw.appendChild(chip);
+      });
+      var auto = document.createElement("button");
+      auto.type = "button";
+      auto.className = "accent-swatch accent-inherit";
+      auto.setAttribute("data-id", "");
+      auto.textContent = "Auto";
+      auto.title = "Auto — a fresh random color";
+      auto.addEventListener("click", function () {
+        accentTouched = true;
+        sw.setAttribute("data-value", "");
+        previewAccent(null);
         render();
-      }
+      });
+      sw.appendChild(auto);
+      if (view) render();
+    }
+
+    // syncAccentValues resets the picker's pending selection to the layer
+    // being edited: initial load, scope switch, and successful save.
+    function syncAccentValues() {
+      accentTouched = false;
+      var layer = scope === "project" ? view.project : view.personal;
+      root.querySelectorAll('[data-field="ui.accent"] [data-input]').forEach(function (input) {
+        var lv = getPath(layer, "ui.accent");
+        input.setAttribute("data-value", isSet(lv) ? lv : "");
+      });
     }
 
     root.querySelectorAll('input[name="settings-scope"]').forEach(function (radio) {
       radio.addEventListener("change", function () {
         scope = radio.value;
+        if (view) syncAccentValues();
+        previewAccent(null); // discard any un-saved preview
         render();
       });
     });
@@ -1567,7 +1631,12 @@
         })
           .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.statusText); return j; }); })
           .then(function (j) {
+            // The project name is server-rendered chrome (header, tab
+            // title): reload so it repaints from the saved value.
+            if (section === "general") { location.reload(); return; }
             view = j;
+            syncAccentValues();
+            previewAccent(null); // the saved value is now the effective one
             render();
             status.textContent = "Saved ✓";
             setTimeout(function () { status.hidden = true; }, 2500);
@@ -1834,10 +1903,11 @@
       excludedCount: 0,      // dirs excluded from coverage at bootstrap
       agentSaved: false,
       agentSkipped: false,
+      nameSaved: false,
       docsOutcome: "",       // "seeded" | "skipped" | "pending" (failed)
     };
 
-    var steps = ["prereqs", "bootstrap", "agent", "docs", "finish"];
+    var steps = ["prereqs", "name", "bootstrap", "agent", "docs", "finish"];
 
     function el(id) { return document.getElementById(id); }
 
@@ -1863,6 +1933,7 @@
       });
       el("setup-step-indicator").textContent = "Step " + (vis.indexOf(name) + 1) + " of " + vis.length;
       showError("");
+      if (name === "name") enterName();
       if (name === "bootstrap") enterBootstrap();
       if (name === "agent" && !optionsLoaded) loadAgentOptions();
       if (name === "finish") renderFinish();
@@ -1920,7 +1991,51 @@
     }
 
     el("setup-recheck-btn").addEventListener("click", function () { loadPrereqs(); });
-    el("setup-prereqs-next").addEventListener("click", function () { showStep("bootstrap"); });
+    el("setup-prereqs-next").addEventListener("click", function () { showStep("name"); });
+
+    // --- step 2: project name ---
+
+    // Prefill from the effective settings (already carries the folder-name
+    // fallback); only fill an untouched input so re-entering the step
+    // never clobbers an edit, and degrade silently offline.
+    function enterName() {
+      var input = el("setup-project-name");
+      if (input.value !== "") return;
+      fetch("/api/settings", { headers: { Accept: "application/json" } })
+        .then(function (r) { return r.json(); })
+        .then(function (j) {
+          if (input.value !== "") return;
+          if (j.effective && j.effective.general && j.effective.general.projectName) {
+            input.value = j.effective.general.projectName;
+          }
+          if (j.defaultProjectName) input.placeholder = j.defaultProjectName;
+        })
+        .catch(function () {});
+    }
+
+    function nameScope() {
+      var r = root.querySelector('input[name="setup-name-scope"]:checked');
+      return r ? r.value : "project";
+    }
+
+    el("setup-name-save").addEventListener("click", function () {
+      var status = el("setup-name-status");
+      var payload = { general: { projectName: el("setup-project-name").value.trim() } };
+      status.textContent = "Saving…";
+      fetch("/api/settings?scope=" + nameScope(), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify(payload),
+      })
+        .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.statusText); return j; }); })
+        .then(function () {
+          state.nameSaved = true;
+          status.textContent = "Saved ✓";
+          showStep("bootstrap");
+        })
+        .catch(function (e) { status.textContent = e.message; });
+    });
+    el("setup-name-skip").addEventListener("click", function () { showStep("bootstrap"); });
 
     // --- step 2: bootstrap ---
 
@@ -2218,6 +2333,7 @@
       ul.innerHTML = "";
       var items = [];
       items.push(state.bootstrapped ? "Repository bootstrapped" : "Repository was already initialized");
+      items.push(state.nameSaved ? "Project name saved" : "Project name follows the folder name");
       items.push(state.agentSaved ? "Default agent/model saved" : "Using the service's default agent/model");
       if (state.coverage) {
         var exNote = state.excludedCount ? " — " + state.excludedCount + " director" + (state.excludedCount === 1 ? "y" : "ies") + " excluded" : "";
@@ -2238,6 +2354,7 @@
       var btn = el("setup-finish-btn");
       btn.disabled = true;
       var stepMarks = {};
+      if (state.nameSaved) stepMarks.name = "set";
       if (state.agentSaved) stepMarks.agent = "set";
       else if (state.agentSkipped) stepMarks.agent = "skipped";
       if (state.docsOutcome === "skipped") stepMarks.docs = "skipped";

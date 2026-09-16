@@ -68,6 +68,8 @@ type settingsChangeRequest struct {
 // settingsFieldValue extracts one effective value by dotted path.
 func settingsFieldValue(e EffectiveSettings, field string) (string, bool) {
 	switch field {
+	case "general.projectName":
+		return e.General.ProjectName, true
 	case "session.agent":
 		return e.Session.Agent, true
 	case "session.model":

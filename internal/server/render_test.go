@@ -139,8 +139,9 @@ func TestSettingsPageHTML(t *testing.T) {
 	for _, want := range []string{
 		`id="settings-page"`, `data-page="settings"`, "Prompt addenda",
 		`class="settings-nav"`,
-		`data-group="session"`, `data-group="prompts"`, `data-group="git"`,
+		`data-group="general"`, `data-group="session"`, `data-group="prompts"`, `data-group="git"`,
 		`data-group="ui"`, `data-group="docs"`,
+		`data-field="general.projectName"`,
 		`data-field="session.agent"`, `data-field="session.model"`,
 		`data-field="prompts.discussion"`, `data-field="prompts.change"`,
 		`data-field="prompts.commit"`, `data-field="prompts.repoCommit"`,
@@ -171,8 +172,11 @@ func TestSetupPageHTML(t *testing.T) {
 	body := w.Body.String()
 	for _, want := range []string{
 		`id="setup-page"`, `data-page="setup"`, "Set up lessmess",
-		`data-step="prereqs"`, `data-step="bootstrap"`, `data-step="agent"`,
+		`data-step="prereqs"`, `data-step="name"`, `data-step="bootstrap"`, `data-step="agent"`,
 		`data-step="docs"`, `data-step="finish"`,
+		`data-step-nav="name"`,
+		`id="setup-project-name"`, `id="setup-name-save"`, `id="setup-name-skip"`,
+		`name="setup-name-scope"`,
 		`id="setup-prereq-list"`, `id="setup-recheck-btn"`, `id="setup-prereqs-next"`,
 		`id="setup-coverage"`, `id="setup-bootstrap-btn"`,
 		`id="setup-exclude-list"`,

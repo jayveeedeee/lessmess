@@ -165,6 +165,13 @@ func TestSettingsOptionsExposeAccents(t *testing.T) {
 	if resp.Accents[0].ID != "orange" || resp.Accents[0].Hex != DefaultAccent().Dark {
 		t.Errorf("first accent = %+v, want orange with its dark hex", resp.Accents[0])
 	}
+	// The client live-previews picks from these values, so all four must
+	// be present for every entry.
+	for _, a := range resp.Accents {
+		if a.Hex == "" || a.DarkHover == "" || a.Light == "" || a.LightHover == "" {
+			t.Errorf("accent %q missing color values: %+v", a.ID, a)
+		}
+	}
 }
 
 func TestSettingsChangeAllowlistAccent(t *testing.T) {
