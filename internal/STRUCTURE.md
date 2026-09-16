@@ -1,7 +1,7 @@
 <!-- tasktracker:begin -->
 # Structure: internal
 
-<!-- tasktracker-meta: refreshed=2026-09-14 source=2026-09-13-4 tree=c8d6d181abd5 -->
+<!-- tasktracker-meta: refreshed=2026-09-16 source=2026-09-16-7ueiv tree=5038879ac65c -->
 
 Core Go packages behind the tasktracker binary: workflow model, store, HTTP server, docs management, opencode client, and terminal sessions.
 

@@ -1,7 +1,7 @@
 <!-- tasktracker:begin -->
 # Structure: internal/model
 
-<!-- tasktracker-meta: refreshed=2026-09-12 source=seed tree=e163636b37e6 -->
+<!-- tasktracker-meta: refreshed=2026-09-16 source=2026-09-16-7ueiv tree=f5f5945f4bd6 -->
 
 Parses and serializes the markdown files of the `changes/` workflow defined in AGENTS.md.
 
@@ -20,5 +20,8 @@ Parses and serializes the markdown files of the `changes/` workflow defined in A
 | `serialize_test.go` | Tests for ledger mutation, templates, and atomic writes |
 | `table.go` | Markdown table parsing, rendering, and link cells |
 | `taskfile.go` | Parses task-file YAML frontmatter |
+| `taskid.go` | Dotted task-ID helpers for nested decomposition: parent, child, last segment, depth, and segment validation. |
+| `taskid_test.go` | Tests for the dotted task-ID helpers. |
+| `taskledger_test.go` | Tests for the container task-ledger format: minimal headers, parse, render round-trip, and shared row mutations. |
 | `templates.go` | Renders new task, plan, and ledger files |
 <!-- tasktracker:end -->

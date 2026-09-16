@@ -135,22 +135,30 @@ func listPrimaryAgents(ctx context.Context, oc *opencode.Client, repoDir string)
 	return out, nil
 }
 
-// validateSessionSettings checks a PUT body's model-carrying sections
-// against the live service: a non-empty agent must be a primary,
-// non-hidden agent, and non-empty models (session.model,
-// docs.gardenerModel) must exist — both scoped to the served repository,
-// so project-defined agents/providers count. A nil error means "save".
-// Any query failure skips validation — offline saves stay possible.
+// validateSessionSettings checks a PUT body's option-carrying sections:
+// a non-empty agent must be a primary, non-hidden agent, non-empty models
+// (session.model, docs.gardenerModel) must exist — both scoped to the
+// served repository, so project-defined agents/providers count — and a
+// non-empty ui.accent must be a palette id. Agent/model validation is
+// skipped when the service cannot be queried (offline saves stay
+// possible); accent validation is offline and always enforced. A nil
+// error means "save".
 func validateSessionSettings(ctx context.Context, oc *opencode.Client, repoDir string, body []byte) error {
-	if oc == nil {
-		return nil
-	}
 	var submitted struct {
 		Session *SessionSettings `json:"session"`
 		Docs    *DocsSettings    `json:"docs"`
+		UI      *UISettings      `json:"ui"`
 	}
 	if err := json.Unmarshal(body, &submitted); err != nil {
 		return nil // malformed bodies are rejected by applySettingsPatch
+	}
+	if submitted.UI != nil {
+		if err := validateAccentChoice(strings.TrimSpace(submitted.UI.Accent)); err != nil {
+			return err
+		}
+	}
+	if oc == nil {
+		return nil
 	}
 	if submitted.Session == nil && submitted.Docs == nil {
 		return nil
@@ -207,12 +215,22 @@ func validateModelChoice(ctx context.Context, oc *opencode.Client, repoDir, mode
 
 // settingsOptionsResponse is the payload of GET /api/settings/options.
 // Available is false when the opencode service is unreachable — the page
-// then shows a hint and keeps values editable as text.
+// then shows a hint and keeps values editable as text. Accents is the
+// static palette and is always populated.
 type settingsOptionsResponse struct {
-	Available    bool                `json:"available"`
-	Agents       []settingsAgentOpt  `json:"agents"`
-	Models       []settingsModelOpt  `json:"models"`
-	DefaultModel string              `json:"defaultModel,omitempty"`
+	Available    bool               `json:"available"`
+	Agents       []settingsAgentOpt `json:"agents"`
+	Models       []settingsModelOpt `json:"models"`
+	Accents      []settingsAccentOpt `json:"accents"`
+	DefaultModel string             `json:"defaultModel,omitempty"`
+}
+
+// settingsAccentOpt is one palette entry for the accent picker; Hex is
+// the dark-theme base value (representative swatch color).
+type settingsAccentOpt struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Hex  string `json:"hex"`
 }
 
 // settingsAgentOpt is one selectable agent (primary, non-hidden only).
@@ -240,7 +258,7 @@ func (s *Server) settingsOptions(w http.ResponseWriter, r *http.Request) {
 // the normal server and the setup-mode shell: live agents and models from
 // the opencode service, degrading to available:false.
 func settingsOptionsWith(oc *opencode.Client, repoDir string, w http.ResponseWriter, r *http.Request) {
-	resp := settingsOptionsResponse{Agents: []settingsAgentOpt{}, Models: []settingsModelOpt{}}
+	resp := settingsOptionsResponse{Agents: []settingsAgentOpt{}, Models: []settingsModelOpt{}, Accents: accentOptions()}
 	if oc == nil {
 		writeJSON(w, http.StatusOK, resp)
 		return
@@ -273,4 +291,13 @@ func settingsOptionsWith(oc *opencode.Client, repoDir string, w http.ResponseWri
 	}
 	resp.Available = true
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// accentOptions renders the static palette for the options endpoint.
+func accentOptions() []settingsAccentOpt {
+	out := make([]settingsAccentOpt, 0, len(AccentPalette))
+	for _, a := range AccentPalette {
+		out = append(out, settingsAccentOpt{ID: a.ID, Name: a.Label, Hex: a.Dark})
+	}
+	return out
 }

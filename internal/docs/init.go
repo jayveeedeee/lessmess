@@ -24,7 +24,7 @@ func WorkflowInstructions() string { return workflowAgents }
 // AGENTS.md root-ledger schema (including the required header sentence).
 const rootLedgerSkeleton = `# Changes — Root Ledger
 
-One row per change directory. This file is authoritative for change existence, task-ID prefixes, and overall change status only. Task statuses live exclusively in each change's ` + "`ledger.md`" + `.
+One row per change directory. This file is authoritative for change existence, task-ID prefixes, and overall change status only. Task statuses live exclusively in the ledger that governs the task — the change's ` + "`ledger.md`" + ` for top-level tasks, the parent task container's ` + "`ledger.md`" + ` below that.
 
 | Change | Title | ID prefix | Branch | Status | Created | Last updated |
 | --- | --- | --- | --- | --- | --- | --- |

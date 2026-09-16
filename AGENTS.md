@@ -61,7 +61,7 @@ Rules:
 
 1. One row per change directory. Add the row when the change directory is created.
 2. The root ledger is authoritative for change existence, task-ID prefixes, and overall change status only. It must never contain task rows.
-3. Task statuses live exclusively in each change's `ledger.md`.
+3. Task statuses live exclusively in the ledger that governs the task: the change's `ledger.md` for top-level tasks, the parent task container's `ledger.md` below that.
 4. Update a row only when the change is created, its overall status changes, or it is archived.
 5. Rows are append-mostly; edit existing cells only for status, date, or link updates.
 
@@ -77,7 +77,7 @@ Exact table schema (column names are fixed):
 - `ID prefix` is the change-specific task-ID prefix (see "Task files"), registered here so prefixes stay unique across changes. Use `—` if the change uses unprefixed numeric IDs.
 - `Status` is the overall change status: `Planned`, `In progress`, `Blocked`, `Done`, or `Cancelled`.
 - Use `—` for empty cells; do not use a literal `|` inside cell text.
-- The file header must state: "Task statuses live exclusively in each change's `ledger.md`."
+- The file header must state: "Task statuses live exclusively in the ledger that governs the task — the change's `ledger.md` for top-level tasks, the parent task container's `ledger.md` below that."
 
 ### `plan.md`
 
@@ -126,7 +126,7 @@ Format rules:
    ---
    ```
 
-2. The frontmatter `id` must match the task's row in the change ledger, and its numeric suffix must match the filename sequence.
+2. The frontmatter `id` must match the task's row in its governing ledger (see "Task decomposition"), and its last numeric segment must match the filename sequence within its directory.
 3. Frontmatter carries identity only. Status, ordering, and dependencies are recorded solely in the change ledger — never duplicate them into task files.
 4. After the frontmatter, use this skeleton (content grows under each heading, but the heading set and order stay fixed):
 
@@ -167,9 +167,32 @@ Each task file must contain:
 
 Add a new task file and ledger row when implementation reveals material work that is not represented by an existing task. Do not hide unplanned work inside an unrelated task.
 
+### Task decomposition (sub plans)
+
+Any task may be decomposed into subtasks when it proves to need detailed work. A decomposed task keeps its file and gains a sibling container directory:
+
+```text
+tasks/
+  00-engine.md            the task, unchanged
+  00-engine/              container, exists only for decomposed tasks
+    ledger.md             rows for the container's child tasks only
+    tasks/
+      01-urls.md          subtask
+      01-urls/            recursion, any depth
+```
+
+Rules:
+
+1. A directory under `tasks/` is valid only as the container of the sibling task file with the same name (minus `.md`). A task file without a container is a plain task.
+2. Every container contains `ledger.md` and `tasks/`. Loose supporting artifacts may live inside a container, as in a change directory. A container never holds a `plan.md`; the task file itself remains the task's detail document.
+3. Child IDs extend the parent's with dotted segments: `EXC-00` → `EXC-00.00` → `EXC-00.00.01`. Each level numbers from `00`, zero-padded to two digits, and the final segment must match the filename sequence within the container.
+4. A task's status lives in its governing ledger: the change ledger for top-level tasks, the parent container's ledger below that. A container ledger uses the same pinned task-table schema, status vocabulary, and row-order-as-priority semantics as the change ledger, with minimal headers (`- Task: <id> (change <change-id>)` and `- Last updated:`) and one row per child task.
+5. Decomposition is user-instructed only: a board action, an explicit instruction in a session, or part of a plan the user approved. Agents may propose decompositions when work reveals complexity, but never create containers unprompted. Removing a decomposition means deleting the container directory; its children go with it.
+6. Progress rollup is display-only. Tools may compute and show aggregate progress for a task from its descendants (`Test` and `Done` count as complete; `Cancelled` leaves the denominator), but never write a status on rollup's behalf — statuses change only through the normal manual workflow, including the user-gated `Done`.
+
 ### `ledger.md`
 
-The ledger is the single source of truth for execution status. Do not rely on task-file headings, chat updates, or the plan to represent current status.
+The ledger is the single source of truth for execution status. Do not rely on task-file headings, chat updates, or the plan to represent current status. Each ledger governs one level of the task tree: the change ledger holds top-level tasks; each container's ledger holds that container's children (see "Task decomposition").
 
 The ledger must include:
 
@@ -179,7 +202,7 @@ The ledger must include:
 - Overall status.
 - Last-updated date.
 - Status definitions.
-- One row for every task, linking to its task file.
+- One row for every task it governs, linking to its task file.
 - Task dependencies.
 - Per-task last-updated date.
 - Concise notes describing current progress or blockers.
@@ -214,13 +237,13 @@ Recommended overall statuses are `Planned`, `In progress`, `Blocked`, `Done`, an
 
 1. Create the plan, task files, and ledger before implementation begins.
 2. Initialize every task as `Not started` and the overall change as `Planned`.
-3. Before modifying implementation files for a task, change that task to `In progress`, update its date, and set the overall status to `In progress`.
+3. Before modifying implementation files for a task, change that task to `In progress`, update its date, and set the overall status to `In progress`. Set overall statuses only through the deterministic path — the board's status control or `POST /changes/{id}/status` with `{"status":"Planned"|"In progress"|"Blocked"}` — which updates the change ledger and the root-ledger row atomically; never hand-edit an `Overall status:` line. `Done` remains user-gated via close (rule 9); `Cancelled` has no endpoint, so cancelling a change still means editing both ledgers by hand and recording the reason (rule 11).
 4. Record material findings, decisions, scope changes, and blockers in the relevant task notes. Summarize important decisions in the ledger decision log.
 5. When a blocker is resolved, return the task to `In progress` and record the resolution.
 6. Mark a task `Test` only after its documented verification and completion criteria pass. Record concise verification evidence. `Test` means the agent considers the task complete; it awaits user acceptance.
 7. If verification fails, keep the task `In progress` or mark it `Blocked`; do not mark it `Test` based solely on implementation being written.
 8. Only the user moves a task to `Done` — by dragging the card on the board or by explicitly instructing the agent. Agents must never set a task to `Done` on their own initiative, even when all criteria pass.
-9. Only the user closes a change. When every non-cancelled task is `Test` or `Done`, all change-level acceptance criteria pass, and no required work remains, agents leave the overall status `In progress` and report the change ready for close-out. Agents must never set the overall status to `Done` themselves; the user closes the change explicitly (via the board's Close button or a direct instruction).
+9. Only the user closes a change. When every non-cancelled task at every depth of the task tree is `Test` or `Done`, all change-level acceptance criteria pass, and no required work remains, agents leave the overall status `In progress` and report the change ready for close-out. Agents must never set the overall status to `Done` themselves; the user closes the change explicitly (via the board's Close button or a direct instruction).
 10. The user may reopen a closed change (`Done` → `In progress`); agents then resume work from the ledger state. Close and reopen transitions are user actions and are recorded in both ledgers.
 11. When cancelling a task or change, record the reason and any resulting scope adjustment.
 12. Update ledger state in the same working change as the implementation it describes so status does not drift from the repository.
@@ -245,8 +268,8 @@ Recommended overall statuses are `Planned`, `In progress`, `Blocked`, `Done`, an
 The workflow rules are machine-checkable. Tooling (validators, servers) must enforce them, and agents should self-check against them before marking work done:
 
 1. Change directories match `changes/YYYY-MM-DD-(N|xxxxx)/` with a valid date — `N` is the legacy numeric suffix (any digits) and `xxxxx` is exactly five lowercase alphanumeric characters.
-2. Every change directory contains `plan.md`, `ledger.md`, and `tasks/`.
-3. Every task file has exactly one ledger row and vice versa; frontmatter `id`, ledger `Task` cell, and filename sequence agree.
+2. Every change directory contains `plan.md`, `ledger.md`, and `tasks/`; every task container likewise contains `ledger.md` and `tasks/`.
+3. Every task file has exactly one row in its governing ledger and vice versa; frontmatter `id`, ledger `Task` cell, and filename sequence agree; every container directory matches its sibling task file, and dotted ID segments agree with the container nesting.
 4. Task and change statuses use only the defined vocabularies.
 5. Ledger tables match the pinned schemas, with no literal `|` inside cell text.
 6. The root ledger has one row per change directory (including archived ones), and root-ledger overall status agrees with each change's `ledger.md`.
@@ -298,11 +321,11 @@ If implementation stops before completion, leave the ledger in the accurate curr
 - (manual) The root `lessmess` entry is the local compiled binary from `cmd/lessmess` (gitignored build output), not a source directory; rebuild it with the documented `go build` command when testing CLI behavior.
 - (manual) `README.md` is the human-facing overview of the same CLI, board, and docs system; update it when user-visible commands, endpoints, or workflows change.
 - (manual) The project was renamed from tasktracker to lessmess: the module is `lessmess`, the binary builds from `cmd/lessmess`, and tooling state lives in `.lessmess/`; startup calls `store.MigrateStateDir` to rename a legacy `.tasktracker/` dir when `.lessmess/` does not yet exist.
-- (manual) Root `changes/ledger.md` is the change-level index only: each row links to that change's `plan.md`, and per-task status lives solely in the change's own `ledger.md`.
+- (manual) Root `changes/ledger.md` is the change-level index only: each row links to that change's `plan.md`, and a task's status lives solely in its governing ledger — the change's own `ledger.md` for top-level tasks, the parent task container's `ledger.md` for subtasks (2026-09-16-le45q).
 - (2026-09-12-12) `README.md` documents the board UI affordances introduced here: the header Changes/Explorer menu with a server-applied active-route highlight, the newest-first change list, and the board's one-click Continue/Start session button.
 - (2026-09-12-14) The rename is Tier 1+2 only: module `lessmess`, binary at `cmd/lessmess`, and `.lessmess/` tooling state; the doc-marker syntax (`tasktracker:begin`/`tasktracker:end`), `tt-` frontend prefixes, and the repository folder name stay unchanged.
 - (2026-09-12-14) State migrates automatically: `store.MigrateStateDir` renames a legacy `.tasktracker/` to `.lessmess/` only when the new dir is absent (no merge, no delete), and is called by `serve`, `validate`, and `docs seed` before state access plus defensively in `server.New`.
-- (2026-09-12-14) lessmess's visual identity is `web/static/icon.svg` (white "lm" on the `#e8641f` accent) with generated rasters `icon-512.png`, `favicon.ico` (16/32/48), and `apple-touch-icon.png`; `layout.html` links the favicon set and the header renders the icon as the brand.
+- (2026-09-12-14) lessmess's visual identity is the "lm" brand mark with rasters `icon-512.png`, `favicon.ico` (16/32/48), and `apple-touch-icon.png`; since 2026-09-16-7ueiv `layout.html` links the server-rendered dynamic routes (`/icon.svg`, `/favicon.ico`, `/apple-touch-icon.png`) so the brand follows the install's accent, and the static orange files under `web/static/` remain only as fallbacks (`icon-512.png` is referenced by no page).
 - (2026-09-12-15) The workflow's task vocabulary is now six statuses: `Test` sits between `Blocked` and `Done`, agents stop at `Test` once verification passes, `Done` is user-gated (set only on explicit user instruction or a manual card drag), and close-out readiness is all non-cancelled tasks `Test` or `Done`.
 - (2026-09-13-0) Committing is available two ways: per change from the board and repo-wide via the index page's Commit all flow (`GET /api/git/status` for a preview, `POST /api/git/commit` to spawn the session, both documented in `README.md`); the server only reads git for preview and delegates the actual commit to an opencode session.
 - (2026-09-13-0) Adding render-time `git` scans to the index page exposed a self-sustaining reload loop: macOS atime updates from git reading modified `changes/` files surface as attribute-only fsnotify `CHMOD` events, so both the store and docs watchers must ignore those (`ev.Op&^ fsnotify.Chmod == 0`) while still notifying on content ops.
@@ -330,4 +353,8 @@ If implementation stops before completion, leave the ledger in the accurate curr
 - (2026-09-15-0) Relative cross-links inside `changes/` documents are a supported workflow convention: the board's detail modal opens `plan.md`, `ledger.md`/`../ledger.md`, `tasks/*.md`, and cross-change `YYYY-MM-DD-N/plan.md` links in-modal (via the `GET /changes/{id}/ledger` endpoint plus client-side interception), and headings are deep-linkable because rendered markdown carries goldmark auto ids.
 - (2026-09-15-lk9or) `Test` is a hand-off state, not a completion claim: once a task is implemented and the agent's checks pass, it moves to `Test` and the user's testing/acceptance happens while it sits there — agent-side manual checklists that only the user can perform (browser passes and the like) are the acceptance work, not a reason to stay `In progress`.
 - (2026-09-15-lk9or) The index page's change table is now client-side sortable: clicking any of the six data-column headers (Change, Title, Prefix, Status, Tasks, Updated) reorders rows in place, Status sorts in `model.TaskStatusOrder` workflow order, and the chosen `{col, dir}` persists in localStorage `tt-index-sort` so it survives the page's SSE full-reloads; the server's newest-first default (absent or corrupt stored sort) is unchanged, and `README.md` documents the behavior.
+- (2026-09-15-1) Change IDs come in two permanent formats — legacy `YYYY-MM-DD-N` and random `YYYY-MM-DD-xxxxx` — and the suffix encodes no order: repo tooling must accept both formats indefinitely, and within-date ordering everywhere comes from root-ledger row position (append order), never the suffix.
+- (2026-09-16-7ueiv) Each install rolls its own accent identity: `ui.accent` (Settings → UI, layered like every setting) is picked randomly once on first use when unset in both layers and persisted to `.lessmess/settings.json`; the palette lives only in Go (`internal/server/accent.go`) and drives the page CSS variables, the dynamic favicon/brand routes, and the settings picker, so no accent hexes are hardcoded in CSS/JS — derivatives `color-mix` from `var(--accent)`.
+- (2026-09-16-le45q) Nested task decomposition is part of the workflow (the "Task decomposition (sub plans)" section): a task file may gain a sibling `NN-slug/` container holding `ledger.md` plus `tasks/` recursively, child IDs extend with dotted two-digit segments (`EXC-00` → `EXC-00.00`), and decomposition is user-instructed only — agents propose, never create containers unprompted.
+- (2026-09-16-le45q) Validation rules 2 and 3 and close-out step 9 are recursive (a stray directory under any `tasks/` is a violation; closing requires every non-cancelled task at any depth to be `Test` or `Done`), rollup progress is display-only and never writes statuses, and `lessmess init`'s starter root-ledger skeleton was reworded to the governing-ledger formulation in the same edit.
 <!-- tasktracker:end -->

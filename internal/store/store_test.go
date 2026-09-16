@@ -74,8 +74,8 @@ func TestLoadValid(t *testing.T) {
 	if len(c.Ledger.Rows) != 2 || c.Ledger.Rows[0].ID != "FIX-00" {
 		t.Fatalf("rows = %+v", c.Ledger.Rows)
 	}
-	if len(c.Tasks) != 2 || c.Tasks["tasks/00-first.md"].Title != "First" {
-		t.Fatalf("tasks = %+v", c.Tasks)
+	if len(c.Roots) != 2 || c.Roots[0].File.Title != "First" {
+		t.Fatalf("roots = %+v", c.Roots)
 	}
 }
 
@@ -227,7 +227,7 @@ func TestMoveTaskUnknown(t *testing.T) {
 
 func TestCreateTask(t *testing.T) {
 	s, dir := openFixture(t)
-	row, err := s.CreateTask("2026-09-10-0", "My New Task!")
+	row, err := s.CreateTask("2026-09-10-0", "", "My New Task!")
 	if err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
@@ -252,7 +252,7 @@ func TestCreateTaskNoReuse(t *testing.T) {
 	if err := os.WriteFile(p, model.RenderTaskFile("FIX-05", "Late"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	row, err := s.CreateTask("2026-09-10-0", "Another")
+	row, err := s.CreateTask("2026-09-10-0", "", "Another")
 	if err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}

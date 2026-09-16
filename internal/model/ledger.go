@@ -1,6 +1,9 @@
 package model
 
-import "strings"
+import (
+	"regexp"
+	"strings"
+)
 
 // RootColumns is the pinned root-ledger schema from AGENTS.md.
 var RootColumns = []string{"Change", "Title", "ID prefix", "Branch", "Status", "Created", "Last updated"}
@@ -63,21 +66,60 @@ type TaskRow struct {
 	Notes   string
 }
 
+// taskTable is the shared mutable core of every ledger that governs tasks:
+// the document lines, the located task table, and its rows. Change ledgers
+// and task-container ledgers embed it so mutations (append, move) behave
+// identically at any nesting level.
+type taskTable struct {
+	doc   string // document name for error attribution
+	Lines []string
+	Table *Table
+	Rows  []TaskRow
+}
+
+// parseTaskRows locates the pinned task table in lines and parses its rows.
+func parseTaskRows(lines []string, name string) (*Table, []TaskRow, error) {
+	t, err := FindTable(lines, TaskColumns, name)
+	if err != nil {
+		return nil, nil, err
+	}
+	var rows []TaskRow
+	for i, cells := range t.Rows {
+		text, href, ok := ParseLink(cells[0])
+		if !ok {
+			return nil, nil, parseErr(name, "task row %d: Task cell is not a link", i+1)
+		}
+		st := TaskStatus(cells[2])
+		if !st.Valid() {
+			return nil, nil, parseErr(name, "task row %d: invalid status %q", i+1, cells[2])
+		}
+		var deps []string
+		if cells[3] != Empty {
+			for _, d := range strings.Split(cells[3], ",") {
+				deps = append(deps, strings.TrimSpace(d))
+			}
+		}
+		rows = append(rows, TaskRow{
+			ID: text, Href: href, Title: cells[1], Status: st,
+			Depends: deps, Updated: cells[4], Notes: cells[5],
+		})
+	}
+	return t, rows, nil
+}
+
 // ChangeLedger is the parsed changes/<id>/ledger.md.
 type ChangeLedger struct {
-	Lines       []string
-	Table       *Table
+	taskTable
 	ChangeID    string
 	Branch      string
 	Overall     OverallStatus
 	LastUpdated string
-	Rows        []TaskRow
 }
 
 // ParseChangeLedger parses a per-change ledger strictly against the pinned schema.
 func ParseChangeLedger(name string, data []byte) (*ChangeLedger, error) {
 	lines := strings.Split(string(data), "\n")
-	l := &ChangeLedger{Lines: lines}
+	l := &ChangeLedger{taskTable: taskTable{doc: name, Lines: lines}}
 	for _, ln := range lines {
 		switch {
 		case strings.HasPrefix(ln, "- Change ID:"):
@@ -96,39 +138,61 @@ func ParseChangeLedger(name string, data []byte) (*ChangeLedger, error) {
 	if !l.Overall.Valid() {
 		return nil, parseErr(name, "missing or invalid '- Overall status:' header")
 	}
-	t, err := FindTable(lines, TaskColumns, name)
+	t, rows, err := parseTaskRows(lines, name)
 	if err != nil {
 		return nil, err
 	}
-	l.Table = t
-	for i, cells := range t.Rows {
-		text, href, ok := ParseLink(cells[0])
-		if !ok {
-			return nil, parseErr(name, "task row %d: Task cell is not a link", i+1)
-		}
-		st := TaskStatus(cells[2])
-		if !st.Valid() {
-			return nil, parseErr(name, "task row %d: invalid status %q", i+1, cells[2])
-		}
-		var deps []string
-		if cells[3] != Empty {
-			for _, d := range strings.Split(cells[3], ",") {
-				deps = append(deps, strings.TrimSpace(d))
+	l.Table, l.Rows = t, rows
+	return l, nil
+}
+
+// taskHeaderRe matches the container ledger's "- Task:" value:
+// "<task-id> (change <change-id>)".
+var taskHeaderRe = regexp.MustCompile(`^(\S+) \(change (\S+)\)$`)
+
+// TaskLedger is the parsed ledger.md of a decomposed task's container
+// (tasks/<NN-slug>/ledger.md), per the AGENTS.md decomposition rules.
+type TaskLedger struct {
+	taskTable
+	TaskID      string
+	ChangeID    string
+	LastUpdated string
+}
+
+// ParseTaskLedger parses a task-container ledger strictly: the pinned
+// "- Task: <id> (change <change-id>)" header, an optional "- Last updated:"
+// header, and the same pinned task table as a change ledger.
+func ParseTaskLedger(name string, data []byte) (*TaskLedger, error) {
+	lines := strings.Split(string(data), "\n")
+	l := &TaskLedger{taskTable: taskTable{doc: name, Lines: lines}}
+	for _, ln := range lines {
+		switch {
+		case strings.HasPrefix(ln, "- Task:"):
+			m := taskHeaderRe.FindStringSubmatch(strings.TrimSpace(strings.TrimPrefix(ln, "- Task:")))
+			if m == nil {
+				return nil, parseErr(name, "malformed '- Task:' header (want '<task-id> (change <change-id>)')")
 			}
+			l.TaskID, l.ChangeID = m[1], m[2]
+		case strings.HasPrefix(ln, "- Last updated:"):
+			l.LastUpdated = strings.TrimSpace(strings.TrimPrefix(ln, "- Last updated:"))
 		}
-		l.Rows = append(l.Rows, TaskRow{
-			ID: text, Href: href, Title: cells[1], Status: st,
-			Depends: deps, Updated: cells[4], Notes: cells[5],
-		})
 	}
+	if l.TaskID == "" || l.ChangeID == "" {
+		return nil, parseErr(name, "missing '- Task: <id> (change <change-id>)' header")
+	}
+	t, rows, err := parseTaskRows(lines, name)
+	if err != nil {
+		return nil, err
+	}
+	l.Table, l.Rows = t, rows
 	return l, nil
 }
 
 // Row returns the task row with the given ID, or nil.
-func (l *ChangeLedger) Row(id string) *TaskRow {
-	for i := range l.Rows {
-		if l.Rows[i].ID == id {
-			return &l.Rows[i]
+func (tt *taskTable) Row(id string) *TaskRow {
+	for i := range tt.Rows {
+		if tt.Rows[i].ID == id {
+			return &tt.Rows[i]
 		}
 	}
 	return nil

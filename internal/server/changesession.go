@@ -9,6 +9,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"lessmess/internal/store"
 )
 
 var prefixRe = regexp.MustCompile(`^[A-Z0-9]{2,4}$`)
@@ -43,7 +45,20 @@ func changePrompt(changeID string) string {
 1. Read changes/%[1]s/plan.md and changes/%[1]s/ledger.md first — they hold the authoritative scope, design, and task status for this change.
 2. Everything the user asks for in this conversation is work on THIS change: refine changes/%[1]s/plan.md, add or update task files and ledger rows under its existing task-ID prefix, and keep ledger statuses current per AGENTS.md.
 3. NEVER create a new change directory and NEVER call the /changes/scaffold endpoint. If the user asks for genuinely unrelated work, explain that it belongs in a separate change and ask them to start a new discussion from the index page.
-4. Delegation is optional — do small tasks inline. When you delegate a task to a subagent, prefix the task tool's description with the task's real ID from the ledger — for example "TSK-01: implement the bind endpoint", where TSK is this change's actual prefix: that description becomes the subagent session's title verbatim, and the board uses it to attach the session to the task. Prefer a subagent with write access over a read-only explorer when the user may want to continue that session directly afterwards.`, changeID)
+4. Delegation is optional — do small tasks inline. When you delegate a task to a subagent, prefix the task tool's description with the task's real ID from the ledger — for example "TSK-01: implement the bind endpoint", where TSK is this change's actual prefix: that description becomes the subagent session's title verbatim, and the board uses it to attach the session to the task. Prefer a subagent with write access over a read-only explorer when the user may want to continue that session directly afterwards.
+5. Tasks may be decomposed into nested sub plans per AGENTS.md. Decomposition is user-instructed only: when work on a task reveals it needs detailed breakdown, PROPOSE the decomposition (name the subtasks you would create) and wait for the user's explicit go-ahead — never create a container directory unprompted. When the user instructs it, create the task's container (ledger.md plus tasks/ with dotted child IDs) following AGENTS.md.`, changeID)
+}
+
+// taskPrompt builds the prime message for a session bound to one task of
+// a change (top-level or nested): the scope is that task and its subtree.
+func taskPrompt(changeID string, n *store.TaskNode) string {
+	return fmt.Sprintf(`You are a task execution assistant for a repository that uses the change-management workflow defined in AGENTS.md. This session is permanently bound to task %[2]s of change %[1]s.
+
+1. Read changes/%[1]s/plan.md, changes/%[1]s/%[3]s, and the ledger that governs %[2]s (per AGENTS.md: the change ledger for top-level tasks, the parent container's ledger below that) first — they hold the authoritative context and status.
+2. Everything the user asks for in this conversation is work on THIS task and its subtree. The task is decomposed: its subtasks live under its container directory with dotted IDs (%[2]s.00, %[2]s.01, …). Work them, keep the governing ledger rows current per AGENTS.md, and stop at Test — NEVER set your task or its subtasks to Done; that is the user's call.
+3. When you delegate a subtask to a subagent, prefix the task tool's description with the subtask's real dotted ID — for example "%[2]s.00: implement the parser": the description becomes the subagent session's title verbatim, and the board uses it to attach the session to that subtask. Prefer a subagent with write access when the user may want to continue that session directly.
+4. NEVER create a new change directory and NEVER call the /changes/scaffold endpoint.
+5. Further decomposition of your subtasks is user-instructed only: PROPOSE it when work reveals complexity and wait for the user's explicit go-ahead; never create container directories unprompted.`, changeID, n.ID, n.Href)
 }
 
 // apiBase returns the lessmess base URL used in agent-facing prompts.
@@ -141,17 +156,8 @@ func (s *Server) bindTaskSession(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "task and a ses_ sub session id are required"})
 		return
 	}
-	// The task must exist in the change's ledger rows.
-	known := false
-	if c.Ledger != nil {
-		for _, row := range c.Ledger.Rows {
-			if row.ID == req.Task {
-				known = true
-				break
-			}
-		}
-	}
-	if !known {
+	// The task must exist anywhere in the change's task tree.
+	if c.Node(req.Task) == nil {
 		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "unknown task " + req.Task + " in change " + id})
 		return
 	}

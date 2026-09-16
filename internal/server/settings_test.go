@@ -31,8 +31,8 @@ func TestSettingsDefaultsOnly(t *testing.T) {
 			t.Errorf("sources[%s] = %q, want default", field, src)
 		}
 	}
-	if len(sources) != 13 {
-		t.Errorf("len(sources) = %d, want 13", len(sources))
+	if len(sources) != 14 {
+		t.Errorf("len(sources) = %d, want 14", len(sources))
 	}
 }
 

@@ -1,7 +1,22 @@
 {{define "content"}}
 <section class="board-head">
+  {{if .Data.Task}}
+  <nav class="crumbs" aria-label="Task tree">
+    {{range .Data.Crumbs}}<a href="{{.URL}}">{{.Title}}</a><span class="crumb-sep">/</span>{{end}}
+    <span class="crumb-here" title="{{.Data.NodeTitle}}">{{.Data.NodeTitle}}</span>
+  </nav>
+  {{else}}
   <h2>{{.Data.ID}}</h2>
+  {{end}}
   <span class="pill status-{{.Data.Overall | statusClass}}">{{.Data.Overall}}</span>
+  {{if or (eq .Data.Overall "Planned") (eq .Data.Overall "In progress") (eq .Data.Overall "Blocked")}}
+  <select id="overall-status" class="status-select" aria-label="Change status" title="Set change status (Done is via Close change)">
+    <option value="Planned" {{if eq .Data.Overall "Planned"}}selected{{end}}>Planned</option>
+    <option value="In progress" {{if eq .Data.Overall "In progress"}}selected{{end}}>In progress</option>
+    <option value="Blocked" {{if eq .Data.Overall "Blocked"}}selected{{end}}>Blocked</option>
+  </select>
+  {{end}}
+  {{if .Data.HasProgressData}}<span class="pill progress" title="Subtree progress (Test + Done of non-cancelled descendants)">{{.Data.ProgressDone}}/{{.Data.ProgressTotal}} ✓</span>{{end}}
   <button type="button" class="btn-accent" id="continue-session-btn">Continue session</button>
   <button type="button" class="btn-ghost"
           hx-get="/changes/{{.Data.ID}}/plan"
@@ -16,8 +31,9 @@
   {{end}}
   <form class="inline-form"
         hx-post="/changes/{{.Data.ID}}/tasks" hx-swap="none">
-    <input type="text" name="title" placeholder="New task title" required>
-    <button type="submit">Add task</button>
+    <input type="hidden" name="parent" value="{{.Data.Task}}">
+    <input type="text" name="title" placeholder="{{if .Data.Task}}New subtask title{{else}}New task title{{end}}" required>
+    <button type="submit">{{if .Data.Task}}Add subtask{{else}}Add task{{end}}</button>
   </form>
 </section>
 <div id="board-subs" class="board-subs" hidden></div>
@@ -31,7 +47,7 @@
 {{if .Data.Error}}
 <div class="error-box">{{.Data.Error}}</div>
 {{else}}
-<div id="board" class="board" data-change="{{.Data.ID}}">
+<div id="board" class="board" data-change="{{.Data.ID}}" data-task="{{.Data.Task}}">
 {{template "boardFragment" .Data}}
 </div>
 {{end}}

@@ -92,3 +92,33 @@ Row order is display and priority order; top row is highest priority.
 ## Decision log
 `, id, id, date))
 }
+
+// RenderTaskLedger renders a minimal ledger.md for a decomposed task's
+// container (tasks/<NN-slug>/ledger.md): the minimal header set from
+// AGENTS.md's decomposition rules and the same pinned task table as a
+// change ledger.
+func RenderTaskLedger(taskID, changeID, date string) []byte {
+	return []byte(fmt.Sprintf(`# Ledger — %[1]s
+
+- Task: %[1]s (change %[2]s)
+- Last updated: %[3]s
+
+## Status definitions
+
+| Status | Meaning |
+| --- | --- |
+| Not started | Work has not begun. |
+| In progress | Implementation or verification is actively underway. |
+| Blocked | Work cannot continue until a documented dependency, decision, approval, or external condition is resolved. |
+| Test | Implementation and verification are complete; awaiting user acceptance before Done. |
+| Done | All verification and completion criteria in the task file have passed. |
+| Cancelled | The task was intentionally removed from scope and the reason is recorded. |
+
+## Tasks
+
+Row order is display and priority order; top row is highest priority.
+
+| Task | Title | Status | Depends on | Updated | Notes |
+| --- | --- | --- | --- | --- | --- |
+`, taskID, changeID, date))
+}

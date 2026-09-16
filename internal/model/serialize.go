@@ -58,24 +58,28 @@ func (r TaskRow) cells() []string {
 	return []string{FormatLink(r.ID, r.Href), r.Title, string(r.Status), deps, r.Updated, r.Notes}
 }
 
-func (l *ChangeLedger) syncTable() {
-	rows := make([][]string, 0, len(l.Rows))
-	for _, r := range l.Rows {
+func (l *ChangeLedger) syncTable() { l.taskTable.syncTable() }
+
+// syncTable re-renders the task-table region from Rows, preserving all
+// non-table content byte-for-byte.
+func (tt *taskTable) syncTable() {
+	rows := make([][]string, 0, len(tt.Rows))
+	for _, r := range tt.Rows {
 		rows = append(rows, r.cells())
 	}
 	t := RenderTable(TaskColumns, rows)
-	l.Lines = Splice(l.Lines, l.Table.Start, l.Table.End, t)
-	l.Table.End = l.Table.Start + len(t)
-	l.Table.Rows = rows
+	tt.Lines = Splice(tt.Lines, tt.Table.Start, tt.Table.End, t)
+	tt.Table.End = tt.Table.Start + len(t)
+	tt.Table.Rows = rows
 }
 
 // Content returns the full document with any mutations applied.
-func (l *ChangeLedger) Content() []byte { return []byte(strings.Join(l.Lines, "\n")) }
+func (tt *taskTable) Content() []byte { return []byte(strings.Join(tt.Lines, "\n")) }
 
 // AppendTask adds a task row at the bottom of the table.
-func (l *ChangeLedger) AppendTask(r TaskRow) {
-	l.Rows = append(l.Rows, r)
-	l.syncTable()
+func (tt *taskTable) AppendTask(r TaskRow) {
+	tt.Rows = append(tt.Rows, r)
+	tt.syncTable()
 }
 
 // SetOverall sets the overall status and last-updated header fields.
@@ -119,16 +123,16 @@ func insertionPos(rows []TaskRow, status TaskStatus, toIndex int) int {
 // MoveTask sets the task's status and repositions its row so it lands at
 // visual index toIndex within the target status group. Row order is the
 // kanban display and priority order per AGENTS.md.
-func (l *ChangeLedger) MoveTask(id string, toStatus TaskStatus, toIndex int, updated string) error {
+func (tt *taskTable) MoveTask(id string, toStatus TaskStatus, toIndex int, updated string) error {
 	if !toStatus.Valid() {
-		return parseErr(l.ChangeID, "invalid status %q", string(toStatus))
+		return parseErr(tt.doc, "invalid status %q", string(toStatus))
 	}
 	if toIndex < 0 {
 		toIndex = 0
 	}
 	idx := -1
-	for i := range l.Rows {
-		if l.Rows[i].ID == id {
+	for i := range tt.Rows {
+		if tt.Rows[i].ID == id {
 			idx = i
 			break
 		}
@@ -136,17 +140,17 @@ func (l *ChangeLedger) MoveTask(id string, toStatus TaskStatus, toIndex int, upd
 	if idx < 0 {
 		return ErrTaskNotFound
 	}
-	row := l.Rows[idx]
+	row := tt.Rows[idx]
 	row.Status = toStatus
 	row.Updated = updated
-	rest := make([]TaskRow, 0, len(l.Rows)-1)
-	rest = append(rest, l.Rows[:idx]...)
-	rest = append(rest, l.Rows[idx+1:]...)
+	rest := make([]TaskRow, 0, len(tt.Rows)-1)
+	rest = append(rest, tt.Rows[:idx]...)
+	rest = append(rest, tt.Rows[idx+1:]...)
 	pos := insertionPos(rest, toStatus, toIndex)
 	rest = append(rest, TaskRow{})
 	copy(rest[pos+1:], rest[pos:])
 	rest[pos] = row
-	l.Rows = rest
-	l.syncTable()
+	tt.Rows = rest
+	tt.syncTable()
 	return nil
 }

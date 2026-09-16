@@ -1,7 +1,7 @@
 <!-- tasktracker:begin -->
 # Structure: internal/server
 
-<!-- tasktracker-meta: refreshed=2026-09-14 source=2026-09-13-4 tree=012d0d7fdbcb -->
+<!-- tasktracker-meta: refreshed=2026-09-16 source=2026-09-16-7ueiv tree=e46912ae6a27 -->
 
 HTTP server over the store: HTML pages, JSON endpoints, SSE updates, session mapping, PTY terminal, and the docs refresh queue
 
@@ -9,7 +9,14 @@ HTTP server over the store: HTML pages, JSON endpoints, SSE updates, session map
 
 | Entry | Purpose |
 | --- | --- |
+| `accent.go` | Accent color palette: entries, lookup, and resolution with roll-once random initialization persisted to the personal settings layer. |
+| `accent_test.go` | Tests for the palette, roll-once resolution and persistence, fail-open ids, and accent validation, options, and allowlist wiring. |
+| `autosession.go` | Once-only auto-spawn markers (`.lessmess/autosession.json`) for decomposed-task sessions. |
+| `autosession_test.go` | Tests for auto-spawn-once semantics, retry after spawn failure, and the task session endpoints. |
+| `board_nested_test.go` | Tests for nested task boards: drill-down, recursive counts, close gates, and subtask creation. |
 | `bootstrap_test.go` | Tests the full bootstrap loop against a real store, asserting hot-open after bootstrap. |
+| `brandassets.go` | Serves `/icon.svg`, `/favicon.ico`, and `/apple-touch-icon.png` rendered with the effective accent, with ETag and 304 revalidation. |
+| `brandassets_test.go` | Tests for rendered brand bytes (SVG fill, ICO and PNG magic, tile size) and the accent-following brand routes. |
 | `changesession.go` | Discussion session and scaffold trigger endpoints |
 | `changesession_test.go` | Tests for discussion and scaffold flows |
 | `docsqueue.go` | Serialized doc-gardener refresh queue and stale tracking |
@@ -33,6 +40,7 @@ HTTP server over the store: HTML pages, JSON endpoints, SSE updates, session map
 | `prereqs.go` | Wizard prerequisite probes (opencode binary and service, git, writable repo) served at GET /api/setup/prereqs, with injectable fakes. |
 | `prereqs_test.go` | Tests for the prerequisite checks using faked probes. |
 | `render.go` | HTML templates, markdown rendering, static assets |
+| `render_nested_test.go` | Tests for nested board markup, task-detail doc context, and the container ledger endpoint. |
 | `render_test.go` | Tests for rendering and HTML pages |
 | `server.go` | Server struct, routes, core handlers, SSE stream |
 | `server_test.go` | Tests for core routes and handlers |

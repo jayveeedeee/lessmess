@@ -63,6 +63,9 @@ type renderer struct {
 	settings *template.Template
 	setup    *template.Template
 	assetsV  string
+	// accent resolves the palette entry for the page head; nil until the
+	// owning server wires it (then defaults to the built-in orange).
+	accent func() AccentColor
 }
 
 func mustParse(files ...string) *template.Template {
@@ -99,11 +102,30 @@ func (r *renderer) render(w http.ResponseWriter, tmpl *template.Template, name s
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if pd, ok := data.(pageData); ok {
 		pd.AssetsV = r.assetsV
+		pd.AccentStyle = accentStyle(r.accentColor())
 		data = pd
 	}
 	if err := tmpl.ExecuteTemplate(w, name, data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
+}
+
+// accentColor resolves through the wired hook, failing safe to the
+// default accent (e.g. render tests that build a bare renderer).
+func (r *renderer) accentColor() AccentColor {
+	if r.accent == nil {
+		return DefaultAccent()
+	}
+	return r.accent()
+}
+
+// accentStyle renders the head <style> overriding the accent CSS
+// variables for both themes. Values are palette constants, so the
+// template.HTML escape-out is safe.
+func accentStyle(a AccentColor) template.HTML {
+	return template.HTML(fmt.Sprintf(
+		`<style>:root{--accent:%[1]s;--accent-hover:%[2]s}[data-theme="light"]{--accent:%[3]s;--accent-hover:%[4]s}</style>`,
+		a.Dark, a.DarkHover, a.Light, a.LightHover))
 }
 
 // --- view data ---
@@ -113,6 +135,9 @@ type pageData struct {
 	Page    string
 	Data    any
 	AssetsV string
+	// AccentStyle is the head <style> overriding the accent CSS
+	// variables for the resolved palette; filled centrally by render().
+	AccentStyle template.HTML
 }
 
 type indexView struct {
@@ -128,7 +153,7 @@ type indexView struct {
 
 type tmplColumn struct {
 	Status string
-	Tasks  []model.TaskRow
+	Tasks  []cardView
 }
 
 type boardView struct {
@@ -137,6 +162,70 @@ type boardView struct {
 	Error    string
 	Columns  []tmplColumn
 	BoardURL string
+
+	// Drill-down state (empty on the change's root board).
+	Task      string      // viewed task ID
+	NodeTitle string      // viewed task title
+	Crumbs    []crumbView // ancestor chain, root change first
+
+	// Rollup progress for the header: descendants complete/total
+	// (change-wide on the root board, subtree on a drill-down).
+	ProgressDone    int
+	ProgressTotal   int
+	HasProgressData bool
+}
+
+type crumbView struct {
+	ID    string
+	Title string
+	URL   string
+	Root  bool // the change itself
+}
+
+// tmplTaskRow is one card: the governing-ledger row when present, else a
+// degraded view of an orphaned task file (validation flags those).
+func tmplTaskRow(n *store.TaskNode) model.TaskRow {
+	if n.Row != nil {
+		return *n.Row
+	}
+	title := n.Href
+	if n.File != nil {
+		title = n.File.Title
+	}
+	id := n.ID
+	if id == "" {
+		id = n.Href
+	}
+	return model.TaskRow{ID: id, Href: n.Href, Title: title, Status: model.StatusNotStarted, Notes: model.Empty}
+}
+
+// cardView is one kanban card: the governing-ledger row plus the
+// display-only subtree rollup badge data.
+type cardView struct {
+	model.TaskRow
+	Path     string // href minus the leading tasks/ (for the detail route)
+	HasSub   bool
+	SubDone  int
+	SubTotal int
+}
+
+func cardOf(n *store.TaskNode) cardView {
+	c := cardView{TaskRow: tmplTaskRow(n), Path: strings.TrimPrefix(n.Href, "tasks/")}
+	if n.HasContainer() {
+		st := n.SubtreeStats()
+		c.HasSub = true
+		c.SubDone, c.SubTotal = st.Complete, st.Total
+	}
+	return c
+}
+
+// nodeRows renders a level's nodes as display rows.
+func nodeRows(nodes []*store.TaskNode) []model.TaskRow {
+	out := make([]model.TaskRow, 0, len(nodes))
+	for _, n := range nodes {
+		out = append(out, tmplTaskRow(n))
+	}
+	return out
 }
 
 func newBoardView(c *store.Change) boardView {
@@ -146,32 +235,76 @@ func newBoardView(c *store.Change) boardView {
 		return v
 	}
 	v.Overall = string(c.Ledger.Overall)
+	v.Columns = columnsFromNodes(c.Roots)
+	st := c.AllTaskStats()
+	v.ProgressDone, v.ProgressTotal, v.HasProgressData = st.Complete, st.Total, true
+	return v
+}
+
+// newTaskBoardView builds the drill-down board for one decomposed task:
+// columns from its children's governing rows, an ancestor breadcrumb, and
+// the subtree rollup.
+func newTaskBoardView(c *store.Change, n *store.TaskNode) boardView {
+	v := boardView{
+		ID: c.ID, BoardURL: "/changes/" + c.ID,
+		Task: n.ID, NodeTitle: n.ID,
+	}
+	if n.File != nil && n.File.Title != "" {
+		v.NodeTitle = n.File.Title
+	}
+	if c.Ledger != nil {
+		v.Overall = string(c.Ledger.Overall)
+	}
+	v.Columns = columnsFromNodes(n.Children)
+	// Breadcrumb: change root, then every ancestor, then this node.
+	v.Crumbs = append(v.Crumbs, crumbView{ID: c.ID, Title: c.ID, URL: "/changes/" + c.ID, Root: true})
+	var chain []*store.TaskNode
+	for p := n.Parent; p != nil; p = p.Parent {
+		chain = append([]*store.TaskNode{p}, chain...)
+	}
+	for _, p := range chain {
+		title := p.ID
+		if p.File != nil && p.File.Title != "" {
+			title = p.File.Title
+		}
+		v.Crumbs = append(v.Crumbs, crumbView{ID: p.ID, Title: title, URL: "/changes/" + c.ID + "?task=" + p.ID})
+	}
+	st := n.SubtreeStats()
+	v.ProgressDone, v.ProgressTotal, v.HasProgressData = st.Complete, st.Total, true
+	return v
+}
+
+func columnsFromNodes(nodes []*store.TaskNode) []tmplColumn {
+	var cols []tmplColumn
 	for _, st := range model.TaskStatusOrder {
 		col := tmplColumn{Status: string(st)}
-		for _, t := range c.Ledger.Rows {
-			if t.Status == st {
-				col.Tasks = append(col.Tasks, t)
+		for _, n := range nodes {
+			if n.NodeStatus() == st {
+				col.Tasks = append(col.Tasks, cardOf(n))
 			}
 		}
-		v.Columns = append(v.Columns, col)
+		cols = append(cols, col)
 	}
-	return v
+	return cols
 }
 
 type taskView struct {
 	Task   *model.TaskFile
 	Status string
 	Body   string
+	Doc    string // change-relative href, for in-modal link resolution
 }
 
 type planView struct {
 	ID   string
 	Body string
+	Doc  string
 }
 
 type ledgerView struct {
 	ID   string
 	Body string
+	Doc  string // change-relative container href for container ledgers
 }
 
 // --- static assets ---

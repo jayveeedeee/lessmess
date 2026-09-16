@@ -64,7 +64,8 @@
   function refreshBoard() {
     var board = boardEl();
     if (!board || typeof htmx === "undefined") return;
-    htmx.ajax("GET", location.pathname, { target: "#board", swap: "innerHTML", headers: { Accept: "text/html" } });
+    // Keep the drill-down task in the URL so SSE refreshes stay scoped.
+    htmx.ajax("GET", location.pathname + location.search, { target: "#board", swap: "innerHTML", headers: { Accept: "text/html" } });
   }
 
   document.addEventListener("htmx:afterSwap", function (e) {
@@ -490,8 +491,17 @@
     return b ? b.getAttribute("data-change") : null;
   }
 
-  // Last-opened session per change (client-side; this is a single-user tool).
-  function lastSessionKey() { return "tt-last-session:" + changeID(); }
+  // The board's drill-down task ("" on the change's root board).
+  function boardTask() {
+    var b = boardEl();
+    return b ? b.getAttribute("data-task") || "" : "";
+  }
+
+  // Last-opened session per board scope: change root or drilled task.
+  function lastSessionKey() {
+    var t = boardTask();
+    return "tt-last-session:" + changeID() + (t ? "/" + t : "");
+  }
   function markOpened(sessionID) {
     try { localStorage.setItem(lastSessionKey(), sessionID); } catch (_) {}
   }
@@ -509,15 +519,18 @@
       var ul = document.getElementById("sessions-list");
       if (!ul) return;
       ul.innerHTML = "";
-      if (!sessions || !sessions.length) {
+      renderSubs(sessions);
+      var scoped = boardSessions(sessions);
+      if (!scoped || !scoped.length) {
         var empty = document.createElement("li");
         empty.className = "session-empty";
-        empty.textContent = "No sessions yet — start one.";
+        empty.textContent = boardTask()
+          ? "No sessions bound to this task yet — start one."
+          : "No sessions yet — start one.";
         ul.appendChild(empty);
         return;
       }
-      renderSubs(sessions);
-      sessions.forEach(function (s) {
+      scoped.forEach(function (s) {
         var li = document.createElement("li");
         li.className = "session-item";
         var title = document.createElement("span");
@@ -625,16 +638,32 @@
     var nb = document.getElementById("new-session-btn");
     if (nb) {
       nb.addEventListener("click", function () {
-        fetch("/changes/" + changeID() + "/sessions", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Accept: "application/json" },
-          body: "{}",
-        })
-          .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.statusText); return j; }); })
-          .then(function (s) { markOpened(s.session); loadSessions(); maybeOpenTerminal(s.session, s.title); })
-          .catch(function (e) { alert("Create session failed: " + e.message); });
+        createSessionAndOpen(nb, maybeOpenTerminal);
       });
     }
+  }
+
+  // createSessionAndOpen POSTs a session for the board scope (task-bound
+  // on sub-boards) and hands it to onCreated.
+  function createSessionAndOpen(btn, onCreated) {
+    var t = boardTask();
+    fetch("/changes/" + changeID() + "/sessions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify(t ? { task: t } : {}),
+    })
+      .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.statusText); return j; }); })
+      .then(function (s) { markOpened(s.session); loadSessions(); onCreated(s.session, s.title); })
+      .catch(function (e) { alert("Create session failed: " + e.message); });
+  }
+
+  // boardSessions filters a session list to the board scope: on a
+  // sub-board only sessions bound to that exact task (plus its auto-spawn
+  // and delegated children share the task annotation).
+  function boardSessions(sessions) {
+    var t = boardTask();
+    if (!t) return sessions;
+    return (sessions || []).filter(function (s) { return s.task === t; });
   }
 
   // --- continue / start session button ---------------------------------------
@@ -646,39 +675,25 @@
     var btn = document.getElementById("continue-session-btn");
     if (!btn) return;
     fetchSessions(function (sessions) {
-      if (sessions) btn.textContent = sessions.length ? "Continue session" : "Start session";
+      if (sessions) {
+        var scoped = boardSessions(sessions);
+        btn.textContent = scoped.length ? "Continue session" : "Start session";
+      }
       renderSubs(sessions);
     });
     btn.addEventListener("click", function () {
       if (btn.disabled) return;
       fetchSessions(function (sessions) {
         if (!sessions) { alert("Could not load sessions"); return; }
-        if (!sessions.length) { createAndOpen(btn); return; }
+        var scoped = boardSessions(sessions);
+        if (!scoped.length) { createSessionAndOpen(btn, function (sid, title) { btn.textContent = "Continue session"; maybeOpenTerminal(sid, title); }); return; }
         var stored = null;
         try { stored = localStorage.getItem(lastSessionKey()); } catch (_) {}
-        var s = sessions.find(function (x) { return x.session === stored; }) || sessions[sessions.length - 1];
+        var s = scoped.find(function (x) { return x.session === stored; }) || scoped[scoped.length - 1];
         markOpened(s.session);
         openTerminal(s.session, s.title);
       });
     });
-  }
-
-  function createAndOpen(btn) {
-    btn.disabled = true;
-    fetch("/changes/" + changeID() + "/sessions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
-      body: "{}",
-    })
-      .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.statusText); return j; }); })
-      .then(function (s) {
-        markOpened(s.session);
-        btn.textContent = "Continue session";
-        loadSessions();
-        maybeOpenTerminal(s.session, s.title);
-      })
-      .catch(function (e) { alert("Create session failed: " + e.message); })
-      .finally(function () { btn.disabled = false; });
   }
 
   var tstate = { term: null, ws: null, ro: null, session: null };
@@ -718,7 +733,9 @@
       theme: {
         background: "#141414",
         foreground: "#e8e6e3",
-        cursor: "#e8641f",
+        // Follow the accent palette; falls back to the legacy orange when
+        // the CSS variable is unavailable.
+        cursor: getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() || "#e8641f",
         selectionBackground: "#3a3a3a",
       },
     });
@@ -921,6 +938,22 @@
     if (reopenBtn) {
       reopenBtn.addEventListener("click", function () { postLifecycle("reopen"); });
     }
+    var statusSel = document.getElementById("overall-status");
+    if (statusSel) {
+      statusSel.addEventListener("change", function () {
+        fetch("/changes/" + changeID() + "/status", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify({ status: statusSel.value }),
+        })
+          .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.statusText); return j; }); })
+          .then(function () { location.reload(); }) // status pill lives outside the board fragment
+          .catch(function (e) {
+            alert("Status change failed: " + e.message);
+            location.reload(); // repaint from server state so the select matches reality
+          });
+      });
+    }
     var commitBtn = document.getElementById("commit-btn");
     if (commitBtn) {
       commitBtn.addEventListener("click", function () {
@@ -1075,9 +1108,53 @@
     spy();
   }
 
+  // --- task expansion (sub plans) ----------------------------------------------
+  // The expand button on a card is the user-instructed decomposition
+  // action: POST /expand creates the container; both success (201) and
+  // already-exists (409) end on the task's sub-board.
+  document.addEventListener("click", function (e) {
+    var btn = e.target.closest("[data-expand]");
+    if (!btn) return;
+    var board = boardEl();
+    if (!board) return;
+    var change = board.getAttribute("data-change");
+    var task = btn.getAttribute("data-expand");
+    btn.disabled = true;
+    fetch("/changes/" + encodeURIComponent(change) + "/expand", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ task: task }),
+    })
+      .then(function (r) {
+        if (!r.ok && r.status !== 409) {
+          return r.json().then(function (j) { throw new Error(j.error || r.statusText); });
+        }
+        location.href = "/changes/" + encodeURIComponent(change) + "?task=" + encodeURIComponent(task);
+      })
+      .catch(function (err) {
+        alert("Expand failed: " + err.message);
+        btn.disabled = false;
+      });
+  });
+
   // --- detail modal links ------------------------------------------------------
   // Relative .md links in the markdown (ledger, tasks, plan) open in this
   // modal instead of navigating to a nonexistent URL.
+
+  // resolveDocPath resolves a relative .md link against the document
+  // currently shown in the modal (its change-relative href), collapsing
+  // ../ segments lexically.
+  function resolveDocPath(link, doc) {
+    var base = String(doc || "").split("#")[0];
+    if (!base) return link;
+    var parts = base.split("/");
+    parts.pop(); // the document file itself
+    link.split("/").forEach(function (seg) {
+      if (seg === "..") parts.pop();
+      else if (seg !== "." && seg !== "") parts.push(seg);
+    });
+    return parts.join("/");
+  }
 
   function detailLinkTarget(href) {
     if (!href || !/\.md$/i.test(href.split("#")[0])) return null;
@@ -1086,10 +1163,20 @@
     var path = href.split("#")[0];
     var id = currentChangeID();
     var m;
+    // Resolve relative to the shown document when the modal carries one,
+    // so ../ledger.md from a nested task opens that container's ledger.
+    var modal = document.querySelector("#detail .modal");
+    if (modal && modal.getAttribute("data-doc")) {
+      path = resolveDocPath(path, modal.getAttribute("data-doc"));
+    }
     if ((m = path.match(/^tasks\/(.+\.md)$/i)) && id) {
+      // The last segment decides: a task file vs a container ledger.
+      if (/\/ledger\.md$/i.test(m[1])) {
+        return { url: "/changes/" + id + "/ledger?href=" + encodeURIComponent(path), frag: hash };
+      }
       return { url: "/changes/" + id + "/tasks/" + m[1], frag: hash };
     }
-    if ((m = path.match(/^(\d{4}-\d{2}-\d{2}-\d+)\/plan\.md$/i))) {
+    if ((m = path.match(/^(\d{4}-\d{2}-\d{2}-[a-z0-9]+)\/plan\.md$/i))) {
       return { url: "/changes/" + m[1] + "/plan", frag: hash };
     }
     if (/^(\.\.\/)?ledger\.md$/i.test(path) && id) {
@@ -1310,6 +1397,17 @@
           input.value = isSet(lv) ? String(lv) : "";
           var fbLabel = isSet(fb) ? boolLabel(fb) : boolLabel(BOOL_DEFAULTS[field]);
           input.options[0].textContent = "Inherit (" + fbLabel + ")";
+        } else if (kind === "accent") {
+          // The picker's value lives on the container; chips are marked
+          // selected once renderOptions has built them.
+          input.setAttribute("data-value", isSet(lv) ? lv : "");
+          input.querySelectorAll(".accent-swatch").forEach(function (chip) {
+            var id = chip.getAttribute("data-id") || "";
+            chip.classList.toggle("selected", id === (isSet(lv) ? lv : ""));
+            if (id === "") {
+              chip.title = isSet(fb) ? "Auto — inherits " + fb + " until you roll again" : "Auto — a fresh random color";
+            }
+          });
         } else {
           input.value = isSet(lv) ? lv : "";
           input.placeholder = placeholderFor(field, fb);
@@ -1353,6 +1451,39 @@
         o.label = m.name;
         ml.appendChild(o);
       });
+
+      // Accent swatches: the palette is static server data (always present
+      // in the options payload, even when the service is offline).
+      var sw = root.querySelector('[data-field="ui.accent"] [data-input]');
+      if (sw) {
+        sw.innerHTML = "";
+        (options.accents || []).forEach(function (a) {
+          var chip = document.createElement("button");
+          chip.type = "button";
+          chip.className = "accent-swatch";
+          chip.style.background = a.hex;
+          chip.setAttribute("data-id", a.id);
+          chip.setAttribute("data-label", a.name);
+          chip.title = a.name;
+          chip.addEventListener("click", function () {
+            sw.setAttribute("data-value", a.id);
+            render();
+          });
+          sw.appendChild(chip);
+        });
+        var auto = document.createElement("button");
+        auto.type = "button";
+        auto.className = "accent-swatch accent-inherit";
+        auto.setAttribute("data-id", "");
+        auto.textContent = "Auto";
+        auto.title = "Auto — a fresh random color";
+        auto.addEventListener("click", function () {
+          sw.setAttribute("data-value", "");
+          render();
+        });
+        sw.appendChild(auto);
+        render();
+      }
     }
 
     root.querySelectorAll('input[name="settings-scope"]').forEach(function (radio) {
@@ -1419,6 +1550,8 @@
           var input = f.querySelector("[data-input]");
           if (kind === "bool") {
             payload[section][key] = input.value === "" ? null : input.value === "true";
+          } else if (kind === "accent") {
+            payload[section][key] = input.getAttribute("data-value") || "";
           } else {
             payload[section][key] = input.value;
           }

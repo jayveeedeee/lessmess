@@ -1,6 +1,6 @@
 # Changes — Root Ledger
 
-One row per change directory. This file is authoritative for change existence, task-ID prefixes, and overall change status only. Task statuses live exclusively in each change's `ledger.md`.
+One row per change directory. This file is authoritative for change existence, task-ID prefixes, and overall change status only. Task statuses live exclusively in the ledger that governs the task — the change's `ledger.md` for top-level tasks, the parent task container's `ledger.md` below that.
 
 | Change | Title | ID prefix | Branch | Status | Created | Last updated |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -32,5 +32,8 @@ One row per change directory. This file is authoritative for change existence, t
 | [2026-09-14-2](2026-09-14-2/plan.md) | Terminal persistence verification | TPV | — | Cancelled | 2026-09-14 | 2026-09-14 |
 | [2026-09-15-0](2026-09-15-0/plan.md) | Modal TOC and in-modal navigation | MTOC | — | Done | 2026-09-15 | 2026-09-15 |
 | [2026-09-15-1](2026-09-15-1/plan.md) | Random change-ID suffixes | CID | — | Done | 2026-09-15 | 2026-09-15 |
-| [2026-09-15-2](2026-09-15-2/plan.md) | Per-task subagent sessions | PSB | — | In progress | 2026-09-15 | 2026-09-15 |
+| [2026-09-15-2](2026-09-15-2/plan.md) | Per-task subagent sessions | PSB | — | Done | 2026-09-15 | 2026-09-16 |
 | [2026-09-15-lk9or](2026-09-15-lk9or/plan.md) | Sortable change index columns | IDX | — | Done | 2026-09-15 | 2026-09-15 |
+| [2026-09-16-le45q](2026-09-16-le45q/plan.md) | Nested task decomposition | NTD | — | Done | 2026-09-16 | 2026-09-16 |
+| [2026-09-16-7ueiv](2026-09-16-7ueiv/plan.md) | Accent color palette | ACC | — | Done | 2026-09-16 | 2026-09-16 |
+| [2026-09-16-j2g58](2026-09-16-j2g58/plan.md) | Deterministic change status endpoint | STS | — | Done | 2026-09-16 | 2026-09-16 |

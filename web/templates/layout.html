@@ -9,11 +9,12 @@
 document.documentElement.dataset.theme = localStorage.getItem("tt-theme") || "dark";
 </script>
 <title>{{.Title}} · lessmess</title>
-<link rel="icon" href="/static/icon.svg" type="image/svg+xml">
-<link rel="alternate icon" href="/static/favicon.ico">
-<link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="alternate icon" href="/favicon.ico">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="stylesheet" href="/static/app.css?v={{.AssetsV}}">
 <link rel="stylesheet" href="/static/xterm.min.css?v=1">
+{{.AccentStyle}}
 <script src="/static/htmx.min.js?v=1" defer></script>
 <script src="/static/Sortable.min.js?v=1" defer></script>
 <script src="/static/xterm.min.js?v=1" defer></script>
@@ -22,7 +23,7 @@ document.documentElement.dataset.theme = localStorage.getItem("tt-theme") || "da
 </head>
 <body data-page="{{.Page}}">
 <header>
-  <a class="brand" href="/" aria-label="lessmess home"><img class="brand-icon" src="/static/icon.svg" alt="lessmess" width="28" height="28"></a>
+  <a class="brand" href="/" aria-label="lessmess home"><img class="brand-icon" src="/icon.svg" alt="lessmess" width="28" height="28"></a>
   {{if ne .Page "setup"}}
   <nav class="topnav">
     <a href="/"{{if or (eq .Page "index") (eq .Page "board")}} class="active"{{end}}>Changes</a>
@@ -42,7 +43,7 @@ document.documentElement.dataset.theme = localStorage.getItem("tt-theme") || "da
 <div id="terminal-overlay" hidden>
   <div class="terminal-window">
     <div class="terminal-head">
-      <img class="brand-icon" src="/static/icon.svg" alt="" width="28" height="28">
+      <img class="brand-icon" src="/icon.svg" alt="" width="28" height="28">
       <span id="terminal-title" class="title"></span>
       <button type="button" class="modal-close" data-close-terminal aria-label="Close">✕</button>
     </div>

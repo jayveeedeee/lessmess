@@ -90,6 +90,8 @@ func settingsFieldValue(e EffectiveSettings, field string) (string, bool) {
 		return e.Git.DefaultBranch, true
 	case "ui.showArchived":
 		return strconv.FormatBool(e.UI.ShowArchived), true
+	case "ui.accent":
+		return e.UI.Accent, true
 	case "docs.autoGardenerOnClose":
 		return strconv.FormatBool(e.Docs.AutoGardenerOnClose), true
 	case "docs.gardenerModel":

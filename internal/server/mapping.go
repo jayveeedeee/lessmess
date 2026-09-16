@@ -232,7 +232,8 @@ func (s *Server) enrich(r *http.Request, entries []SessionEntry) []sessionRespon
 // taskTitleRe parses the task-ID prefix the change prompt teaches: a spawned
 // subagent's description becomes the child session's title verbatim, so
 // "FIX-00: do the work" is how a child carries its task association.
-var taskTitleRe = regexp.MustCompile(`^([A-Z][A-Z0-9]{1,3}-\d+):`)
+// Dotted segments extend it to decomposed tasks ("FIX-00.01: …").
+var taskTitleRe = regexp.MustCompile(`^([A-Z][A-Z0-9]{1,3}-\d+(?:\.\d+)*):`)
 
 // reconcileTaskSessions maps subagent children that were spawned by one of
 // the change's sessions but never mapped: one ListSessions call finds
@@ -259,11 +260,12 @@ func (s *Server) reconcileTaskSessions(r *http.Request, c *store.Change) {
 		return
 	}
 	knownTasks := map[string]bool{}
-	if c.Ledger != nil {
-		for _, row := range c.Ledger.Rows {
-			knownTasks[row.ID] = true
+	c.WalkTasks(func(n *store.TaskNode) bool {
+		if n.ID != "" {
+			knownTasks[n.ID] = true
 		}
-	}
+		return true
+	})
 	var fresh []SessionEntry
 	for _, sess := range all {
 		if sess.ParentID == "" || !parents[sess.ParentID] || s.sessions.knows(sess.ID) {
@@ -350,11 +352,13 @@ func (s *Server) sessionChange(w http.ResponseWriter, r *http.Request) {
 
 type createSessionRequest struct {
 	Title string `json:"title"` // optional; defaults to the change title
+	Task  string `json:"task"`  // optional; bind + prime for this task (change sessions only)
 }
 
 func (s *Server) createChangeSession(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	if _, err := s.st.Change(id); err != nil {
+	c, err := s.st.Change(id)
+	if err != nil {
 		writeErr(w, err)
 		return
 	}
@@ -372,8 +376,24 @@ func (s *Server) createChangeSession(w http.ResponseWriter, r *http.Request) {
 	} else {
 		_ = r.ParseForm()
 		req.Title = r.FormValue("title")
+		req.Task = r.FormValue("task")
 	}
 	title := strings.TrimSpace(req.Title)
+	var taskNode *store.TaskNode
+	var prime string
+	if taskID := strings.TrimSpace(req.Task); taskID != "" {
+		taskNode = c.Node(taskID)
+		if taskNode == nil {
+			writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "unknown task " + taskID + " in change " + id})
+			return
+		}
+		prime = s.promptWith(taskPrompt(id, taskNode), "change")
+		if title == "" {
+			title = taskSessionTitle(taskNode)
+		}
+	} else {
+		prime = s.promptWith(changePrompt(id), "change")
+	}
 	if title == "" {
 		title = changeTitle(s.st, id)
 	}
@@ -385,21 +405,26 @@ func (s *Server) createChangeSession(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "create opencode session: " + err.Error()})
 		return
 	}
-	if err := s.oc.Prompt(ctx, sess.ID, s.promptWith(changePrompt(id), "change")); err != nil {
+	if err := s.oc.Prompt(ctx, sess.ID, prime); err != nil {
 		// Don't leak an unbound session: the binding is the whole point.
 		_ = s.oc.DeleteSession(context.Background(), sess.ID)
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "prime change session: " + err.Error()})
 		return
 	}
 	entry := SessionEntry{Session: sess.ID, Title: title, Created: time.Now().Format(time.RFC3339)}
+	if taskNode != nil {
+		entry.Task = taskNode.ID
+		// A manually created task session satisfies the auto-spawn marker.
+		_ = s.autos.mark(id + "\x00" + taskNode.ID)
+	}
 	if err := s.sessions.add(id, entry); err != nil {
 		slog.Error("mapping add", "err", err)
 		_ = s.oc.DeleteSession(context.Background(), sess.ID) // don't leak an unmapped session
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "persist mapping: " + err.Error()})
 		return
 	}
-	slog.Info("session created", "change", id, "session", sess.ID)
-	writeJSON(w, http.StatusCreated, sessionResponse{Session: entry.Session, Title: entry.Title, Created: entry.Created, Live: true})
+	slog.Info("session created", "change", id, "session", sess.ID, "task", entry.Task)
+	writeJSON(w, http.StatusCreated, sessionResponse{Session: entry.Session, Title: entry.Title, Created: entry.Created, Task: entry.Task, Live: true})
 }
 
 func (s *Server) unlinkChangeSession(w http.ResponseWriter, r *http.Request) {

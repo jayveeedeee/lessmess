@@ -1,8 +1,10 @@
 package store
 
 import (
+	"errors"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -39,14 +41,11 @@ func (s *Store) Validate() []Violation {
 		if c.Err != nil {
 			out = append(out, Violation{Rule: 5, File: "changes/" + c.ID + "/ledger.md", Msg: c.Err.Error()})
 		}
-		for href, err := range c.TaskErrs {
-			out = append(out, Violation{Rule: 3, File: "changes/" + c.ID + "/" + href, Msg: err.Error()})
-		}
 	}
 
 	out = append(out, s.validateDirNames()...)
 	out = append(out, s.validateRequiredFiles()...)
-	out = append(out, s.validateTaskConsistency()...)
+	out = append(out, s.validateTaskTree()...)
 	out = append(out, s.validateRootConsistency()...)
 
 	sort.Slice(out, func(i, j int) bool {
@@ -109,56 +108,137 @@ func (s *Store) validateRequiredFiles() []Violation {
 	return out
 }
 
-// Rule 3: every task file has exactly one ledger row and vice versa;
-// frontmatter id, ledger Task cell, and filename sequence agree.
-func (s *Store) validateTaskConsistency() []Violation {
+// validateTaskTree checks rule 3 (and the container parts of rules 2 and
+// 5) recursively over the change's task tree: every task file has exactly
+// one row in its governing ledger and vice versa, IDs and filename
+// sequences agree, dotted ID depth matches the nesting, containers are
+// well-formed, and directories under tasks/ always match a sibling task
+// file.
+func (s *Store) validateTaskTree() []Violation {
 	var out []Violation
 	for _, c := range s.all() {
-		if c.Ledger == nil {
-			continue // already reported as rule 5
+		file := "changes/" + c.ID + "/"
+		for _, d := range c.StrayDirs {
+			out = append(out, Violation{Rule: 3, File: file + d, Msg: "directory under tasks/ has no matching sibling task file"})
 		}
-		rowByHref := map[string]model.TaskRow{}
-		for _, r := range c.Ledger.Rows {
-			rowByHref[r.Href] = r
-			tf, ok := c.Tasks[r.Href]
-			if !ok {
-				out = append(out, Violation{Rule: 3, File: "changes/" + c.ID + "/" + r.Href, Msg: fmt.Sprintf("ledger row %s has no parseable task file", r.ID)})
-				continue
-			}
-			if tf.ID != r.ID {
-				out = append(out, Violation{Rule: 3, File: "changes/" + c.ID + "/" + r.Href, Msg: fmt.Sprintf("frontmatter id %q != ledger row %q", tf.ID, r.ID)})
-			}
-			if seqOf(r.Href) != idSuffixOf(r.ID) {
-				out = append(out, Violation{Rule: 3, File: "changes/" + c.ID + "/" + r.Href, Msg: fmt.Sprintf("filename sequence %q != id suffix %q", seqOf(r.Href), idSuffixOf(r.ID))})
-			}
+		if c.Ledger != nil {
+			// Top-level rows link relative to the change directory.
+			out = append(out, validateLevel(c, "", c.Ledger.Rows, c.Roots)...)
 		}
-		for href := range c.Tasks {
-			if _, ok := rowByHref[href]; !ok {
-				out = append(out, Violation{Rule: 3, File: "changes/" + c.ID + "/" + href, Msg: "task file has no ledger row"})
+		c.WalkTasks(func(n *TaskNode) bool {
+			if !n.HasContainer() {
+				return true
 			}
-		}
-		for href := range c.TaskErrs {
-			if _, ok := rowByHref[href]; !ok {
-				out = append(out, Violation{Rule: 3, File: "changes/" + c.ID + "/" + href, Msg: "unparseable task file has no ledger row"})
+			rel := n.ContainerRel()
+			switch {
+			case errors.Is(n.ContainerErr, os.ErrNotExist):
+				out = append(out, Violation{Rule: 2, File: file + rel + "/ledger.md", Msg: "task container missing ledger.md"})
+			case n.ContainerErr != nil:
+				out = append(out, Violation{Rule: 5, File: file + rel + "/ledger.md", Msg: n.ContainerErr.Error()})
 			}
-		}
+			if st, err := os.Stat(filepath.Join(c.Dir, filepath.FromSlash(rel), "tasks")); err != nil || !st.IsDir() {
+				out = append(out, Violation{Rule: 2, File: file + rel + "/tasks", Msg: "task container missing tasks/ directory"})
+			}
+			if n.Container != nil {
+				out = append(out, validateLevel(c, rel+"/", n.Container.Rows, n.Children)...)
+			}
+			return true
+		})
 	}
 	return out
 }
 
+// validateLevel cross-checks one governing ledger's rows against the
+// nodes of the level it governs. hrefPrefix is "" for the change ledger
+// (its rows already link change-relative) or "<container>/" for container
+// ledgers (their rows link container-relative).
+func validateLevel(c *Change, hrefPrefix string, rows []model.TaskRow, nodes []*TaskNode) []Violation {
+	var out []Violation
+	file := "changes/" + c.ID + "/"
+	nodeByHref := make(map[string]*TaskNode, len(nodes))
+	for _, n := range nodes {
+		nodeByHref[n.Href] = n
+	}
+	rowHrefs := make(map[string]bool, len(rows))
+	for _, r := range rows {
+		href := hrefPrefix + r.Href
+		rowHrefs[href] = true
+		n := nodeByHref[href]
+		if n == nil {
+			out = append(out, Violation{Rule: 3, File: file + href, Msg: fmt.Sprintf("ledger row %s has no parseable task file", r.ID)})
+			continue
+		}
+		if n.FileErr != nil {
+			out = append(out, Violation{Rule: 3, File: file + href, Msg: n.FileErr.Error()})
+		} else if n.File != nil && n.File.ID != r.ID {
+			out = append(out, Violation{Rule: 3, File: file + href, Msg: fmt.Sprintf("frontmatter id %q != ledger row %q", n.File.ID, r.ID)})
+		}
+		if seqOf(href) != model.LastTaskSegment(r.ID) {
+			out = append(out, Violation{Rule: 3, File: file + href, Msg: fmt.Sprintf("filename sequence %q != id segment %q", seqOf(href), model.LastTaskSegment(r.ID))})
+		}
+		if !model.DottedSegmentsValid(r.ID) {
+			out = append(out, Violation{Rule: 3, File: file + href, Msg: fmt.Sprintf("task id %q has malformed dotted segments (want two-digit)", r.ID)})
+		}
+		if depth := 1 + ancestors(n); model.TaskIDDepth(r.ID) != depth {
+			out = append(out, Violation{Rule: 3, File: file + href, Msg: fmt.Sprintf("task id %q depth %d != nesting depth %d", r.ID, model.TaskIDDepth(r.ID), depth)})
+		}
+	}
+	for _, n := range nodes {
+		if rowHrefs[n.Href] {
+			continue
+		}
+		if n.FileErr != nil {
+			out = append(out, Violation{Rule: 3, File: file + n.Href, Msg: "unparseable task file has no ledger row: " + n.FileErr.Error()})
+			continue
+		}
+		id := n.ID
+		if id == "" {
+			id = n.Href
+		}
+		out = append(out, Violation{Rule: 3, File: file + n.Href, Msg: fmt.Sprintf("task file %s has no ledger row", id)})
+	}
+	return out
+}
+
+// ancestors returns the number of ancestor tasks of n (0 for top level).
+func ancestors(n *TaskNode) int {
+	d := 0
+	for p := n.Parent; p != nil; p = p.Parent {
+		d++
+	}
+	return d
+}
+
+// seqOf extracts the filename sequence from a task href ("…/01-x.md" → "01").
 func seqOf(href string) string {
-	base := filepath.Base(href)
+	base := path.Base(href)
 	if i := strings.Index(base, "-"); i > 0 {
 		return base[:i]
 	}
 	return strings.TrimSuffix(base, ".md")
 }
 
-func idSuffixOf(id string) string {
-	if i := strings.LastIndex(id, "-"); i >= 0 {
-		return id[i+1:]
+// CloseOutReady reports whether every non-cancelled task in the change's
+// whole tree is Test or Done (the recursive close-out gate). It lists the
+// offending task IDs (or hrefs for broken files) when not ready.
+func (s *Store) CloseOutReady(changeID string) (bool, []string, error) {
+	c, err := s.Change(changeID)
+	if err != nil {
+		return false, nil, err
 	}
-	return id
+	var offending []string
+	c.WalkTasks(func(n *TaskNode) bool {
+		st := n.status()
+		if st != model.StatusTest && st != model.StatusDone && st != model.StatusCancelled {
+			if n.ID != "" {
+				offending = append(offending, n.ID)
+			} else {
+				offending = append(offending, n.Href)
+			}
+		}
+		return true
+	})
+	return len(offending) == 0, offending, nil
 }
 
 // Rule 6: the root ledger has one row per change directory (including

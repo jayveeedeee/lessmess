@@ -37,6 +37,7 @@ type Server struct {
 	oc       *opencode.Client // nil disables the opencode integration
 	sessions *mapping
 	mapErr   error
+	autos    *autosession // once-only markers for auto-spawned task sessions
 	docsQ    *docsQueue   // nil disables the docs system (no agentsdocs.json)
 	docsW    *docsWatcher // nil when docs are disabled or the watcher failed
 }
@@ -52,6 +53,7 @@ func New(st *store.Store) *Server {
 	}
 	m, err := loadMapping(filepath.Join(st.Dir, store.StateDirName, "sessions.json"))
 	s.sessions, s.mapErr = m, err
+	s.autos = loadAutosession(filepath.Join(st.Dir, store.StateDirName, "autosession.json"))
 
 	if cfg, err := docs.LoadConfig(st.Dir); err != nil {
 		slog.Warn("docs config unreadable; docs system disabled", "err", err)
@@ -70,11 +72,13 @@ func New(st *store.Store) *Server {
 	mux.HandleFunc("GET /changes/{id}", s.board)
 	mux.HandleFunc("GET /changes/{id}/plan", s.planDetail)
 	mux.HandleFunc("GET /changes/{id}/ledger", s.ledgerDetail)
-	mux.HandleFunc("GET /changes/{id}/tasks/{file}", s.taskDetail)
+	mux.HandleFunc("GET /changes/{id}/tasks/{file...}", s.taskDetail)
 	mux.HandleFunc("POST /changes/{id}/tasks", s.createTask)
+	mux.HandleFunc("POST /changes/{id}/expand", s.expandTask)
 	mux.HandleFunc("POST /changes/{id}/move", s.moveTask)
 	mux.HandleFunc("POST /changes/{id}/close", s.closeChange)
 	mux.HandleFunc("POST /changes/{id}/reopen", s.reopenChange)
+	mux.HandleFunc("POST /changes/{id}/status", s.changeStatus)
 	mux.HandleFunc("POST /changes/{id}/commit", s.commitChange)
 	mux.HandleFunc("GET /changes/{id}/commit-status", s.commitStatus)
 	mux.HandleFunc("POST /changes/{$}", s.createChange)
@@ -107,6 +111,13 @@ func New(st *store.Store) *Server {
 	mux.HandleFunc("GET /explorer/tree", s.explorerTree)
 	mux.HandleFunc("GET /explorer/detail", s.explorerDetail)
 	mux.HandleFunc("POST /explorer/chat", s.explorerChat)
+	// Dynamic brand assets: the effective accent injected into the icon
+	// SVG, the favicon rasters, and the apple-touch tile.
+	s.rend.accent = func() AccentColor { return ResolveAccent(s.st.Dir) }
+	brand := newBrandRenderer(s.rend.accent)
+	mux.HandleFunc("GET /icon.svg", brand.svg)
+	mux.HandleFunc("GET /favicon.ico", brand.ico)
+	mux.HandleFunc("GET /apple-touch-icon.png", brand.touch)
 	registerSetupRoutes(mux, &setupEnv{
 		dir:  st.Dir,
 		rend: s.rend,
@@ -169,7 +180,7 @@ func writeErr(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, store.ErrNotFound):
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
-	case errors.Is(err, store.ErrInvalid):
+	case errors.Is(err, store.ErrInvalid), errors.Is(err, store.ErrNoContainer):
 		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": err.Error()})
 	default:
 		slog.Error("handler", "err", err)
@@ -185,7 +196,9 @@ type changeSummary struct {
 	Prefix  string `json:"prefix"`
 	Status  string `json:"status"`
 	Updated string `json:"updated"`
-	Tasks   int    `json:"tasks"`
+	Tasks    int    `json:"tasks"`
+	Complete int    `json:"complete"` // Test + Done descendants
+	Open     int    `json:"open"`     // non-cancelled descendants not yet complete
 }
 
 func (s *Server) index(w http.ResponseWriter, r *http.Request) {
@@ -207,7 +220,14 @@ func (s *Server) index(w http.ResponseWriter, r *http.Request) {
 		}
 		sum := changeSummary{ID: rr.Change, Title: rr.Title, Prefix: rr.Prefix, Status: string(rr.Status), Updated: rr.Updated}
 		if c, ok := byID[rr.Change]; ok && c.Ledger != nil {
-			sum.Tasks = len(c.Ledger.Rows)
+			// Recursive: every task in the tree, at any depth.
+			c.WalkTasks(func(n *store.TaskNode) bool {
+				sum.Tasks++
+				return true
+			})
+			st := c.AllTaskStats()
+			sum.Complete = st.Complete
+			sum.Open = st.Total - st.Complete
 		}
 		rows = append(rows, sum)
 		pos = append(pos, i)
@@ -250,11 +270,14 @@ func datePrefixOf(id string) string {
 }
 
 type boardResponse struct {
-	ID      string          `json:"id"`
-	Overall string          `json:"overall"`
-	Columns []columnView    `json:"columns"`
-	Tasks   []model.TaskRow `json:"tasks"`
-	Error   string          `json:"error,omitempty"`
+	ID            string          `json:"id"`
+	Task          string          `json:"task,omitempty"` // drill-down task ID
+	Overall       string          `json:"overall"`
+	Columns       []columnView    `json:"columns"`
+	Tasks         []model.TaskRow `json:"tasks"`
+	ProgressDone  int             `json:"progressDone"`
+	ProgressTotal int             `json:"progressTotal"`
+	Error         string          `json:"error,omitempty"`
 }
 
 type columnView struct {
@@ -269,8 +292,26 @@ func (s *Server) board(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
+	// Drill-down: ?task=<id> renders that task's sub-board (its children
+	// in the kanban); absent renders the change's root board.
+	taskID := strings.TrimSpace(r.URL.Query().Get("task"))
+	var view boardView
+	if taskID != "" {
+		n := c.Node(taskID)
+		if n == nil {
+			writeErr(w, store.ErrNotFound)
+			return
+		}
+		view = newTaskBoardView(c, n)
+	} else {
+		view = newBoardView(c)
+	}
+	// Auto-spawn (best-effort, async): newly decomposed tasks visible on
+	// a board render get their task-scoped session exactly once.
+	if s.oc != nil && s.mapErr == nil {
+		go s.autospawnChange(c, 1)
+	}
 	if wantsHTML(r) {
-		view := newBoardView(c)
 		if isHX(r) {
 			s.rend.render(w, s.rend.partial, "boardFragment", view)
 		} else {
@@ -278,24 +319,58 @@ func (s *Server) board(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	resp := boardResponse{ID: id}
+	resp := boardResponse{ID: id, Task: view.Task}
 	if c.Err != nil || c.Ledger == nil {
 		resp.Error = fmt.Sprintf("ledger unreadable: %v", c.Err)
 		writeJSON(w, http.StatusUnprocessableEntity, resp)
 		return
 	}
 	resp.Overall = string(c.Ledger.Overall)
-	resp.Tasks = c.Ledger.Rows
-	for _, st := range model.TaskStatusOrder {
-		col := columnView{Status: string(st)}
-		for _, t := range c.Ledger.Rows {
-			if t.Status == st {
-				col.Count++
-			}
-		}
-		resp.Columns = append(resp.Columns, col)
+	resp.Tasks = nodeRows(c.Roots)
+	for _, col := range view.Columns {
+		resp.Columns = append(resp.Columns, columnView{Status: col.Status, Count: len(col.Tasks)})
 	}
+	resp.ProgressDone = view.ProgressDone
+	resp.ProgressTotal = view.ProgressTotal
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// expandTask handles POST /changes/{id}/expand: decompose a task into a
+// sub plan (creates the container). User-instructed only — this endpoint
+// is the board's explicit action.
+func (s *Server) expandTask(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	var req struct {
+		Task string `json:"task"`
+	}
+	if isJSON(r) {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad JSON body"})
+			return
+		}
+	} else {
+		_ = r.ParseForm()
+		req.Task = r.FormValue("task")
+	}
+	if strings.TrimSpace(req.Task) == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "task is required"})
+		return
+	}
+	rel, err := s.st.DecomposeTask(id, strings.TrimSpace(req.Task))
+	if err != nil {
+		if errors.Is(err, store.ErrContainerExists) {
+			writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
+			return
+		}
+		writeErr(w, err)
+		return
+	}
+	slog.Info("task expanded", "change", id, "task", req.Task, "container", rel)
+	// Best-effort, async: the new container's task-scoped session.
+	if c, err := s.st.Change(id); err == nil {
+		go s.autospawnChange(c, 1)
+	}
+	writeJSON(w, http.StatusCreated, map[string]string{"change": id, "task": req.Task, "container": rel})
 }
 
 func (s *Server) taskDetail(w http.ResponseWriter, r *http.Request) {
@@ -306,10 +381,16 @@ func (s *Server) taskDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if wantsHTML(r) || isHX(r) {
-		view := taskView{Task: tf, Body: dropLeadingH1(tf.Body, tf.ID)}
-		if c, err := s.st.Change(id); err == nil && c.Ledger != nil {
-			if row := c.Ledger.Row(tf.ID); row != nil {
-				view.Status = string(row.Status)
+		view := taskView{Task: tf, Body: dropLeadingH1(tf.Body, tf.ID), Doc: "tasks/" + file}
+		if c, err := s.st.Change(id); err == nil {
+			// Status lives in the governing ledger: the tree node knows
+			// its row wherever the task nests.
+			if n := c.Node(tf.ID); n != nil && n.Row != nil {
+				view.Status = string(n.Row.Status)
+			} else if c.Ledger != nil {
+				if row := c.Ledger.Row(tf.ID); row != nil {
+					view.Status = string(row.Status)
+				}
 			}
 		}
 		s.rend.render(w, s.rend.partial, "taskDetail", view)
@@ -333,16 +414,25 @@ func (s *Server) planDetail(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"id": id, "body": body})
 }
 
-// ledgerDetail serves the change's ledger.md rendered in the detail modal.
+// ledgerDetail serves a change's ledger.md (or, with ?href=, a task
+// container's ledger.md) rendered in the detail modal.
 func (s *Server) ledgerDetail(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	body, err := s.st.LedgerFile(id)
+	var body string
+	var err error
+	label := id
+	if href := strings.TrimSpace(r.URL.Query().Get("href")); href != "" {
+		body, err = s.st.ContainerLedgerFile(id, href)
+		label = id + "/" + href
+	} else {
+		body, err = s.st.LedgerFile(id)
+	}
 	if err != nil {
 		writeErr(w, err)
 		return
 	}
 	if wantsHTML(r) || isHX(r) {
-		s.rend.render(w, s.rend.partial, "ledgerDetail", ledgerView{ID: id, Body: dropLeadingH1(body, id)})
+		s.rend.render(w, s.rend.partial, "ledgerDetail", ledgerView{ID: label, Body: dropLeadingH1(body, label), Doc: strings.TrimSpace(r.URL.Query().Get("href"))})
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"id": id, "body": body})
@@ -390,7 +480,8 @@ func (s *Server) moveTask(w http.ResponseWriter, r *http.Request) {
 }
 
 type createTaskRequest struct {
-	Title string `json:"title"`
+	Title  string `json:"title"`
+	Parent string `json:"parent"` // optional task ID: create a subtask in that task's container
 }
 
 // isJSON reports whether the request body is JSON (vs. an htmx form post).
@@ -412,8 +503,9 @@ func (s *Server) createTask(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		req.Title = r.FormValue("title")
+		req.Parent = r.FormValue("parent")
 	}
-	row, err := s.st.CreateTask(id, req.Title)
+	row, err := s.st.CreateTask(id, strings.TrimSpace(req.Parent), req.Title)
 	if err != nil {
 		writeErr(w, err)
 		return

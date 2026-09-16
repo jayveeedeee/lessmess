@@ -93,11 +93,45 @@ Setup API (for the wizard and other clients): `GET /setup`,
   other file content byte-for-byte.
 - **Add task / New change**: creates spec-compliant task files, change
   directories, and ledger rows.
+- **Status control**: while a change is `Planned`, `In progress`, or `Blocked`,
+  the board header offers a status select next to the status pill. It calls
+  `POST /changes/<id>/status` with `{"status":"..."}`, which updates the change
+  ledger **and** the root-ledger row atomically — so the two can no longer
+  drift. `Done` is intentionally not offered (closing stays the user-gated
+  **Close change** flow); `Cancelled` has no endpoint. Agent sessions get the
+  same deterministic path via the same endpoint.
 - **Live updates**: the server watches `changes/` with fsnotify; edits made
   by other tools (e.g. an agent updating a ledger) appear on the board via
   SSE without a restart or reload.
 - **Validation banner**: any breach of the `AGENTS.md` validation rules is
   shown in a banner and refuses writes to the affected file.
+
+### Nested tasks (sub plans)
+
+Any task can be expanded into a sub plan when it needs detailed work: the
+task keeps its file and gains a container directory
+(`tasks/<NN-slug>/ledger.md` + `tasks/`) holding its subtasks with dotted
+IDs (`EXC-00` → `EXC-00.00` → `EXC-00.00.01`), recursively.
+
+- **⤢ Expand** on a card creates the container (the user-instructed
+  decomposition action). Agents propose decompositions when work reveals
+  complexity but never create containers unprompted.
+- **Drill down**: the `x/y ✓` badge on a decomposed card opens that task's
+  sub-board (`/changes/<id>?task=<id>`) — the same kanban scoped to its
+  children, with a breadcrumb back up. "Add subtask" targets the viewed
+  level.
+- **Progress is display-only**: badges on cards, the board header pill, and
+  the index `Tasks` column (`complete/open`) are computed from descendants
+  (`Test` + `Done` count as complete, `Cancelled` leaves the denominator).
+  Nothing is ever written to a ledger by rollup — each status lives in the
+  row of its governing ledger, and `Done` stays user-gated.
+- **Close-out is recursive**: closing a change requires every non-cancelled
+  task in the whole tree to be `Test` or `Done`.
+- **Sessions**: every decomposed task gets one auto-spawned, task-scoped
+  opencode session (best-effort, exactly once — unlinking never respawns;
+  the sub-board's Start/Continue button is the manual retry). Sub-boards
+  list the sessions bound to that task; delegation with dotted title
+  prefixes (`EXC-00.01: …`) attaches subagent sessions at any depth.
 
 ## Settings
 
@@ -124,6 +158,7 @@ values apply to new activity immediately — no restart.
 | `prompts.discussion` / `change` / `commit` / `repoCommit` / `gardener` / `explorer` | Free text **appended** to the corresponding built-in prompt. Base prompts are never modified, so workflow safeguards stay intact. |
 | `git.defaultBranch` | Recorded in the root ledger Branch column for newly created changes (informational only — no branch is created). |
 | `ui.showArchived` | List archived changes on the Changes page (default on). |
+| `ui.accent` | Accent color: one of a fixed palette (orange, teal, green, blue, violet, pink, fuchsia, red, amber, cyan). It tints the whole UI and the favicon/brand icon. With no value in either layer, the first run rolls a random color and saves it to the personal layer; setting **Auto** in both layers rolls a fresh random color on the next page load. Unknown values are rejected at save time. |
 | `docs.autoGardenerOnClose` | Run the doc gardener automatically when a change closes (default on). |
 | `docs.gardenerModel` | Model for doc-gardener sessions, as `provider/model`. Empty inherits `session.model`; save-time validation applies when the service is reachable. |
 
@@ -137,8 +172,9 @@ API: `GET /api/settings` (effective + layers + sources),
 or null clears a field from that layer; submitted agent/model values are
 validated against the live service when reachable — the service accepts
 unknown names at creation but then never runs the session),
-`GET /api/settings/options` (agent/model lists scoped to this repository;
-`available:false` when the service is down).
+`GET /api/settings/options` (agent/model lists scoped to this repository,
+plus the static accent palette; `available:false` when the service is
+down — the palette is still served).
 
 ## Safety
 

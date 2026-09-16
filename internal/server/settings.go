@@ -79,9 +79,12 @@ type GitSettings struct {
 	DefaultBranch string `json:"defaultBranch,omitempty"`
 }
 
-// UISettings configure page behavior.
+// UISettings configure page behavior. Accent is a palette id from
+// AccentPalette (empty = unset); an unset value rolls randomly once —
+// see ResolveAccent.
 type UISettings struct {
-	ShowArchived *bool `json:"showArchived,omitempty"`
+	ShowArchived *bool  `json:"showArchived,omitempty"`
+	Accent       string `json:"accent,omitempty"`
 }
 
 // DocsSettings configure the docs subsystem.
@@ -106,9 +109,11 @@ type EffectiveSessionSettings struct {
 	AutoOpenTerminal bool   `json:"autoOpenTerminal"`
 }
 
-// EffectiveUISettings resolves UISettings to concrete values.
+// EffectiveUISettings resolves UISettings to concrete values. Accent is
+// the configured palette id ("" only before the first roll persists).
 type EffectiveUISettings struct {
-	ShowArchived bool `json:"showArchived"`
+	ShowArchived bool   `json:"showArchived"`
+	Accent       string `json:"accent"`
 }
 
 // EffectiveDocsSettings resolves DocsSettings to concrete values.
@@ -238,6 +243,7 @@ func mergeSettings(project, personal Settings) (EffectiveSettings, map[string]st
 	eff.Git.DefaultBranch = pickStr("git.defaultBranch", project.Git.DefaultBranch, personal.Git.DefaultBranch)
 
 	eff.UI.ShowArchived = pickBool("ui.showArchived", true, project.UI.ShowArchived, personal.UI.ShowArchived)
+	eff.UI.Accent = pickStr("ui.accent", project.UI.Accent, personal.UI.Accent)
 	eff.Docs.AutoGardenerOnClose = pickBool("docs.autoGardenerOnClose", true, project.Docs.AutoGardenerOnClose, personal.Docs.AutoGardenerOnClose)
 	eff.Docs.GardenerModel = pickStr("docs.gardenerModel", project.Docs.GardenerModel, personal.Docs.GardenerModel)
 

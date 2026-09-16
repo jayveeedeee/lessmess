@@ -439,6 +439,13 @@ func NewSetup(dir string, boot func(string) (http.Handler, error)) *SetupServer 
 	m.HandleFunc("GET /api/settings", s.env.getSettings)
 	m.HandleFunc("PUT /api/settings", s.env.putSettings)
 	m.HandleFunc("GET /api/settings/options", s.env.settingsOptions)
+	// Brand assets resolve read-only here: setup mode never rolls an
+	// accent (no store yet), so the wizard shows the default orange.
+	s.env.rend.accent = func() AccentColor { return effectiveAccentColor(dir) }
+	brand := newBrandRenderer(s.env.rend.accent)
+	m.HandleFunc("GET /icon.svg", brand.svg)
+	m.HandleFunc("GET /favicon.ico", brand.ico)
+	m.HandleFunc("GET /apple-touch-icon.png", brand.touch)
 	if sh, err := staticHandler(); err == nil {
 		m.Handle("GET /static/", sh)
 	}

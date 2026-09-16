@@ -39,8 +39,8 @@ Task statuses live exclusively in each change's ledger.
 	}
 	l, _ := model.ParseChangeLedger("l", model.RenderChangeLedger("2026-09-10-0", "2026-09-10"))
 	l.SetOverall(model.OverallInProgress, "2026-09-10")
-	l.AppendTask(model.TaskRow{ID: "FIX-00", Href: "tasks/00-first.md", Title: "First", Status: model.StatusNotStarted, Updated: "2026-09-10", Notes: model.Empty})
-	l.AppendTask(model.TaskRow{ID: "FIX-01", Href: "tasks/01-second.md", Title: "Second", Status: model.StatusInProgress, Updated: "2026-09-10", Notes: model.Empty})
+	l.AppendTask(model.TaskRow{ID: "FIX-00", Href: "tasks/00-first.md", Title: "First", Status: model.StatusTest, Updated: "2026-09-10", Notes: model.Empty})
+	l.AppendTask(model.TaskRow{ID: "FIX-01", Href: "tasks/01-second.md", Title: "Second", Status: model.StatusTest, Updated: "2026-09-10", Notes: model.Empty})
 	if err := os.WriteFile(filepath.Join(cdir, "ledger.md"), l.Content(), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -159,11 +159,14 @@ func TestBoard(t *testing.T) {
 	if resp.Overall != "In progress" || len(resp.Tasks) != 2 || len(resp.Columns) != 6 {
 		t.Fatalf("resp = %+v", resp)
 	}
-	if resp.Columns[0].Status != "Not started" || resp.Columns[0].Count != 1 {
+	if resp.Columns[0].Status != "Not started" || resp.Columns[0].Count != 0 {
 		t.Fatalf("columns = %+v", resp.Columns)
 	}
-	if resp.Columns[3].Status != "Test" || resp.Columns[4].Status != "Done" {
-		t.Fatalf("columns = %+v; want Test at index 3, Done at index 4", resp.Columns)
+	if resp.Columns[3].Status != "Test" || resp.Columns[3].Count != 2 {
+		t.Fatalf("columns = %+v; want Test at index 3 with 2 tasks", resp.Columns)
+	}
+	if resp.Columns[4].Status != "Done" {
+		t.Fatalf("columns = %+v; want Done at index 4", resp.Columns)
 	}
 }
 

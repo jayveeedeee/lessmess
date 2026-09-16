@@ -25,8 +25,9 @@ type Change struct {
 	Archived bool
 	Ledger   *model.ChangeLedger
 	Err      error // non-nil if the ledger failed to parse
-	Tasks    map[string]*model.TaskFile
-	TaskErrs map[string]error
+	Roots     []*TaskNode          // top-level tasks in change-ledger row order
+	Nodes     map[string]*TaskNode // every task node by ID
+	StrayDirs []string             // dirs under tasks/ without a matching task file
 }
 
 // Event notifies listeners that the store was reloaded or written.
@@ -44,6 +45,12 @@ var (
 	// directory yet (the setup-mode trigger); a malformed tree is a
 	// different, non-sentinel error.
 	ErrNoChanges = errors.New("changes/ directory not found")
+	// ErrNoContainer is returned when a subtask operation targets a task
+	// that is not decomposed (no container directory).
+	ErrNoContainer = errors.New("task is not decomposed")
+	// ErrContainerExists is returned by DecomposeTask when the task
+	// already has a container.
+	ErrContainerExists = errors.New("task already has a sub plan")
 )
 
 // changeIDRe accepts both change-ID formats: the legacy numeric suffix
@@ -148,8 +155,6 @@ func (s *Store) scan() (*model.RootLedger, error, map[string]*Change, map[string
 				ID:       e.Name(),
 				Dir:      filepath.Join(dir, e.Name()),
 				Archived: archivedFlag,
-				Tasks:    map[string]*model.TaskFile{},
-				TaskErrs: map[string]error{},
 			}
 			if data, err := os.ReadFile(filepath.Join(c.Dir, "ledger.md")); err != nil {
 				c.Err = err
@@ -158,24 +163,12 @@ func (s *Store) scan() (*model.RootLedger, error, map[string]*Change, map[string
 			} else {
 				c.Ledger = l
 			}
-			if taskEntries, err := os.ReadDir(filepath.Join(c.Dir, "tasks")); err == nil {
-				for _, te := range taskEntries {
-					if te.IsDir() || !strings.HasSuffix(te.Name(), ".md") {
-						continue
-					}
-					href := "tasks/" + te.Name()
-					data, err := os.ReadFile(filepath.Join(c.Dir, "tasks", te.Name()))
-					if err != nil {
-						c.TaskErrs[href] = err
-						continue
-					}
-					if tf, err := model.ParseTaskFile(c.ID+"/"+href, data); err != nil {
-						c.TaskErrs[href] = err
-					} else {
-						c.Tasks[href] = tf
-					}
-				}
+			var rows []model.TaskRow
+			if c.Ledger != nil {
+				rows = c.Ledger.Rows
 			}
+			c.Roots = s.scanTasks(c, filepath.Join(c.Dir, "tasks"), "tasks/", nil, rows)
+			c.indexNodes()
 			if archivedFlag {
 				archived[c.ID] = c
 			} else {
@@ -295,23 +288,74 @@ func (s *Store) writeLedger(c *Change, l *model.ChangeLedger) error {
 	return nil
 }
 
-// MoveTask sets a task's status and position within its status group.
+// governingLedgerPath returns the absolute path of the ledger that governs
+// the given task node (the change ledger for top-level tasks, the parent
+// container's ledger below that).
+func governingLedgerPath(c *Change, n *TaskNode) string {
+	if n.Parent == nil {
+		return filepath.Join(c.Dir, "ledger.md")
+	}
+	return filepath.Join(c.Dir, filepath.FromSlash(n.Parent.ContainerRel()), "ledger.md")
+}
+
+// writeGoverningLedger atomically writes a governing-ledger file and
+// reloads + notifies with the change-relative path.
+func (s *Store) writeGoverningLedger(c *Change, n *TaskNode, content []byte) error {
+	p := governingLedgerPath(c, n)
+	if err := model.WriteFileAtomic(p, content, 0o644); err != nil {
+		return err
+	}
+	rel := "ledger.md"
+	if n.Parent != nil {
+		rel = n.Parent.ContainerRel() + "/ledger.md"
+	}
+	s.Reload()
+	s.notify(Event{Kind: "write", Path: rel})
+	return nil
+}
+
+// MoveTask sets a task's status and position within its status group in
+// the ledger that governs it (change ledger or parent container ledger).
 func (s *Store) MoveTask(changeID, taskID string, toStatus model.TaskStatus, toIndex int) error {
 	c, err := s.Change(changeID)
 	if err != nil {
 		return err
 	}
-	l, err := s.freshLedger(c)
+	n := c.Node(taskID)
+	if n == nil {
+		return ErrNotFound
+	}
+	data, err := os.ReadFile(governingLedgerPath(c, n))
 	if err != nil {
 		return err
 	}
-	if err := l.MoveTask(taskID, toStatus, toIndex, today()); err != nil {
-		if errors.Is(err, model.ErrTaskNotFound) {
-			return ErrNotFound
+	var content []byte
+	if n.Parent == nil {
+		l, err := model.ParseChangeLedger(c.ID+"/ledger.md", data)
+		if err != nil {
+			return fmt.Errorf("%w: %v", ErrInvalid, err)
 		}
-		return fmt.Errorf("%w: %v", ErrInvalid, err)
+		if err := l.MoveTask(taskID, toStatus, toIndex, today()); err != nil {
+			if errors.Is(err, model.ErrTaskNotFound) {
+				return ErrNotFound
+			}
+			return fmt.Errorf("%w: %v", ErrInvalid, err)
+		}
+		content = l.Content()
+	} else {
+		l, err := model.ParseTaskLedger(c.ID+"/"+n.Parent.ContainerRel()+"/ledger.md", data)
+		if err != nil {
+			return fmt.Errorf("%w: %v", ErrInvalid, err)
+		}
+		if err := l.MoveTask(taskID, toStatus, toIndex, today()); err != nil {
+			if errors.Is(err, model.ErrTaskNotFound) {
+				return ErrNotFound
+			}
+			return fmt.Errorf("%w: %v", ErrInvalid, err)
+		}
+		content = l.Content()
 	}
-	return s.writeLedger(c, l)
+	return s.writeGoverningLedger(c, n, content)
 }
 
 var slugRe = regexp.MustCompile(`[^a-z0-9]+`)
@@ -328,9 +372,40 @@ func slug(title string) string {
 	return s
 }
 
-// CreateTask allocates the next task number, writes the task file from the
-// template, and appends the ledger row.
-func (s *Store) CreateTask(changeID, title string) (model.TaskRow, error) {
+// DecomposeTask turns a task into a sub plan: it creates the task's
+// container directory with a minimal ledger.md and an empty tasks/
+// directory. The task file itself is untouched and its row stays in the
+// governing ledger. Returns the change-relative container path.
+func (s *Store) DecomposeTask(changeID, taskID string) (string, error) {
+	c, err := s.Change(changeID)
+	if err != nil {
+		return "", err
+	}
+	n := c.Node(taskID)
+	if n == nil {
+		return "", ErrNotFound
+	}
+	containerRel := n.ContainerRel()
+	dir := filepath.Join(c.Dir, filepath.FromSlash(containerRel))
+	if st, err := os.Stat(dir); err == nil && st.IsDir() {
+		return "", ErrContainerExists
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "tasks"), 0o755); err != nil {
+		return "", err
+	}
+	if err := model.WriteFileAtomic(filepath.Join(dir, "ledger.md"), model.RenderTaskLedger(taskID, changeID, today()), 0o644); err != nil {
+		return "", err
+	}
+	s.Reload()
+	s.notify(Event{Kind: "write", Path: containerRel + "/ledger.md"})
+	return containerRel, nil
+}
+
+// CreateTask allocates the next task number within its governing level
+// (the change root when parentTaskID is empty, the parent's container
+// otherwise), writes the task file from the template, and appends the
+// row to the governing ledger.
+func (s *Store) CreateTask(changeID, parentTaskID, title string) (model.TaskRow, error) {
 	c, err := s.Change(changeID)
 	if err != nil {
 		return model.TaskRow{}, err
@@ -340,9 +415,29 @@ func (s *Store) CreateTask(changeID, title string) (model.TaskRow, error) {
 		return model.TaskRow{}, fmt.Errorf("%w: task title must be non-empty and contain no |", ErrInvalid)
 	}
 
+	var tasksDir, relPrefix, ledgerPath string
+	var parent *TaskNode
+	if parentTaskID == "" {
+		tasksDir = filepath.Join(c.Dir, "tasks")
+		relPrefix = "tasks/"
+		ledgerPath = filepath.Join(c.Dir, "ledger.md")
+	} else {
+		parent = c.Node(parentTaskID)
+		if parent == nil {
+			return model.TaskRow{}, ErrNotFound
+		}
+		containerRel := parent.ContainerRel()
+		if _, err := os.Stat(filepath.Join(c.Dir, filepath.FromSlash(containerRel), "ledger.md")); err != nil {
+			return model.TaskRow{}, ErrNoContainer
+		}
+		tasksDir = filepath.Join(c.Dir, filepath.FromSlash(containerRel), "tasks")
+		relPrefix = containerRel + "/tasks/"
+		ledgerPath = filepath.Join(c.Dir, filepath.FromSlash(containerRel), "ledger.md")
+	}
+
 	// Next sequence = highest existing filename sequence + 1 (no reuse).
 	maxSeq := -1
-	entries, _ := os.ReadDir(filepath.Join(c.Dir, "tasks"))
+	entries, _ := os.ReadDir(tasksDir)
 	for _, e := range entries {
 		var n int
 		if _, err := fmt.Sscanf(e.Name(), "%02d-", &n); err == nil && n > maxSeq {
@@ -351,39 +446,61 @@ func (s *Store) CreateTask(changeID, title string) (model.TaskRow, error) {
 	}
 	seq := maxSeq + 1
 
-	prefix := ""
-	if root, rerr := s.Root(); rerr == nil && root != nil {
-		for _, r := range root.Rows {
-			if r.Change == changeID && r.Prefix != model.Empty {
-				prefix = r.Prefix
+	var id string
+	if parent == nil {
+		prefix := ""
+		if root, rerr := s.Root(); rerr == nil && root != nil {
+			for _, r := range root.Rows {
+				if r.Change == changeID && r.Prefix != model.Empty {
+					prefix = r.Prefix
+				}
 			}
 		}
-	}
-	var id string
-	if prefix != "" {
-		id = fmt.Sprintf("%s-%02d", prefix, seq)
+		if prefix != "" {
+			id = fmt.Sprintf("%s-%02d", prefix, seq)
+		} else {
+			id = fmt.Sprintf("%02d", seq)
+		}
 	} else {
-		id = fmt.Sprintf("%02d", seq)
+		id = model.ChildTaskID(parentTaskID, fmt.Sprintf("%02d", seq))
 	}
 	filename := fmt.Sprintf("%02d-%s.md", seq, slug(title))
-	href := "tasks/" + filename
+	href := relPrefix + filename // change-relative (node view)
 
-	if err := model.WriteFileAtomic(filepath.Join(c.Dir, "tasks", filename), model.RenderTaskFile(id, title), 0o644); err != nil {
+	if err := model.WriteFileAtomic(filepath.Join(tasksDir, filename), model.RenderTaskFile(id, title), 0o644); err != nil {
 		return model.TaskRow{}, err
 	}
 
-	l, err := s.freshLedger(c)
+	row := model.TaskRow{
+		ID: id, Href: "tasks/" + filename, Title: title,
+		Status: model.StatusNotStarted, Updated: today(), Notes: model.Empty,
+	}
+	data, err := os.ReadFile(ledgerPath)
 	if err != nil {
 		return model.TaskRow{}, err
 	}
-	row := model.TaskRow{
-		ID: id, Href: href, Title: title,
-		Status: model.StatusNotStarted, Updated: today(), Notes: model.Empty,
+	var content []byte
+	if parent == nil {
+		l, err := model.ParseChangeLedger(c.ID+"/ledger.md", data)
+		if err != nil {
+			return model.TaskRow{}, fmt.Errorf("%w: %v", ErrInvalid, err)
+		}
+		l.AppendTask(row)
+		content = l.Content()
+	} else {
+		l, err := model.ParseTaskLedger(c.ID+"/"+parent.ContainerRel()+"/ledger.md", data)
+		if err != nil {
+			return model.TaskRow{}, fmt.Errorf("%w: %v", ErrInvalid, err)
+		}
+		l.AppendTask(row)
+		content = l.Content()
 	}
-	l.AppendTask(row)
-	if err := s.writeLedger(c, l); err != nil {
+	if err := model.WriteFileAtomic(ledgerPath, content, 0o644); err != nil {
 		return model.TaskRow{}, err
 	}
+	row.Href = href // callers get the change-relative view
+	s.Reload()
+	s.notify(Event{Kind: "write", Path: "ledger.md"})
 	return row, nil
 }
 
@@ -550,6 +667,30 @@ func (s *Store) LedgerFile(changeID string) (string, error) {
 		return "", err
 	}
 	data, err := os.ReadFile(filepath.Join(c.Dir, "ledger.md"))
+	if err != nil {
+		return "", ErrNotFound
+	}
+	return string(data), nil
+}
+
+// ContainerLedgerFile returns the raw markdown of a task container's
+// ledger.md. href is change-relative and must be a tasks/…/ledger.md
+// path; anything else is ErrNotFound.
+func (s *Store) ContainerLedgerFile(changeID, href string) (string, error) {
+	c, err := s.Change(changeID)
+	if err != nil {
+		return "", err
+	}
+	clean := filepath.Clean(filepath.FromSlash(href))
+	if filepath.IsAbs(clean) || strings.HasPrefix(clean, "..") {
+		return "", ErrNotFound
+	}
+	slashed := filepath.ToSlash(clean)
+	parts := strings.Split(slashed, "/")
+	if len(parts) < 3 || parts[0] != "tasks" || parts[len(parts)-1] != "ledger.md" {
+		return "", ErrNotFound
+	}
+	data, err := os.ReadFile(filepath.Join(c.Dir, clean))
 	if err != nil {
 		return "", ErrNotFound
 	}

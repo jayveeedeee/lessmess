@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -14,6 +15,20 @@ import (
 // closeChange handles POST /changes/{id}/close: the user closes the change.
 func (s *Server) closeChange(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	// Recursive close-out gate: every non-cancelled task at every depth
+	// must be Test or Done before the change can close.
+	ready, offending, err := s.st.CloseOutReady(id)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	if !ready {
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]any{
+			"error": "change not ready to close: tasks not Test or Done",
+			"tasks": offending,
+		})
+		return
+	}
 	if err := s.st.SetChangeStatus(id, model.OverallDone); err != nil {
 		writeErr(w, err)
 		return
@@ -107,4 +122,36 @@ func (s *Server) reopenChange(w http.ResponseWriter, r *http.Request) {
 	}
 	slog.Info("change reopened", "id", id)
 	writeJSON(w, http.StatusOK, map[string]string{"ok": "true", "status": string(model.OverallInProgress)})
+}
+
+// changeStatus handles POST /changes/{id}/status: a deterministic
+// overall-status transition (Planned, In progress, Blocked). SetChangeStatus
+// updates the change ledger and the root-ledger row atomically, so the two
+// cannot drift the way hand edits do. Done stays user-gated behind
+// POST /changes/{id}/close.
+func (s *Server) changeStatus(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	var body struct {
+		Status string `json:"status"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON body"})
+		return
+	}
+	switch model.OverallStatus(body.Status) {
+	case model.OverallPlanned, model.OverallInProgress, model.OverallBlocked:
+		// allowed: the agent- and board-reachable transitions
+	case model.OverallDone:
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "Done is user-gated; use POST /changes/" + id + "/close"})
+		return
+	default:
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "invalid status; want Planned, In progress, or Blocked"})
+		return
+	}
+	if err := s.st.SetChangeStatus(id, model.OverallStatus(body.Status)); err != nil {
+		writeErr(w, err)
+		return
+	}
+	slog.Info("change status set", "id", id, "status", body.Status)
+	writeJSON(w, http.StatusOK, map[string]string{"ok": "true", "status": body.Status})
 }
