@@ -8,6 +8,14 @@
   </span>
 </div>
 {{end}}
+{{if .Data.SpawnFallback}}
+<div class="banner warn" id="spawn-fallback-banner">
+  <span><strong>Spawn fallback</strong> — {{.Data.SpawnFallback.Summary}}. New sessions may run under a different agent than configured until this is resolved.</span>
+  <span class="onboarding-actions">
+    <a class="btn-accent" href="/settings">Review settings</a>
+  </span>
+</div>
+{{end}}
 <section class="changes">
   <div class="section-head">
     <h2>Changes</h2>

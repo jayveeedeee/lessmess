@@ -37,5 +37,8 @@ One row per change directory. This file is authoritative for change existence, t
 | [2026-09-16-le45q](2026-09-16-le45q/plan.md) | Nested task decomposition | NTD | — | Done | 2026-09-16 | 2026-09-16 |
 | [2026-09-16-7ueiv](2026-09-16-7ueiv/plan.md) | Accent color palette | ACC | — | Done | 2026-09-16 | 2026-09-17 |
 | [2026-09-16-j2g58](2026-09-16-j2g58/plan.md) | Deterministic change status endpoint | STS | — | Done | 2026-09-16 | 2026-09-16 |
-| [2026-09-16-43mc0](2026-09-16-43mc0/plan.md) | Curated doc learnings | LRN | — | In progress | 2026-09-16 | 2026-09-16 |
+| [2026-09-16-43mc0](2026-09-16-43mc0/plan.md) | Curated doc learnings | LRN | — | Done | 2026-09-16 | 2026-09-17 |
 | [2026-09-17-4esfh](2026-09-17-4esfh/plan.md) | Project name branding | PROJ | — | Done | 2026-09-17 | 2026-09-17 |
+| [2026-09-17-39avm](2026-09-17-39avm/plan.md) | Change handoff | HOF | — | In progress | 2026-09-17 | 2026-09-17 |
+| [2026-09-17-rny74](2026-09-17-rny74/plan.md) | Spawn fallback hardening and default_agent alignment | SPF | — | Done | 2026-09-17 | 2026-09-17 |
+| [2026-09-17-d2x3h](2026-09-17-d2x3h/plan.md) | Remove board add-task form | FORM | — | Done | 2026-09-17 | 2026-09-17 |

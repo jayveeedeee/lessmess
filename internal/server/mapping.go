@@ -20,12 +20,15 @@ import (
 // SessionEntry links one opencode session to a change. Task and Parent are
 // optional subagent annotations: Task names the change task (e.g. "PSB-01")
 // the session was delegated to, Parent names the session that spawned it.
+// SpawnedFrom names a source change when the session was created by a
+// handoff (POST /changes/{source}/spawn-change).
 type SessionEntry struct {
-	Session string `json:"session"`
-	Title   string `json:"title"`
-	Created string `json:"created"`
-	Task    string `json:"task,omitempty"`
-	Parent  string `json:"parent,omitempty"`
+	Session     string `json:"session"`
+	Title       string `json:"title"`
+	Created     string `json:"created"`
+	Task        string `json:"task,omitempty"`
+	Parent      string `json:"parent,omitempty"`
+	SpawnedFrom string `json:"spawnedFrom,omitempty"`
 }
 
 // mapping is the .lessmess/sessions.json file (tooling state, gitignored).
@@ -203,19 +206,20 @@ func (m *mapping) changeOf(session string) (string, bool) {
 
 // sessionResponse is the enriched mapping entry returned to the browser.
 type sessionResponse struct {
-	Session string `json:"session"`
-	Title   string `json:"title"`
-	Created string `json:"created"`
-	Task    string `json:"task,omitempty"`
-	Parent  string `json:"parent,omitempty"`
-	Live    bool   `json:"live"` // title enriched from the service
+	Session     string `json:"session"`
+	Title       string `json:"title"`
+	Created     string `json:"created"`
+	Task        string `json:"task,omitempty"`
+	Parent      string `json:"parent,omitempty"`
+	SpawnedFrom string `json:"spawnedFrom,omitempty"`
+	Live        bool   `json:"live"` // title enriched from the service
 }
 
 // enrich adds live titles from the service to mapping entries.
 func (s *Server) enrich(r *http.Request, entries []SessionEntry) []sessionResponse {
 	out := make([]sessionResponse, 0, len(entries))
 	for _, e := range entries {
-		resp := sessionResponse{Session: e.Session, Title: e.Title, Created: e.Created, Task: e.Task, Parent: e.Parent}
+		resp := sessionResponse{Session: e.Session, Title: e.Title, Created: e.Created, Task: e.Task, Parent: e.Parent, SpawnedFrom: e.SpawnedFrom}
 		if s.oc != nil {
 			ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
 			if live, err := s.oc.GetSession(ctx, e.Session); err == nil {
@@ -380,19 +384,15 @@ func (s *Server) createChangeSession(w http.ResponseWriter, r *http.Request) {
 	}
 	title := strings.TrimSpace(req.Title)
 	var taskNode *store.TaskNode
-	var prime string
 	if taskID := strings.TrimSpace(req.Task); taskID != "" {
 		taskNode = c.Node(taskID)
 		if taskNode == nil {
 			writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "unknown task " + taskID + " in change " + id})
 			return
 		}
-		prime = s.promptWith(taskPrompt(id, taskNode), "change")
 		if title == "" {
 			title = taskSessionTitle(taskNode)
 		}
-	} else {
-		prime = s.promptWith(changePrompt(id), "change")
 	}
 	if title == "" {
 		title = changeTitle(s.st, id)
@@ -404,6 +404,14 @@ func (s *Server) createChangeSession(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "create opencode session: " + err.Error()})
 		return
+	}
+	// The prime is built after the spawn: change primes carry the session's
+	// own ID so the agent can identify itself to session-taking endpoints.
+	var prime string
+	if taskNode != nil {
+		prime = s.promptWith(taskPrompt(id, taskNode), "change")
+	} else {
+		prime = s.promptWith(changePrompt(s.apiBase(), id, sess.ID), "change")
 	}
 	if err := s.oc.Prompt(ctx, sess.ID, prime); err != nil {
 		// Don't leak an unbound session: the binding is the whole point.

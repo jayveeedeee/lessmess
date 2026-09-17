@@ -3,8 +3,8 @@
 - Change ID: 2026-09-16-43mc0
 - Plan: [plan.md](plan.md)
 - Branch: —
-- Overall status: In progress
-- Last updated: 2026-09-16
+- Overall status: Done
+- Last updated: 2026-09-17
 
 ## Status definitions
 
@@ -23,8 +23,8 @@ Row order is display and priority order; top row is highest priority.
 
 | Task | Title | Status | Depends on | Updated | Notes |
 | --- | --- | --- | --- | --- | --- |
-| [LRN-00](tasks/00-convention.md) | Curated-learnings convention in workflow text, prompts, and README | Test | — | 2026-09-16 | Drift test green; vet+full server/docs tests green; no old wording left in prompts or README |
-| [LRN-01](tasks/01-cleanup.md) | One-time curation of all AGENTS.md auto sections | Test | LRN-00 | 2026-09-16 | All 14 sections rewritten (≈244 → ≤15 each); vet+tests green; rebuilt `lessmess validate` clean after fixing two self-inflicted lint flags |
+| [LRN-00](tasks/00-convention.md) | Curated-learnings convention in workflow text, prompts, and README | Done | — | 2026-09-17 | Drift test green; vet+full server/docs tests green; no old wording left in prompts or README |
+| [LRN-01](tasks/01-cleanup.md) | One-time curation of all AGENTS.md auto sections | Done | LRN-00 | 2026-09-17 | All 14 sections rewritten (≈244 → ≤15 each); vet+tests green; rebuilt `lessmess validate` clean after fixing two self-inflicted lint flags |
 
 ## Decision log
 

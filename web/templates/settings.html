@@ -51,6 +51,12 @@
       <input type="text" list="settings-agent-list" data-input autocomplete="off" spellcheck="false">
       <datalist id="settings-agent-list"></datalist>
       <p class="muted field-help">Primary opencode agent driving new sessions. Empty uses the service default.</p>
+      <div class="banner warn" id="opencode-default-note" hidden>
+        <span id="opencode-default-text"></span>
+        <span class="onboarding-actions">
+          <button type="button" class="btn-accent" id="align-default-agent" hidden>Align opencode.json</button>
+        </span>
+      </div>
     </div>
     <div class="settings-field" data-field="session.model" data-kind="string">
       <label>Default model <span class="src-badge" data-badge></span><button type="button" class="settings-change" title="Discuss changing this setting">✦ change</button></label>

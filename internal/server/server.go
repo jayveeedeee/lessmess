@@ -84,6 +84,8 @@ func New(st *store.Store) *Server {
 	mux.HandleFunc("POST /changes/{$}", s.createChange)
 	mux.HandleFunc("POST /changes/session", s.createDiscussionSession)
 	mux.HandleFunc("POST /changes/scaffold", s.scaffoldChange)
+	mux.HandleFunc("POST /changes/{id}/spawn-change", s.spawnChange)
+	mux.HandleFunc("GET /changes/{id}/handoffs", s.listHandoffs)
 	mux.HandleFunc("GET /events", s.events)
 	mux.HandleFunc("GET /api/validate", s.validate)
 	mux.HandleFunc("GET /terminal/ws", s.terminalWS)
@@ -107,6 +109,7 @@ func New(st *store.Store) *Server {
 	mux.HandleFunc("GET /api/settings/options", s.settingsOptions)
 	mux.HandleFunc("GET /settings", s.settingsPage)
 	mux.HandleFunc("POST /api/settings/change", s.settingsChange)
+	mux.HandleFunc("POST /api/settings/opencode-default-agent", s.alignOpencodeDefault)
 	mux.HandleFunc("GET /explorer", s.explorer)
 	mux.HandleFunc("GET /explorer/tree", s.explorerTree)
 	mux.HandleFunc("GET /explorer/detail", s.explorerDetail)
@@ -250,7 +253,7 @@ func (s *Server) index(w http.ResponseWriter, r *http.Request) {
 		return rows[i].ID < rows[j].ID
 	})
 	if wantsHTML(r) {
-		view := indexView{Changes: rows, OnboardingPending: onboardingPending(s.st.Dir)}
+		view := indexView{Changes: rows, OnboardingPending: onboardingPending(s.st.Dir), SpawnFallback: readSpawnFallback(s.st.Dir)}
 		if gs := gitStatus(s.st.Dir); gs.Repo {
 			view.GitRepo = true
 			view.GitDirty = len(gs.Changes) > 0

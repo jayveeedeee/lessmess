@@ -14,11 +14,17 @@ import (
 )
 
 // ocCapture is a fake opencode service recording create bodies and prompt
-// texts; rejectDefaults answers 400 when the create carries agent/model.
+// texts. The reject flags answer 400 for creates carrying the respective
+// key: rejectDefaults covers agent and model, rejectAgent/rejectModel are
+// finer-grained for ladder tests. agentStatus (when non-zero) overrides the
+// status for agent-carrying creates, simulating non-400 failures.
 type ocCapture struct {
 	creates        []map[string]any
 	prompts        []string
 	rejectDefaults bool
+	rejectAgent    bool
+	rejectModel    bool
+	agentStatus    int
 }
 
 func (c *ocCapture) handler() http.HandlerFunc {
@@ -28,17 +34,19 @@ func (c *ocCapture) handler() http.HandlerFunc {
 			var body map[string]any
 			json.NewDecoder(r.Body).Decode(&body)
 			c.creates = append(c.creates, body)
-			if c.rejectDefaults {
-				if _, ok := body["agent"]; ok {
-					w.WriteHeader(http.StatusBadRequest)
-					w.Write([]byte(`{"message":"unknown agent"}`))
-					return
+			if _, ok := body["agent"]; ok && (c.rejectDefaults || c.rejectAgent || c.agentStatus != 0) {
+				code := http.StatusBadRequest
+				if c.agentStatus != 0 {
+					code = c.agentStatus
 				}
-				if _, ok := body["model"]; ok {
-					w.WriteHeader(http.StatusBadRequest)
-					w.Write([]byte(`{"message":"unknown model"}`))
-					return
-				}
+				w.WriteHeader(code)
+				w.Write([]byte(`{"message":"unknown agent"}`))
+				return
+			}
+			if _, ok := body["model"]; ok && (c.rejectDefaults || c.rejectModel) {
+				w.WriteHeader(http.StatusBadRequest)
+				w.Write([]byte(`{"message":"unknown model"}`))
+				return
 			}
 			w.Write([]byte(`{"data":{"id":"ses_cap","title":"t","location":{"directory":"/x"}}}`))
 		case strings.HasSuffix(r.URL.Path, "/prompt"):
@@ -107,14 +115,25 @@ func TestSpawnSessionFallbackOn400(t *testing.T) {
 	if w.Code != 201 {
 		t.Fatalf("code = %d body = %s — fallback must still yield a session", w.Code, w.Body)
 	}
-	if len(cap.creates) != 2 {
-		t.Fatalf("creates = %d, want 2 (rejected + plain retry)", len(cap.creates))
+	// Ladder: agent+model, agent-only, model-only, plain.
+	if len(cap.creates) != 4 {
+		t.Fatalf("creates = %d, want 4 (full de-escalation ladder)", len(cap.creates))
 	}
-	if _, ok := cap.creates[1]["agent"]; ok {
-		t.Errorf("retry must drop the configured agent: %v", cap.creates[1])
+	for _, want := range []struct {
+		idx int
+		key string
+	}{
+		{0, "agent"}, {0, "model"}, {1, "agent"}, {2, "model"},
+	} {
+		if _, ok := cap.creates[want.idx][want.key]; !ok {
+			t.Errorf("create %d missing %s: %v", want.idx, want.key, cap.creates[want.idx])
+		}
 	}
-	if _, ok := cap.creates[1]["model"]; ok {
-		t.Errorf("retry must drop the configured model: %v", cap.creates[1])
+	if _, ok := cap.creates[3]["agent"]; ok {
+		t.Errorf("plain retry must drop the configured agent: %v", cap.creates[3])
+	}
+	if _, ok := cap.creates[3]["model"]; ok {
+		t.Errorf("plain retry must drop the configured model: %v", cap.creates[3])
 	}
 }
 
@@ -150,7 +169,7 @@ func TestPromptByteIdenticalWithoutSettings(t *testing.T) {
 	if w := do(t, s.Handler(), "POST", "/changes/2026-09-10-0/sessions", `{}`); w.Code != 201 {
 		t.Fatalf("code = %d body = %s", w.Code, w.Body)
 	}
-	if len(cap.prompts) != 1 || cap.prompts[0] != changePrompt("2026-09-10-0") {
+	if len(cap.prompts) != 1 || cap.prompts[0] != changePrompt(s.apiBase(), "2026-09-10-0", "ses_cap") {
 		t.Error("prompt must be byte-identical to the base builder without settings")
 	}
 }

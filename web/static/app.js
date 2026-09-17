@@ -76,17 +76,13 @@
     }
   });
 
-  // After a successful htmx form POST (add task), refresh the board.
+  // After a successful htmx form POST, run form-specific follow-ups.
   document.addEventListener("htmx:afterRequest", function (e) {
     if (!e.detail.successful) {
       var msg = "Request failed";
       try { msg = JSON.parse(e.detail.xhr.responseText).error || msg; } catch (_) {}
       alert(msg);
       return;
-    }
-    if (e.detail.elt.matches('form[hx-post*="/tasks"]')) {
-      e.detail.elt.reset();
-      refreshBoard();
     }
     if (e.detail.elt.matches('form[hx-post="/changes/session"]')) {
       try {
@@ -539,6 +535,14 @@
         var meta = document.createElement("span");
         meta.className = "session-meta";
         meta.textContent = (s.created || "").slice(0, 10);
+        if (s.spawnedFrom) {
+          var badge = document.createElement("span");
+          badge.className = "spawn-badge";
+          badge.textContent = "from " + s.spawnedFrom;
+          badge.title = "Spawned by a handoff from change " + s.spawnedFrom;
+          meta.appendChild(document.createTextNode(" "));
+          meta.appendChild(badge);
+        }
         var actions = document.createElement("span");
         actions.className = "session-actions";
         var openBtn = document.createElement("button");
@@ -641,6 +645,84 @@
         createSessionAndOpen(nb, maybeOpenTerminal);
       });
     }
+    initSpawnChange();
+  }
+
+  // --- spawn change (handoff) -------------------------------------------------
+
+  // initSpawnChange wires the "Spawn change" action: pick a handoff*.md
+  // artifact authored in this change, and spawn a new change whose fresh
+  // session is seeded from it. The picker reloads every time the form
+  // opens (artifacts are written by sessions or by hand while the board
+  // is open).
+  function initSpawnChange() {
+    var btn = document.getElementById("spawn-change-btn");
+    var form = document.getElementById("spawn-change-form");
+    if (!btn || !form) return;
+    var sel = document.getElementById("spawn-artifact");
+    var errEl = document.getElementById("spawn-error");
+
+    function spawnError(msg) {
+      errEl.textContent = msg || "";
+      errEl.hidden = !msg;
+    }
+
+    function loadHandoffs() {
+      spawnError("");
+      sel.innerHTML = "";
+      fetch("/changes/" + changeID() + "/handoffs", { headers: { Accept: "application/json" } })
+        .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.statusText); return j; }); })
+        .then(function (j) {
+          var files = j.handoffs || [];
+          if (!files.length) {
+            var opt = document.createElement("option");
+            opt.value = "";
+            opt.textContent = "no handoff-*.md artifacts in this change";
+            sel.appendChild(opt);
+            sel.disabled = true;
+            return;
+          }
+          sel.disabled = false;
+          files.forEach(function (f) {
+            var opt = document.createElement("option");
+            opt.value = f;
+            opt.textContent = f;
+            sel.appendChild(opt);
+          });
+        })
+        .catch(function (e) { spawnError("Load handoffs failed: " + e.message); });
+    }
+
+    btn.addEventListener("click", function () {
+      form.hidden = !form.hidden;
+      if (!form.hidden) loadHandoffs();
+    });
+
+    form.addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      var title = document.getElementById("spawn-title").value.trim();
+      var prefix = document.getElementById("spawn-prefix").value.trim();
+      var artifact = sel.value;
+      if (!title || !artifact) return;
+      var body = { title: title, artifact: artifact };
+      if (prefix) body.prefix = prefix;
+      var submit = form.querySelector("button[type=submit]");
+      submit.disabled = true;
+      fetch("/changes/" + changeID() + "/spawn-change", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify(body),
+      })
+        .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.statusText); return j; }); })
+        .then(function (j) {
+          form.hidden = true;
+          form.reset();
+          spawnError("");
+          openTerminal(j.session, changeID() + " — " + j.title);
+        })
+        .catch(function (e) { spawnError("Spawn failed: " + e.message); })
+        .finally(function () { submit.disabled = false; });
+    });
   }
 
   // createSessionAndOpen POSTs a session for the board scope (task-bound
@@ -1464,6 +1546,30 @@
       } else {
         err.hidden = true;
       }
+      renderOpencodeDefaultNote();
+    }
+
+    // renderOpencodeDefaultNote warns when the repository's opencode.json
+    // declares its own default_agent that differs from the effective
+    // session.agent: sessions created outside lessmess (opencode TUI/CLI)
+    // follow opencode's default, not the agent configured above. The align
+    // button (an explicit, user-consented write into the committed
+    // opencode.json) appears only on divergence.
+    function renderOpencodeDefaultNote() {
+      var note = document.getElementById("opencode-default-note");
+      if (!note) return;
+      var od = view.opencodeDefaultAgent;
+      var effAgent = (view.effective && view.effective.session && view.effective.session.agent) || "";
+      var divergent = od && od.status === "ok" && od.declared && od.declared !== effAgent;
+      if (divergent) {
+        document.getElementById("opencode-default-text").textContent =
+          "opencode.json sets its own default agent \u201C" + od.declared +
+          "\u201D. Sessions you create outside lessmess (opencode TUI/CLI) use it instead of the agent above" +
+          (effAgent ? " (\u201C" + effAgent + "\u201D)" : "") + ".";
+      }
+      note.hidden = !divergent;
+      var btn = document.getElementById("align-default-agent");
+      if (btn) btn.hidden = !divergent;
     }
 
     function renderOptions() {
@@ -1649,16 +1755,39 @@
       });
     });
 
-    fetch("/api/settings", { headers: { Accept: "application/json" } })
-      .then(function (r) { return r.json(); })
-      .then(function (j) { view = j; render(); })
-      .catch(function () {});
+    // loadSettings fetches the current payload and repaints; used at init
+    // and after the align action (which changes server-side state the
+    // notice renders).
+    function loadSettings() {
+      return fetch("/api/settings", { headers: { Accept: "application/json" } })
+        .then(function (r) { return r.json(); })
+        .then(function (j) { view = j; render(); })
+        .catch(function () {});
+    }
+    loadSettings();
     fetch("/api/settings/options", { headers: { Accept: "application/json" } })
       .then(function (r) { return r.json(); })
       .then(function (j) { options = j; renderOptions(); render(); })
       .catch(function () {
         document.getElementById("settings-options-hint").hidden = false;
       });
+
+    // Align action: write opencode.json's default_agent so sessions created
+    // outside lessmess default to the same agent configured here.
+    var alignBtn = document.getElementById("align-default-agent");
+    if (alignBtn) {
+      alignBtn.addEventListener("click", function () {
+        alignBtn.disabled = true;
+        fetch("/api/settings/opencode-default-agent", {
+          method: "POST",
+          headers: { Accept: "application/json" },
+        })
+          .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.statusText); return j; }); })
+          .then(function () { loadSettings(); })
+          .catch(function (err) { alert("Align failed: " + err.message); })
+          .finally(function () { alignBtn.disabled = false; });
+      });
+    }
 
     // Exclusions editor: a lazy folder tree like the onboarding wizard's
     // picker (same endpoint, same rows), persisted to agentsdocs.json.

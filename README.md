@@ -91,8 +91,8 @@ Setup API (for the wizard and other clients): `GET /setup`,
 - **Drag a card** between columns or reorder within one: rewrites the task
   table in the change's `ledger.md` (status cell + row order), preserving all
   other file content byte-for-byte.
-- **Add task / New change**: creates spec-compliant task files, change
-  directories, and ledger rows.
+- **New change session**: creates spec-compliant change directories and
+  ledger rows; task files are written by the session's agent.
 - **Status control**: while a change is `Planned`, `In progress`, or `Blocked`,
   the board header offers a status select next to the status pill. It calls
   `POST /changes/<id>/status` with `{"status":"..."}`, which updates the change
@@ -118,8 +118,7 @@ IDs (`EXC-00` → `EXC-00.00` → `EXC-00.00.01`), recursively.
   complexity but never create containers unprompted.
 - **Drill down**: the `x/y ✓` badge on a decomposed card opens that task's
   sub-board (`/changes/<id>?task=<id>`) — the same kanban scoped to its
-  children, with a breadcrumb back up. "Add subtask" targets the viewed
-  level.
+  children, with a breadcrumb back up.
 - **Progress is display-only**: badges on cards, the board header pill, and
   the index `Tasks` column (`complete/open`) are computed from descendants
   (`Test` + `Done` count as complete, `Cancelled` leaves the denominator).

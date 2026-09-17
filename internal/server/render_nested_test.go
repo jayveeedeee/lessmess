@@ -19,21 +19,18 @@ func TestNestedBoardMarkup(t *testing.T) {
 		`class="card-sub"`,
 		`1/2 ✓`,
 		`class="pill progress"`,
-		`New task title`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("root board missing %q", want)
 		}
 	}
 
-	// Drill-down: breadcrumb, parent form field, scoped board marker.
+	// Drill-down: breadcrumb and scoped board marker.
 	w = htmlGet(t, h, "/changes/2026-09-10-0?task=FIX-00", false)
 	body = w.Body.String()
 	for _, want := range []string{
 		`class="crumbs"`,
 		`href="/changes/2026-09-10-0"`,
-		`name="parent" value="FIX-00"`,
-		`New subtask title`,
 		`data-task="FIX-00"`,
 	} {
 		if !strings.Contains(body, want) {

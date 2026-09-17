@@ -1,7 +1,7 @@
 <!-- tasktracker:begin -->
 # Structure: internal/server
 
-<!-- tasktracker-meta: refreshed=2026-09-17 source=2026-09-17-4esfh tree=a92805fc3c7a -->
+<!-- tasktracker-meta: refreshed=2026-09-17 source=2026-09-16-43mc0 tree=eba6179a5c71 -->
 
 HTTP server over the store: HTML pages, JSON endpoints, SSE updates, session mapping, PTY terminal, and the docs refresh queue
 
@@ -37,9 +37,11 @@ HTTP server over the store: HTML pages, JSON endpoints, SSE updates, session map
 | `mapping_test.go` | Tests for session mapping and its endpoints |
 | `onboarding.go` | First-run onboarding state in `.lessmess/onboarding.json`: completed/dismissed flags and per-step outcomes, read fail-open. |
 | `onboarding_test.go` | Tests for onboarding roundtrip, fail-open parsing, and pending detection. |
+| `opendefault.go` | Reports the repository `opencode.json` `default_agent` in the settings payload and serves the align endpoint that repoints it at the effective session agent via a byte-preserving plain-JSON patch. |
+| `opendefault_test.go` | Tests for default-agent status reporting, the byte-preserving patch, align-endpoint validation, and the settings response and page hooks. |
 | `prereqs.go` | Wizard prerequisite probes (opencode binary and service, git, writable repo) served at GET /api/setup/prereqs, with injectable fakes. |
 | `prereqs_test.go` | Tests for the prerequisite checks using faked probes. |
-| `projectnamechrome_test.go` | — |
+| `projectnamechrome_test.go` | Tests for the project name in the tab title, header brand, terminal head, and setup page, with the directory fallback and HTML escaping. |
 | `render.go` | HTML templates, markdown rendering, static assets |
 | `render_nested_test.go` | Tests for nested board markup, task-detail doc context, and the container ledger endpoint. |
 | `render_test.go` | Tests for rendering and HTML pages |
@@ -51,12 +53,14 @@ HTTP server over the store: HTML pages, JSON endpoints, SSE updates, session map
 | `settingsapi_test.go` | Tests for settings API reads, writes, validation, and degraded options responses. |
 | `settingschange.go` | Settings-page Change button: POST /api/settings/change starts or reuses a settings-primed discussion. |
 | `settingschange_test.go` | Tests for the settings Change flow: fresh, reused, and rejected discussions. |
-| `settingsgeneral_test.go` | — |
+| `settingsgeneral_test.go` | Tests for the general settings section: directory-basename fallback, project over personal layering, patch rejection, and the field allowlist. |
 | `settingswiring_test.go` | Tests for settings wiring into session spawn defaults, prompt addenda, branch recording, the gardener gate, and archived filtering. |
 | `setup.go` | First-run setup wizard: serves the wizard page and /api/setup/* endpoints when the repo has no changes/ tree, then hot-swaps to the full server after bootstrap. |
 | `setup_test.go` | Tests for the setup shell, its wizard page, and route guards. |
 | `setupseed.go` | Opt-in wizard docs-seed job: POST /api/setup/docs-seed runs one docs.Seed per repo, polled via GET /api/setup/docs-seed-status. |
 | `setupseed_test.go` | Tests for the seed job lifecycle and configured agent/model pass-through. |
+| `spawnfallback.go` | Persists de-escalated session spawns (`.lessmess/spawn-fallback.json`) behind the index banner, with fail-open reads and best-effort writes. |
+| `spawnfallback_test.go` | Tests for the spawn de-escalation ladder outcomes, the record lifecycle and fail-open reads, and the index fallback banner. |
 | `terminal.go` | WebSocket-to-PTY bridge running the opencode TUI |
 | `terminal_test.go` | Tests for the terminal WebSocket bridge |
 | `touched.go` | Derives covered docs dirs touched by a change |

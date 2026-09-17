@@ -33,6 +33,10 @@ type settingsResponse struct {
 	Sources            map[string]string `json:"sources"`
 	DefaultProjectName string            `json:"defaultProjectName,omitempty"`
 	LoadError          string            `json:"loadError,omitempty"`
+	// OpencodeDefaultAgent describes the repository's opencode.json
+	// default_agent declaration; present only when one is declared, so the
+	// UI can warn about divergence from session.agent.
+	OpencodeDefaultAgent *opencodeDefault `json:"opencodeDefaultAgent,omitempty"`
 }
 
 // settingsAPIView builds the current settings payload.
@@ -53,6 +57,9 @@ func settingsAPIView(repoDir string) settingsResponse {
 	}
 	if fileExists(settingsPersonalPath(repoDir)) {
 		resp.Personal = &st.Personal
+	}
+	if od := readOpencodeDefault(repoDir); od.Status == ocDefaultOK {
+		resp.OpencodeDefaultAgent = &od
 	}
 	return resp
 }

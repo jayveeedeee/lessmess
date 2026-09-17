@@ -630,6 +630,25 @@ body[data-page="board"] .board {
   align-items: center;
   margin-bottom: 0.6rem;
 }
+.sessions-head-actions { display: flex; gap: 0.35rem; }
+.spawn-form {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  margin-bottom: 0.6rem;
+}
+.spawn-form input, .spawn-form select { min-width: 0; }
+.spawn-form #spawn-title { flex: 1; }
+.spawn-error {
+  color: var(--danger, #b3261e);
+  font-size: 0.78rem;
+  margin: 0 0 0.5rem;
+}
+.spawn-badge {
+  color: var(--muted);
+  font-size: 0.7rem;
+  white-space: nowrap;
+}
 .sessions-head h3 { font-size: 0.82rem; font-weight: 650; margin: 0; }
 .sessions-list {
   list-style: none;

@@ -462,8 +462,9 @@ func (s *Server) spawnSession(ctx context.Context, title string) (*opencode.Sess
 // agent defaults plus a model resolution: modelOverride (the docs
 // gardener's docs.gardenerModel) when non-empty, else the effective
 // session.model. When the service rejects the values (400 — typically a
-// stale or unknown name), it logs a warning and retries with the service
-// defaults so a bad setting never blocks session creation.
+// stale or unknown name), attempts de-escalate agent+model → agent only →
+// model only → plain, so one stale value never costs the other and a bad
+// setting never blocks session creation. Each de-escalation logs a warning.
 func spawnSessionWithModel(ctx context.Context, oc *opencode.Client, repoDir, title, modelOverride string) (*opencode.Session, error) {
 	eff, _, loadErr := loadEffectiveSettings(repoDir)
 	if loadErr != "" {
@@ -478,15 +479,49 @@ func spawnSessionWithModel(ctx context.Context, oc *opencode.Client, repoDir, ti
 		prov, id := splitModelRef(model)
 		mref = &opencode.ModelRef{ID: id, ProviderID: prov}
 	}
-	sess, err := oc.CreateSessionWith(ctx, title, repoDir, eff.Session.Agent, mref)
-	if err == nil {
-		return sess, nil
+	type spawnAttempt struct {
+		name  string
+		agent string
+		model *opencode.ModelRef
 	}
-	var apiErr *opencode.APIError
-	if (eff.Session.Agent != "" || mref != nil) && errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusBadRequest {
-		slog.Warn("session create with configured agent/model rejected; retrying with service defaults",
-			"agent", eff.Session.Agent, "model", model, "err", err)
-		return oc.CreateSession(ctx, title, repoDir)
+	var attempts []spawnAttempt
+	if eff.Session.Agent != "" && mref != nil {
+		attempts = append(attempts,
+			spawnAttempt{"agent+model", eff.Session.Agent, mref},
+			spawnAttempt{"agent-only", eff.Session.Agent, nil},
+			spawnAttempt{"model-only", "", mref})
+	} else if eff.Session.Agent != "" {
+		attempts = append(attempts, spawnAttempt{"agent-only", eff.Session.Agent, nil})
+	} else if mref != nil {
+		attempts = append(attempts, spawnAttempt{"model-only", "", mref})
 	}
-	return nil, err
+	attempts = append(attempts, spawnAttempt{"plain", "", nil})
+
+	var firstErr error
+	for i, a := range attempts {
+		sess, err := oc.CreateSessionWith(ctx, title, repoDir, a.agent, a.model)
+		if err == nil {
+			if i == 0 {
+				clearSpawnFallback(repoDir)
+			} else {
+				writeSpawnFallback(repoDir, SpawnFallback{
+					AttemptedAgent: eff.Session.Agent,
+					AttemptedModel: model,
+					Outcome:        a.name,
+					ServiceError:   firstErr.Error(),
+				})
+			}
+			return sess, nil
+		}
+		if i == 0 {
+			firstErr = err
+		}
+		var apiErr *opencode.APIError
+		if i == len(attempts)-1 || !errors.As(err, &apiErr) || apiErr.StatusCode != http.StatusBadRequest {
+			return nil, err
+		}
+		slog.Warn("session create rejected; de-escalating",
+			"step", a.name, "agent", a.agent, "model", model, "err", err)
+	}
+	return nil, errors.New("unreachable: spawn attempts exhausted")
 }

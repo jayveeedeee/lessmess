@@ -160,6 +160,9 @@ type indexView struct {
 	// OnboardingPending shows the finish-setup banner until onboarding is
 	// completed or dismissed (.lessmess/onboarding.json).
 	OnboardingPending bool
+	// SpawnFallback, when non-nil, drives the spawn-fallback warning
+	// banner (.lessmess/spawn-fallback.json).
+	SpawnFallback *SpawnFallback
 }
 
 type tmplColumn struct {

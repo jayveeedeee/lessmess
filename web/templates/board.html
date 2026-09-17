@@ -29,19 +29,24 @@
   {{else}}
   <button type="button" class="btn-ghost" id="close-change-btn">Close change</button>
   {{end}}
-  <form class="inline-form"
-        hx-post="/changes/{{.Data.ID}}/tasks" hx-swap="none">
-    <input type="hidden" name="parent" value="{{.Data.Task}}">
-    <input type="text" name="title" placeholder="{{if .Data.Task}}New subtask title{{else}}New task title{{end}}" required>
-    <button type="submit">{{if .Data.Task}}Add subtask{{else}}Add task{{end}}</button>
-  </form>
 </section>
 <div id="board-subs" class="board-subs" hidden></div>
 <section id="sessions-panel" class="sessions-panel" hidden>
   <div class="sessions-head">
     <h3>opencode sessions</h3>
-    <button type="button" class="btn-ghost" id="new-session-btn">New session</button>
+    <span class="sessions-head-actions">
+      <button type="button" class="btn-ghost" id="spawn-change-btn"
+              title="Spawn a new change seeded from a handoff-*.md artifact in this change">Spawn change</button>
+      <button type="button" class="btn-ghost" id="new-session-btn">New session</button>
+    </span>
   </div>
+  <form id="spawn-change-form" class="spawn-form" hidden>
+    <input type="text" id="spawn-title" placeholder="New change title" required>
+    <input type="text" id="spawn-prefix" placeholder="Prefix" maxlength="4" title="Optional task-ID prefix, 2–4 uppercase letters/digits">
+    <select id="spawn-artifact" required aria-label="Handoff artifact"></select>
+    <button type="submit" class="btn-accent">Spawn</button>
+  </form>
+  <p id="spawn-error" class="spawn-error" hidden></p>
   <ul id="sessions-list" class="sessions-list"></ul>
 </section>
 {{if .Data.Error}}

@@ -3,10 +3,14 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
+	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -38,15 +42,20 @@ This call creates the change directory, registers your title and prefix, renames
 
 // changePrompt builds the prime message for a session bound to an existing
 // change: everything requested in the conversation is work on that change,
-// and scaffolding a new change from it is forbidden.
-func changePrompt(changeID string) string {
-	return fmt.Sprintf(`You are a change execution assistant for a repository that uses the change-management workflow defined in AGENTS.md. This session is permanently bound to change %[1]s.
+// and scaffolding a new change from it is forbidden — the handoff endpoint
+// (rule 4) is the one carve-out, and it needs the API base and the
+// session's own ID injected so the agent can call it.
+func changePrompt(apiBase, changeID, sessionID string) string {
+	return fmt.Sprintf(`You are a change execution assistant for a repository that uses the change-management workflow defined in AGENTS.md. This session is permanently bound to change %[2]s.
 
-1. Read changes/%[1]s/plan.md and changes/%[1]s/ledger.md first — they hold the authoritative scope, design, and task status for this change.
-2. Everything the user asks for in this conversation is work on THIS change: refine changes/%[1]s/plan.md, add or update task files and ledger rows under its existing task-ID prefix, and keep ledger statuses current per AGENTS.md.
-3. NEVER create a new change directory and NEVER call the /changes/scaffold endpoint. If the user asks for genuinely unrelated work, explain that it belongs in a separate change and ask them to start a new discussion from the index page.
-4. Delegation is optional — do small tasks inline. When you delegate a task to a subagent, prefix the task tool's description with the task's real ID from the ledger — for example "TSK-01: implement the bind endpoint", where TSK is this change's actual prefix: that description becomes the subagent session's title verbatim, and the board uses it to attach the session to the task. Prefer a subagent with write access over a read-only explorer when the user may want to continue that session directly afterwards.
-5. Tasks may be decomposed into nested sub plans per AGENTS.md. Decomposition is user-instructed only: when work on a task reveals it needs detailed breakdown, PROPOSE the decomposition (name the subtasks you would create) and wait for the user's explicit go-ahead — never create a container directory unprompted. When the user instructs it, create the task's container (ledger.md plus tasks/ with dotted child IDs) following AGENTS.md.`, changeID)
+1. Read changes/%[2]s/plan.md and changes/%[2]s/ledger.md first — they hold the authoritative scope, design, and task status for this change.
+2. Everything the user asks for in this conversation is work on THIS change: refine changes/%[2]s/plan.md, add or update task files and ledger rows under its existing task-ID prefix, and keep ledger statuses current per AGENTS.md.
+3. NEVER create a new change directory by any other means and NEVER call the /changes/scaffold endpoint. If the user asks for genuinely unrelated work, explain that it belongs in a separate change and offer a handoff (rule 4).
+4. Handoff is the one way this session may spawn a new change, and only with the user's explicit approval. Write the full context to changes/%[2]s/handoff-<topic>.md, then create the new change by running exactly this (replacing <title>, <prefix>, and <topic>):
+   curl -s -X POST %[1]s/changes/%[2]s/spawn-change -H 'Content-Type: application/json' -d '{"title":"<title>","prefix":"<prefix>","artifact":"handoff-<topic>.md","session":"%[3]s"}'
+   The new change gets its own fresh session seeded from the artifact; this session stays bound to change %[2]s.
+5. Delegation is optional — do small tasks inline. When you delegate a task to a subagent, prefix the task tool's description with the task's real ID from the ledger — for example "TSK-01: implement the bind endpoint", where TSK is this change's actual prefix: that description becomes the subagent session's title verbatim, and the board uses it to attach the session to the task. Prefer a subagent with write access over a read-only explorer when the user may want to continue that session directly afterwards.
+6. Tasks may be decomposed into nested sub plans per AGENTS.md. Decomposition is user-instructed only: when work on a task reveals it needs detailed breakdown, PROPOSE the decomposition (name the subtasks you would create) and wait for the user's explicit go-ahead — never create a container directory unprompted. When the user instructs it, create the task's container (ledger.md plus tasks/ with dotted child IDs) following AGENTS.md.`, apiBase, changeID, sessionID)
 }
 
 // taskPrompt builds the prime message for a session bound to one task of
@@ -282,4 +291,145 @@ func (s *Server) scaffoldChange(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusCreated, map[string]string{"change": id, "session": req.Session, "title": req.Title})
+}
+
+// spawnChangeRequest is the body of POST /changes/{id}/spawn-change: create
+// a new change out of change {id} with a fresh session seeded from a
+// handoff artifact authored inside {id}. Session is the optional caller
+// session; when supplied it must be bound to {id} (the board omits it).
+type spawnChangeRequest struct {
+	Title    string `json:"title"`
+	Prefix   string `json:"prefix"`
+	Artifact string `json:"artifact"`
+	Session  string `json:"session,omitempty"`
+}
+
+// handoffAddendum is appended to the new session's change prime: the
+// authoritative starting context lives in the source change's artifact and
+// must be distilled into canonical workflow data before implementation.
+func handoffAddendum(source, artifact string) string {
+	return fmt.Sprintf(`This session was spawned by a handoff from change %[1]s. First read changes/%[1]s/%[2]s — it is the authoritative starting context authored by the source change. Distill it into this change's plan.md and task files (with matching ledger rows) before any implementation, keeping the user in the loop; then work the change normally.`, source, artifact)
+}
+
+// handoffArtifactPath resolves one handoff artifact inside change id's
+// directory. Strict: a bare handoff*.md filename at the change root — the
+// same convention the handoffs listing (HOF-01) serves, so plan.md,
+// ledger.md, and tasks/ can never be mistaken for context.
+func handoffArtifactPath(repoDir, id, artifact string) (string, error) {
+	if artifact == "" {
+		return "", errors.New("artifact is required")
+	}
+	if filepath.Base(artifact) != artifact || artifact == "." || artifact == ".." || strings.ContainsRune(artifact, '/') || strings.ContainsRune(artifact, '\\') {
+		return "", errors.New("artifact must be a bare filename inside the change directory")
+	}
+	if !strings.HasPrefix(artifact, "handoff") || !strings.HasSuffix(artifact, ".md") {
+		return "", errors.New("artifact must be a handoff*.md file in the change directory")
+	}
+	p := filepath.Join(repoDir, "changes", id, artifact)
+	if info, err := os.Stat(p); err != nil || info.IsDir() {
+		return "", errors.New("artifact not found in the change directory: " + artifact)
+	}
+	return p, nil
+}
+
+// spawnChange handles POST /changes/{id}/spawn-change: the one sanctioned
+// way for an existing change to spawn a new change. The new change is
+// canonical once created (never rolled back); a failed spawn or prime
+// deletes the session so nothing unbound leaks, and the 502 names the new
+// change so the user can continue it from the board.
+func (s *Server) spawnChange(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if _, err := s.st.Change(id); err != nil {
+		writeErr(w, err)
+		return
+	}
+	if s.oc == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "opencode service unavailable"})
+		return
+	}
+	if s.mapErr != nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "session mapping unreadable: " + s.mapErr.Error()})
+		return
+	}
+	var req spawnChangeRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad JSON body"})
+		return
+	}
+	req.Title = strings.TrimSpace(req.Title)
+	if req.Title == "" || strings.Contains(req.Title, "|") {
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "title must be non-empty and contain no |"})
+		return
+	}
+	if req.Prefix != "" && !prefixRe.MatchString(req.Prefix) {
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "prefix must be 2–4 uppercase letters/digits or empty"})
+		return
+	}
+	req.Artifact = strings.TrimSpace(req.Artifact)
+	if _, err := handoffArtifactPath(s.st.Dir, id, req.Artifact); err != nil {
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": err.Error()})
+		return
+	}
+	// A supplied caller must belong to the source change.
+	if req.Session != "" {
+		if bound, ok := s.sessions.changeOf(req.Session); ok && bound != id {
+			writeJSON(w, http.StatusConflict, map[string]string{
+				"change": bound,
+				"error":  "session already bound to change " + bound + "; a handoff can only be spawned by a session of change " + id,
+			})
+			return
+		}
+	}
+
+	spawned, err := s.st.CreateChange(req.Title, req.Prefix, s.effectiveSettings().Git.DefaultBranch, time.Now().Format("2006-01-02"))
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	slog.Info("change spawned via handoff", "source", id, "change", spawned, "title", req.Title, "prefix", req.Prefix, "artifact", req.Artifact, "session", req.Session)
+
+	title := spawned + " — " + req.Title
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+	sess, err := s.spawnSession(ctx, title)
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"change": spawned, "error": "create opencode session: " + err.Error()})
+		return
+	}
+	prime := s.promptWith(changePrompt(s.apiBase(), spawned, sess.ID)+"\n\n"+handoffAddendum(id, req.Artifact), "change")
+	if err := s.oc.Prompt(ctx, sess.ID, prime); err != nil {
+		_ = s.oc.DeleteSession(context.Background(), sess.ID)
+		writeJSON(w, http.StatusBadGateway, map[string]string{"change": spawned, "error": "prime handoff session: " + err.Error()})
+		return
+	}
+	if err := s.sessions.add(spawned, SessionEntry{Session: sess.ID, Title: title, Created: time.Now().Format(time.RFC3339), SpawnedFrom: id}); err != nil {
+		slog.Error("mapping add", "err", err)
+		_ = s.oc.DeleteSession(context.Background(), sess.ID) // don't leak an unmapped session
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"change": spawned, "error": "persist mapping: " + err.Error()})
+		return
+	}
+	slog.Info("handoff session created", "source", id, "change", spawned, "session", sess.ID)
+	writeJSON(w, http.StatusCreated, map[string]string{"change": spawned, "session": sess.ID, "title": req.Title})
+}
+
+// listHandoffs handles GET /changes/{id}/handoffs: the handoff*.md
+// artifacts authored inside the change directory, sorted — the picker
+// behind the board's spawn action.
+func (s *Server) listHandoffs(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if _, err := s.st.Change(id); err != nil {
+		writeErr(w, err)
+		return
+	}
+	matches, err := filepath.Glob(filepath.Join(s.st.Dir, "changes", id, "handoff*.md"))
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	sort.Strings(matches)
+	handoffs := make([]string, 0, len(matches))
+	for _, m := range matches {
+		handoffs = append(handoffs, filepath.Base(m))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"handoffs": handoffs})
 }
