@@ -235,11 +235,11 @@ func TestSubtreeStats(t *testing.T) {
 	if st.ByStatus[model.StatusDone] != 2 || st.ByStatus[model.StatusTest] != 1 || st.ByStatus[model.StatusCancelled] != 1 {
 		t.Errorf("ByStatus = %v", st.ByStatus)
 	}
-	// Change-wide: FIX-01 (In progress) + FIX-00 (Not started) are roots,
-	// not descendants, so totals count only the descendants.
+	// Change-wide stats count every node, roots included: FIX-00 (Not
+	// started), FIX-01 (In progress), 3 children (1 cancelled), 1 grandchild.
 	all := c.AllTaskStats()
-	if all.Total != 3 || all.Complete != 3 {
-		t.Errorf("AllTaskStats = %+v, want Total=3 Complete=3", all)
+	if all.Total != 5 || all.Complete != 3 {
+		t.Errorf("AllTaskStats = %+v, want Total=5 Complete=3 (all non-cancelled nodes)", all)
 	}
 }
 

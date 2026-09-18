@@ -145,10 +145,8 @@ func TestBoardDrillDown(t *testing.T) {
 	reqJSON.Header.Set("Accept", "application/json")
 	w2 := doReq(t, h, reqJSON)
 	var resp struct {
-		Task          string `json:"task"`
-		ProgressDone  int    `json:"progressDone"`
-		ProgressTotal int    `json:"progressTotal"`
-		Columns       []struct {
+		Task    string `json:"task"`
+		Columns []struct {
 			Status string `json:"status"`
 			Count  int    `json:"count"`
 		} `json:"columns"`
@@ -156,9 +154,6 @@ func TestBoardDrillDown(t *testing.T) {
 	json.Unmarshal(w2.Body.Bytes(), &resp)
 	if resp.Task != "FIX-00" {
 		t.Errorf("task = %q", resp.Task)
-	}
-	if resp.ProgressDone != 1 || resp.ProgressTotal != 2 {
-		t.Errorf("progress = %d/%d, want 1/2", resp.ProgressDone, resp.ProgressTotal)
 	}
 	for _, col := range resp.Columns {
 		if col.Status == "Not started" && col.Count != 1 {
@@ -189,13 +184,13 @@ func TestIndexRecursiveCounts(t *testing.T) {
 		t.Fatal("no changes")
 	}
 	c := resp.Changes[0]
-	// Root FIX-00 (Test) + FIX-01 (Test) + 2 children = 4 tasks recursive;
-	// descendants only: 2 children, 1 complete (FIX-00.00 Test).
+	// All four tasks recursive (2 roots + 2 children); change-level counts
+	// include the roots: complete = FIX-00, FIX-01, FIX-00.00 (all Test).
 	if c.Tasks != 4 {
 		t.Errorf("tasks = %d, want 4 (recursive)", c.Tasks)
 	}
-	if c.Complete != 1 || c.Open != 1 {
-		t.Errorf("complete/open = %d/%d, want 1/1 (roots are not descendants)", c.Complete, c.Open)
+	if c.Complete != 3 || c.Open != 1 {
+		t.Errorf("complete/open = %d/%d, want 3/1", c.Complete, c.Open)
 	}
 }
 

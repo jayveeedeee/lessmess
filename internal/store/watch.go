@@ -31,6 +31,20 @@ func (s *Store) Watch(ctx context.Context) error {
 			}
 			return nil
 		})
+		// Worktree-backed change directories live outside the main tree;
+		// watch them too so external edits there still refresh the board.
+		for _, c := range s.Changes() {
+			if !strings.HasPrefix(c.Dir, s.ChangesDir) {
+				_ = filepath.WalkDir(c.Dir, func(p string, d fs.DirEntry, err error) error {
+					if err == nil && d.IsDir() {
+						if err := w.Add(p); err != nil {
+							slog.Warn("watch add", "path", p, "err", err)
+						}
+					}
+					return nil
+				})
+			}
+		}
 	}
 	addDirs()
 
@@ -70,6 +84,9 @@ func (s *Store) Watch(ctx context.Context) error {
 				debounce = nil
 				addDirs() // pick up directories created since last scan
 				s.Reload()
+				// Converge derived overall statuses so external (agent)
+				// ledger edits drift back automatically.
+				s.SyncOverallStatuses()
 				s.notify(Event{Kind: "fs"})
 			case err, ok := <-w.Errors:
 				if !ok {

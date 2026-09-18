@@ -1,7 +1,7 @@
 <!-- tasktracker:begin -->
 # Structure: internal/server
 
-<!-- tasktracker-meta: refreshed=2026-09-17 source=2026-09-16-43mc0 tree=eba6179a5c71 -->
+<!-- tasktracker-meta: refreshed=2026-09-17 source=2026-09-16-j2g58 tree=8a75e14ec6f7 -->
 
 HTTP server over the store: HTML pages, JSON endpoints, SSE updates, session mapping, PTY terminal, and the docs refresh queue
 
@@ -19,6 +19,7 @@ HTTP server over the store: HTML pages, JSON endpoints, SSE updates, session map
 | `brandassets_test.go` | Tests for rendered brand bytes (SVG fill, ICO and PNG magic, tile size) and the accent-following brand routes. |
 | `changesession.go` | Discussion session and scaffold trigger endpoints |
 | `changesession_test.go` | Tests for discussion and scaffold flows |
+| `closepipeline.go` | Gated close pipeline for worktree-backed changes: clean gate, push, PR create-or-reuse, unattended reviewer session, and PR comment, with typed failures that block close. |
 | `docsqueue.go` | Serialized doc-gardener refresh queue and stale tracking |
 | `docsqueue_test.go` | Tests for docs queue, touched dirs, refresh |
 | `docsseed.go` | Normal-server docs seed endpoints (POST /docs/seed, GET /docs/seed-status) plus GET/POST /docs/exclusions for the settings editor. |
@@ -67,4 +68,6 @@ HTTP server over the store: HTML pages, JSON endpoints, SSE updates, session map
 | `tuiconfig.go` | Merges the user's opencode CLI config with chrome-free overrides for embedded TUI sessions. |
 | `tuiconfig_test.go` | Tests for TUI config merging, JSONC fallback, and XDG env replacement. |
 | `validatedocs_test.go` | Tests for docs findings in the validate endpoint |
+| `worktree.go` | Worktree-backed changes: docs-root resolution from worktree state plus git confirmation, scaffold-time branch and worktree setup with rollback and dirt warning, and typed git-mechanics errors. |
+| `worktree_test.go` | Tests for worktree setup, docs-root resolution, and the close pipeline against a real git repository. |
 <!-- tasktracker:end -->

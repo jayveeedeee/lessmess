@@ -3,8 +3,8 @@
 - Change ID: 2026-09-14-2
 - Plan: [plan.md](plan.md)
 - Branch: —
-- Overall status: Cancelled
-- Last updated: 2026-09-14
+- Overall status: Planned
+- Last updated: 2026-09-17
 
 ## Status definitions
 

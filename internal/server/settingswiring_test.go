@@ -21,6 +21,8 @@ import (
 type ocCapture struct {
 	creates        []map[string]any
 	prompts        []string
+	deletes        int
+	failPrompts    bool
 	rejectDefaults bool
 	rejectAgent    bool
 	rejectModel    bool
@@ -30,6 +32,9 @@ type ocCapture struct {
 func (c *ocCapture) handler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		switch {
+		case r.Method == http.MethodDelete:
+			c.deletes++
+			w.Write([]byte(`{"data":{}}`))
 		case r.Method == http.MethodPost && r.URL.Path == "/api/session":
 			var body map[string]any
 			json.NewDecoder(r.Body).Decode(&body)
@@ -53,6 +58,11 @@ func (c *ocCapture) handler() http.HandlerFunc {
 			var body map[string]string
 			json.NewDecoder(r.Body).Decode(&body)
 			c.prompts = append(c.prompts, body["text"])
+			if c.failPrompts {
+				w.WriteHeader(http.StatusInternalServerError)
+				w.Write([]byte(`{"message":"prompt boom"}`))
+				return
+			}
 			w.Write([]byte(`{"data":{}}`))
 		default:
 			w.Write([]byte(`{"data":{}}`))
@@ -327,7 +337,7 @@ func TestGardenerSpawnUsesGardenerModel(t *testing.T) {
 	})
 
 	// The gardener closure resolves docs.gardenerModel over session.model.
-	if _, err := spawnSessionWithModel(context.Background(), s.oc, s.st.Dir, "t — docs", GardenerModel(s.st.Dir)); err != nil {
+	if _, err := spawnSessionWithModel(context.Background(), s.oc, s.st.Dir, s.st.Dir, "t — docs", GardenerModel(s.st.Dir)); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	if len(cap.creates) != 1 {
@@ -343,7 +353,7 @@ func TestGardenerSpawnUsesGardenerModel(t *testing.T) {
 	}
 
 	// Without the override, the closure falls back to the session model.
-	if _, err := spawnSessionWithModel(context.Background(), s.oc, s.st.Dir, "t — docs", ""); err != nil {
+	if _, err := spawnSessionWithModel(context.Background(), s.oc, s.st.Dir, s.st.Dir, "t — docs", ""); err != nil {
 		t.Fatalf("spawn without override: %v", err)
 	}
 	m, _ = cap.creates[1]["model"].(map[string]any)

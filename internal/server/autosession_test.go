@@ -74,6 +74,10 @@ func TestTaskPromptContent(t *testing.T) {
 	for _, want := range []string{
 		"bound to task FIX-00 of change 2026-09-10-0",
 		"tasks/00-first.md",
+		"PLAN ONLY",
+		"every subtask starts",
+		"stays exactly in the state it was in when the plan was built",
+		"Execution of any subtask begins only when the user explicitly says so",
 		"NEVER set your task or its subtasks to Done",
 		"PROPOSE it when work reveals complexity",
 		"FIX-00.00: implement the parser",

@@ -9,12 +9,14 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
 	"lessmess/internal/docs"
+	"lessmess/internal/gitops"
 	"lessmess/internal/model"
 	"lessmess/internal/opencode"
 	"lessmess/internal/store"
@@ -40,6 +42,7 @@ type Server struct {
 	autos    *autosession // once-only markers for auto-spawned task sessions
 	docsQ    *docsQueue   // nil disables the docs system (no agentsdocs.json)
 	docsW    *docsWatcher // nil when docs are disabled or the watcher failed
+	git      *gitops.Client // nil in setup mode; worktree mechanics + state
 }
 
 // New builds the route table.
@@ -48,6 +51,8 @@ func New(st *store.Store) *Server {
 		slog.Warn("state dir migration skipped", "err", err)
 	}
 	s := &Server{st: st, rend: newRenderer(), term: terminal.NewManager()}
+	s.git = gitops.New(st.Dir, filepath.Join(st.Dir, store.StateDirName))
+	s.st.SetChangeRoot(s.worktreeChangeRoot())
 	s.SpawnCommand = func(sessionID string) (string, []string) {
 		return "opencode2", []string{"--session", sessionID}
 	}
@@ -71,6 +76,7 @@ func New(st *store.Store) *Server {
 	mux.HandleFunc("GET /{$}", s.index)
 	mux.HandleFunc("GET /changes/{id}", s.board)
 	mux.HandleFunc("GET /changes/{id}/plan", s.planDetail)
+	mux.HandleFunc("GET /changes/{id}/review", s.reviewDetail)
 	mux.HandleFunc("GET /changes/{id}/ledger", s.ledgerDetail)
 	mux.HandleFunc("GET /changes/{id}/tasks/{file...}", s.taskDetail)
 	mux.HandleFunc("POST /changes/{id}/tasks", s.createTask)
@@ -78,8 +84,8 @@ func New(st *store.Store) *Server {
 	mux.HandleFunc("POST /changes/{id}/move", s.moveTask)
 	mux.HandleFunc("POST /changes/{id}/close", s.closeChange)
 	mux.HandleFunc("POST /changes/{id}/reopen", s.reopenChange)
-	mux.HandleFunc("POST /changes/{id}/status", s.changeStatus)
 	mux.HandleFunc("POST /changes/{id}/commit", s.commitChange)
+	mux.HandleFunc("POST /changes/{id}/worktree/remove", s.worktreeRemove)
 	mux.HandleFunc("GET /changes/{id}/commit-status", s.commitStatus)
 	mux.HandleFunc("POST /changes/{$}", s.createChange)
 	mux.HandleFunc("POST /changes/session", s.createDiscussionSession)
@@ -145,7 +151,7 @@ func (s *Server) SetOpencode(c *opencode.Client) {
 			if model != "" {
 				slog.Info("gardener session model", "model", model)
 			}
-			return spawnSessionWithModel(ctx, c, s.st.Dir, title, model)
+			return spawnSessionWithModel(ctx, c, s.st.Dir, s.st.Dir, title, model)
 		}
 		s.docsQ.setRunner(gr)
 	}
@@ -181,11 +187,20 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 }
 
 func writeErr(w http.ResponseWriter, err error) {
+	var mech *gitMechanicsError
 	switch {
 	case errors.Is(err, store.ErrNotFound):
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
 	case errors.Is(err, store.ErrInvalid), errors.Is(err, store.ErrNoContainer):
 		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": err.Error()})
+	case errors.Is(err, gitops.ErrDirty):
+		// User-fixable (commit the worktree) — not a server fault.
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": err.Error()})
+	case errors.As(err, &mech):
+		// Git/gh mechanics failed: an environment problem the agent can
+		// act on, surfaced with its real message (502 = upstream system).
+		slog.Warn("git mechanics failure", "err", err)
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
 	default:
 		slog.Error("handler", "err", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
@@ -274,14 +289,13 @@ func datePrefixOf(id string) string {
 }
 
 type boardResponse struct {
-	ID            string          `json:"id"`
-	Task          string          `json:"task,omitempty"` // drill-down task ID
-	Overall       string          `json:"overall"`
-	Columns       []columnView    `json:"columns"`
-	Tasks         []model.TaskRow `json:"tasks"`
-	ProgressDone  int             `json:"progressDone"`
-	ProgressTotal int             `json:"progressTotal"`
-	Error         string          `json:"error,omitempty"`
+	ID      string          `json:"id"`
+	Task    string          `json:"task,omitempty"` // drill-down task ID
+	Overall string          `json:"overall"`
+	Columns []columnView    `json:"columns"`
+	Tasks   []model.TaskRow `json:"tasks"`
+	Error   string          `json:"error,omitempty"`
+	Worktree *worktreeView  `json:"worktree,omitempty"`
 }
 
 type columnView struct {
@@ -310,6 +324,9 @@ func (s *Server) board(w http.ResponseWriter, r *http.Request) {
 	} else {
 		view = newBoardView(c)
 	}
+	// Worktree strip: computed only for changes with a state entry, so
+	// repos without the feature pay nothing.
+	view.Worktree = s.worktreeViewFor(id)
 	// Auto-spawn (best-effort, async): newly decomposed tasks visible on
 	// a board render get their task-scoped session exactly once.
 	if s.oc != nil && s.mapErr == nil {
@@ -334,8 +351,7 @@ func (s *Server) board(w http.ResponseWriter, r *http.Request) {
 	for _, col := range view.Columns {
 		resp.Columns = append(resp.Columns, columnView{Status: col.Status, Count: len(col.Tasks)})
 	}
-	resp.ProgressDone = view.ProgressDone
-	resp.ProgressTotal = view.ProgressTotal
+	resp.Worktree = view.Worktree
 	writeJSON(w, http.StatusOK, resp)
 }
 
@@ -416,6 +432,36 @@ func (s *Server) planDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"id": id, "body": body})
+}
+
+// reviewDetail serves the change's review.md — the PR reviewer's verdict —
+// rendered in the detail modal. The change directory resolves through the
+// worktree overlay. A not-yet-written review renders a friendly empty state
+// instead of a 404 for HTML clients.
+func (s *Server) reviewDetail(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	c, err := s.st.Change(id)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	data, err := os.ReadFile(filepath.Join(c.Dir, "review.md"))
+	if err != nil {
+		if wantsHTML(r) || isHX(r) {
+			s.rend.render(w, s.rend.partial, "reviewDetail", planView{
+				ID:   id,
+				Body: "No review written yet. It appears here after the PR reviewer finishes — or re-run **Close change** to trigger a fresh review.",
+			})
+			return
+		}
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "no review written yet"})
+		return
+	}
+	if wantsHTML(r) || isHX(r) {
+		s.rend.render(w, s.rend.partial, "reviewDetail", planView{ID: id, Body: string(data)})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"id": id, "body": string(data)})
 }
 
 // ledgerDetail serves a change's ledger.md (or, with ?href=, a task

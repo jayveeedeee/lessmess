@@ -93,13 +93,13 @@ Setup API (for the wizard and other clients): `GET /setup`,
   other file content byte-for-byte.
 - **New change session**: creates spec-compliant change directories and
   ledger rows; task files are written by the session's agent.
-- **Status control**: while a change is `Planned`, `In progress`, or `Blocked`,
-  the board header offers a status select next to the status pill. It calls
-  `POST /changes/<id>/status` with `{"status":"..."}`, which updates the change
-  ledger **and** the root-ledger row atomically — so the two can no longer
-  drift. `Done` is intentionally not offered (closing stays the user-gated
-  **Close change** flow); `Cancelled` has no endpoint. Agent sessions get the
-  same deterministic path via the same endpoint.
+- **Derived change status**: the status pill always mirrors the board —
+  `Planned` while no task has started, `Blocked` when every open task is
+  blocked, `In progress` otherwise. The server derives it from the task
+  tree on every task change and repository rescan, and writes the change
+  ledger and the root-ledger row atomically so the two never drift; there
+  is no manual status control. `Done` is user-gated (**Close change**),
+  and new open work on a closed change flips it back to `In progress`.
 - **Live updates**: the server watches `changes/` with fsnotify; edits made
   by other tools (e.g. an agent updating a ledger) appear on the board via
   SSE without a restart or reload.
@@ -119,9 +119,9 @@ IDs (`EXC-00` → `EXC-00.00` → `EXC-00.00.01`), recursively.
 - **Drill down**: the `x/y ✓` badge on a decomposed card opens that task's
   sub-board (`/changes/<id>?task=<id>`) — the same kanban scoped to its
   children, with a breadcrumb back up.
-- **Progress is display-only**: badges on cards, the board header pill, and
-  the index `Tasks` column (`complete/open`) are computed from descendants
-  (`Test` + `Done` count as complete, `Cancelled` leaves the denominator).
+- **Progress is display-only**: badges on decomposed cards are computed from
+  that task's descendants (`Test` + `Done` count as complete, `Cancelled`
+  leaves the denominator).
   Nothing is ever written to a ledger by rollup — each status lives in the
   row of its governing ledger, and `Done` stays user-gated.
 - **Close-out is recursive**: closing a change requires every non-cancelled
@@ -156,7 +156,9 @@ values apply to new activity immediately — no restart.
 | `session.model` | Model for new sessions as `provider/model` (e.g. `anthropic/claude-sonnet-4-5`). Same validation. |
 | `session.autoOpenTerminal` | Open the embedded terminal automatically after a session is created (default on). |
 | `prompts.discussion` / `change` / `commit` / `repoCommit` / `gardener` / `explorer` | Free text **appended** to the corresponding built-in prompt. Base prompts are never modified, so workflow safeguards stay intact. |
-| `git.defaultBranch` | Recorded in the root ledger Branch column for newly created changes (informational only — no branch is created). |
+| `git.defaultBranch` | Base branch for new change worktree branches (`change/<id>` is cut from it; empty uses the current branch at scaffold time). Always recorded in the root ledger Branch column. |
+| `git.worktrees` | **Worktree per change** (default off — see the Worktree pipeline section below). When on, scaffolding creates a git branch and worktree per change, change sessions work there, and closing pushes the branch, opens a PR, and runs an agent review. |
+| `git.reviewModel` | Model for PR review sessions as `provider/model`. Empty inherits `session.model`. |
 | `ui.showArchived` | List archived changes on the Changes page (default on). |
 | `ui.accent` | Accent color: one of a fixed palette (orange, teal, green, blue, violet, pink, fuchsia, red, amber, cyan). It tints the whole UI and the favicon/brand icon. With no value in either layer, the first run rolls a random color and saves it to the personal layer; setting **Auto** in both layers rolls a fresh random color on the next page load. Unknown values are rejected at save time. |
 | `docs.autoGardenerOnClose` | Run the doc gardener automatically when a change closes (default on). |
@@ -175,6 +177,44 @@ unknown names at creation but then never runs the session),
 `GET /api/settings/options` (agent/model lists scoped to this repository,
 plus the static accent palette; `available:false` when the service is
 down — the palette is still served).
+
+## Worktree pipeline (optional)
+
+Off by default. With **Settings → Git → Worktree per change** enabled, each
+change is developed in its own git worktree on its own branch, isolated from
+the main tree and from other changes:
+
+- **Scaffold** cuts branch `change/<id>` from the configured base branch
+  (or the current branch), registers a worktree at
+  `<parent>/<repo>-worktrees/<id>`, and creates `changes/<id>/` *inside the
+  worktree*. The root ledger stays in the main tree — the server maintains it
+  there, so parallel branches never conflict. If the main tree has
+  uncommitted files, the scaffold still succeeds but the agent is warned
+  which files the new worktree will not contain.
+- **During the change**, every session bound to the change (change session,
+  task subagents, commit sessions, the per-change terminal) works inside the
+  worktree. The board shows the branch, worktree health (active / uncommitted
+  / missing), PR link, and review state on the change page.
+- **Close is gated**: it refuses while the worktree has uncommitted *code*
+  (the change's own `changes/<id>/` metadata — status flips, the review file
+  — is exempt), then pushes the branch, opens a PR with the plan as its body,
+  runs an unattended reviewer session that writes `changes/<id>/review.md`
+  and posts it as a PR comment, and only then marks the change Done. The
+  review verdict is informational — you decide what to do with it. Closing
+  requires a configured `origin` remote and the
+  [gh CLI](https://cli.github.com/) to be authenticated. A close attempt that
+  fails after the PR was created reuses that PR on the next attempt.
+- **The reviewer session stays** after finishing: it is bound to the change,
+  shows up in the Sessions list, and you can open it (Talk/terminal) to ask
+  follow-up questions — it remembers its own review. The review text is also
+  readable on the board via the **Review** button next to the PR link.
+- **Reopen** reattaches the existing worktree. **Remove worktree** is a
+  manual board action (refused while the worktree is dirty); branches and
+  commits are never deleted by lessmess, and nothing is removed
+  automatically.
+
+Repos without git, without a remote, or with the setting off behave exactly
+as before: no git operations, no gating, no worktrees.
 
 ## Safety
 

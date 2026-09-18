@@ -135,11 +135,11 @@ func (s *Server) autospawnOne(c *store.Change, n *store.TaskNode) error {
 	title := taskSessionTitle(n)
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	sess, err := s.spawnSession(ctx, title)
+	sess, err := s.spawnSessionIn(ctx, s.changeSessionDir(c.ID), title)
 	if err != nil {
 		return err
 	}
-	if err := s.oc.Prompt(ctx, sess.ID, s.promptWith(taskPrompt(c.ID, n), "change")); err != nil {
+	if err := s.oc.Prompt(ctx, sess.ID, s.promptWith(s.withWorktreeRule(c.ID, taskPrompt(c.ID, n)), "change")); err != nil {
 		_ = s.oc.DeleteSession(context.Background(), sess.ID)
 		return errors.New("prime task session: " + err.Error())
 	}

@@ -271,6 +271,9 @@ func runValidate(args []string) int {
 		return 1
 	}
 	defer st.Close()
+	// Worktree-backed changes resolve their docs through the worktree, so
+	// validation sees them where they actually live.
+	st.SetChangeRoot(server.WorktreeChangeRoot(*dir))
 	violations := st.Validate()
 	findings := docs.ValidateDocs(*dir, queueStale(*dir))
 	rc := 0

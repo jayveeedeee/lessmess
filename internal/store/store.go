@@ -88,6 +88,26 @@ type Store struct {
 	listeners map[chan Event]struct{}
 	closed    chan struct{}
 	closeOnce sync.Once
+
+	// changeRoot resolves change directories that do not exist in the main
+	// changes/ tree — the worktree-backed changes of the worktree pipeline.
+	// Nil (the default) means every change lives in the main tree.
+	changeRoot ChangeRootFunc
+}
+
+// ChangeRootFunc resolves the directory of one change. It is consulted
+// during scan for root-ledger rows whose directory is absent from the main
+// tree; ok=false or an empty dir leaves the row unmatched (a rule-6
+// violation, as before).
+type ChangeRootFunc func(id string) (dir string, ok bool)
+
+// SetChangeRoot wires the resolver. Call once after Open; scan consults it
+// on every reload. Pass nil to restore main-tree-only behavior.
+func (s *Store) SetChangeRoot(fn ChangeRootFunc) {
+	s.mu.Lock()
+	s.changeRoot = fn
+	s.mu.Unlock()
+	s.Reload()
 }
 
 // Open scans the changes/ tree under dir.
@@ -151,24 +171,7 @@ func (s *Store) scan() (*model.RootLedger, error, map[string]*Change, map[string
 			if !e.IsDir() {
 				continue
 			}
-			c := &Change{
-				ID:       e.Name(),
-				Dir:      filepath.Join(dir, e.Name()),
-				Archived: archivedFlag,
-			}
-			if data, err := os.ReadFile(filepath.Join(c.Dir, "ledger.md")); err != nil {
-				c.Err = err
-			} else if l, err := model.ParseChangeLedger(c.ID+"/ledger.md", data); err != nil {
-				c.Err = err
-			} else {
-				c.Ledger = l
-			}
-			var rows []model.TaskRow
-			if c.Ledger != nil {
-				rows = c.Ledger.Rows
-			}
-			c.Roots = s.scanTasks(c, filepath.Join(c.Dir, "tasks"), "tasks/", nil, rows)
-			c.indexNodes()
+			c := s.loadChange(e.Name(), filepath.Join(dir, e.Name()), archivedFlag)
 			if archivedFlag {
 				archived[c.ID] = c
 			} else {
@@ -178,7 +181,64 @@ func (s *Store) scan() (*model.RootLedger, error, map[string]*Change, map[string
 	}
 	load(s.ChangesDir, false)
 	load(filepath.Join(s.ChangesDir, "archive"), true)
+
+	// Worktree-backed changes: active root rows whose directory exists
+	// only inside the change's worktree resolve through the injected hook.
+	// Rows already matched above (main tree or archive) are skipped, as
+	// are cells that are not bare change IDs (archived rows keep their
+	// archive-prefixed link in the Href column, not the Change cell, but
+	// the ID-format check is cheap insurance).
+	s.mu.RLock()
+	resolve := s.changeRoot
+	s.mu.RUnlock()
+	if resolve != nil && root != nil {
+		for _, r := range root.Rows {
+			if _, ok := changes[r.Change]; ok {
+				continue
+			}
+			if _, ok := archived[r.Change]; ok {
+				continue
+			}
+			if !changeIDRe.MatchString(r.Change) {
+				continue
+			}
+			dir, ok := resolve(r.Change)
+			if !ok || dir == "" {
+				continue
+			}
+			// A stale entry (worktree deleted by hand) self-heals to
+			// unresolved rather than materializing a phantom change.
+			if st, err := os.Stat(dir); err != nil || !st.IsDir() {
+				slog.Warn("resolved change root missing; skipping", "change", r.Change, "dir", dir)
+				continue
+			}
+			changes[r.Change] = s.loadChange(r.Change, dir, false)
+		}
+	}
 	return root, rootErr, changes, archived
+}
+
+// loadChange builds one Change (ledger, task tree) from its directory.
+func (s *Store) loadChange(id, dir string, archivedFlag bool) *Change {
+	c := &Change{
+		ID:       id,
+		Dir:      dir,
+		Archived: archivedFlag,
+	}
+	if data, err := os.ReadFile(filepath.Join(c.Dir, "ledger.md")); err != nil {
+		c.Err = err
+	} else if l, err := model.ParseChangeLedger(c.ID+"/ledger.md", data); err != nil {
+		c.Err = err
+	} else {
+		c.Ledger = l
+	}
+	var rows []model.TaskRow
+	if c.Ledger != nil {
+		rows = c.Ledger.Rows
+	}
+	c.Roots = s.scanTasks(c, filepath.Join(c.Dir, "tasks"), "tasks/", nil, rows)
+	c.indexNodes()
+	return c
 }
 
 // Root returns the parsed root ledger.
@@ -355,7 +415,12 @@ func (s *Store) MoveTask(changeID, taskID string, toStatus model.TaskStatus, toI
 		}
 		content = l.Content()
 	}
-	return s.writeGoverningLedger(c, n, content)
+	if err := s.writeGoverningLedger(c, n, content); err != nil {
+		return err
+	}
+	// The change's overall status is derived from the task tree.
+	s.syncOverall(changeID)
+	return nil
 }
 
 var slugRe = regexp.MustCompile(`[^a-z0-9]+`)
@@ -501,39 +566,44 @@ func (s *Store) CreateTask(changeID, parentTaskID, title string) (model.TaskRow,
 	row.Href = href // callers get the change-relative view
 	s.Reload()
 	s.notify(Event{Kind: "write", Path: "ledger.md"})
+	// A task added to a closed change reopens it implicitly; on open
+	// changes the derived status is usually unchanged and this no-ops.
+	s.syncOverall(changeID)
 	return row, nil
 }
 
-// CreateChange scaffolds a change directory for date (YYYY-MM-DD) with a
-// random five-character lowercase alphanumeric suffix, unique among the
-// date's directories including archived ones, and appends the root-ledger
-// row. branch is recorded in the root row's Branch column (empty = —); it is
-// informational only — no git branch is created.
+// CreateChange scaffolds a change directory in the main changes/ tree and
+// appends the root-ledger row. It is CreateChangeAt with the main-tree
+// changes directory and a freshly minted ID.
 func (s *Store) CreateChange(title, prefix, branch, date string) (string, error) {
-	title = strings.TrimSpace(title)
-	if title == "" || strings.Contains(title, "|") {
-		return "", fmt.Errorf("%w: change title must be non-empty and contain no |", ErrInvalid)
+	if err := validateChangeArgs(title, date); err != nil {
+		return "", err
 	}
-	if !regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`).MatchString(date) {
-		return "", fmt.Errorf("%w: bad date %q", ErrInvalid, date)
+	id, err := s.MintChangeID(date)
+	if err != nil {
+		return "", err
 	}
-	if prefix == "" {
-		prefix = model.Empty
-	}
-	branch = strings.TrimSpace(branch)
-	if branch == "" || strings.Contains(branch, "|") {
-		branch = model.Empty
-	}
+	return id, s.CreateChangeAt(id, s.ChangesDir, title, prefix, branch, date)
+}
 
-	// Mint a random suffix unique among this date's directories (including
-	// archived ones). Random generation replaced the per-date counter so
-	// parallel workers never collide on the same next number.
+// MintChangeID mints a random five-character lowercase alphanumeric suffix
+// ID unique for the date among existing directories (including archived
+// ones) and root-ledger rows — worktree-backed changes have rows but no
+// main-tree directory, so rows must count too.
+func (s *Store) MintChangeID(date string) (string, error) {
 	existing := map[string]bool{}
 	for _, base := range []string{s.ChangesDir, filepath.Join(s.ChangesDir, "archive")} {
 		entries, _ := os.ReadDir(base)
 		for _, e := range entries {
 			if e.IsDir() && strings.HasPrefix(e.Name(), date+"-") {
 				existing[e.Name()] = true
+			}
+		}
+	}
+	if root, err := s.Root(); err == nil && root != nil {
+		for _, r := range root.Rows {
+			if strings.HasPrefix(r.Change, date+"-") {
+				existing[r.Change] = true
 			}
 		}
 	}
@@ -549,39 +619,76 @@ func (s *Store) CreateChange(title, prefix, branch, date string) (string, error)
 		}
 		slog.Debug("change id collision; regenerating", "date", date)
 	}
+	return id, nil
+}
 
-	dir := filepath.Join(s.ChangesDir, id)
+// validateChangeArgs enforces the shared CreateChange argument rules.
+func validateChangeArgs(title, date string) error {
+	title = strings.TrimSpace(title)
+	if title == "" || strings.Contains(title, "|") {
+		return fmt.Errorf("%w: change title must be non-empty and contain no |", ErrInvalid)
+	}
+	if !regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`).MatchString(date) {
+		return fmt.Errorf("%w: bad date %q", ErrInvalid, date)
+	}
+	return nil
+}
+
+// CreateChangeAt scaffolds a change whose docs live under changesRoot (the
+// main changes/ directory, or a worktree's changes/ directory for
+// worktree-backed changes) while the root-ledger row is always appended to
+// the main tree's root ledger. The caller owns ID minting (MintChangeID)
+// and any git setup, so a git failure can never leave a half-scaffolded
+// change: with the ID minted first, the branch and worktree exist before
+// the first workflow file is written.
+func (s *Store) CreateChangeAt(id, changesRoot, title, prefix, branch, date string) error {
+	if err := validateChangeArgs(title, date); err != nil {
+		return err
+	}
+	if !changeIDRe.MatchString(id) {
+		return fmt.Errorf("%w: malformed change id %q", ErrInvalid, id)
+	}
+	title = strings.TrimSpace(title)
+	if prefix == "" {
+		prefix = model.Empty
+	}
+	branch = strings.TrimSpace(branch)
+	if branch == "" || strings.Contains(branch, "|") {
+		branch = model.Empty
+	}
+
+	dir := filepath.Join(changesRoot, id)
 	if err := os.MkdirAll(filepath.Join(dir, "tasks"), 0o755); err != nil {
-		return "", err
+		return err
 	}
 	if err := model.WriteFileAtomic(filepath.Join(dir, "plan.md"), model.RenderChangePlan(id, title, date), 0o644); err != nil {
-		return "", err
+		return err
 	}
 	if err := model.WriteFileAtomic(filepath.Join(dir, "ledger.md"), model.RenderChangeLedger(id, date), 0o644); err != nil {
-		return "", err
+		return err
 	}
 
 	rootData, err := os.ReadFile(filepath.Join(s.ChangesDir, "ledger.md"))
 	if err != nil {
-		return "", err
+		return err
 	}
 	root, err := model.ParseRootLedger("changes/ledger.md", rootData)
 	if err != nil {
-		return "", fmt.Errorf("%w: %v", ErrInvalid, err)
+		return fmt.Errorf("%w: %v", ErrInvalid, err)
 	}
 	root.AppendRow(model.RootRow{
 		Change: id, Href: id + "/plan.md", Title: title, Prefix: prefix,
 		Branch: branch, Status: model.OverallPlanned, Created: date, Updated: date,
 	})
 	if err := model.WriteFileAtomic(filepath.Join(s.ChangesDir, "ledger.md"), root.Content(), 0o644); err != nil {
-		return "", err
+		return err
 	}
 	s.mu.Lock()
 	s.root = root
 	s.mu.Unlock()
 	s.Reload()
 	s.notify(Event{Kind: "write", Path: "ledger.md"})
-	return id, nil
+	return nil
 }
 
 // SetChangeStatus updates a change's overall status in both the per-change

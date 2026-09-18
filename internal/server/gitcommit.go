@@ -99,6 +99,22 @@ func gitStatus(dir string) gitRepoStatus {
 	return st
 }
 
+// gitBranches lists local branch names (read-only), sorted. Fail-open to
+// empty: the options endpoint only suggests them.
+func gitBranches(dir string) []string {
+	out, err := runGit(dir, "for-each-ref", "--format=%(refname:short)", "refs/heads")
+	if err != nil {
+		return nil
+	}
+	var branches []string
+	for _, line := range strings.Split(out, "\n") {
+		if b := strings.TrimSpace(line); b != "" {
+			branches = append(branches, b)
+		}
+	}
+	return branches
+}
+
 // gitStatusAPI handles GET /api/git/status: always 200, degrading to
 // repo:false when git state is unavailable.
 func (s *Server) gitStatusAPI(w http.ResponseWriter, r *http.Request) {

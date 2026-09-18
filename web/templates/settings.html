@@ -121,9 +121,24 @@
       <span class="settings-status" hidden></span>
     </div>
     <div class="settings-field" data-field="git.defaultBranch" data-kind="string">
-      <label>Default branch <span class="src-badge" data-badge></span><button type="button" class="settings-change" title="Discuss changing this setting">✦ change</button></label>
-      <input type="text" data-input autocomplete="off" spellcheck="false">
-      <p class="muted field-help">Recorded in the root ledger Branch column for newly created changes. Informational only — no git branch is created.</p>
+      <label>Base branch <span class="src-badge" data-badge></span><button type="button" class="settings-change" title="Discuss changing this setting">✦ change</button></label>
+      <input type="text" list="settings-branch-list" data-input autocomplete="off" spellcheck="false">
+      <datalist id="settings-branch-list"></datalist>
+      <p class="muted field-help">Base for new change worktree branches (change/&lt;id&gt; is cut from it). Empty uses the current branch at scaffold time. Always recorded in the root ledger Branch column.</p>
+    </div>
+    <div class="settings-field" data-field="git.worktrees" data-kind="bool">
+      <label>Worktree per change <span class="src-badge" data-badge></span><button type="button" class="settings-change" title="Discuss changing this setting">✦ change</button></label>
+      <select data-input>
+        <option value="">Inherit</option>
+        <option value="true">On</option>
+        <option value="false">Off</option>
+      </select>
+      <p class="muted field-help">Off by default: everything works as before. On: scaffolding a change creates a git branch and worktree, its sessions work there, and closing it pushes the branch, opens a PR, and runs an agent review. Requires git in the served repository; the PR steps also need a remote and the gh CLI.</p>
+    </div>
+    <div class="settings-field" data-field="git.reviewModel" data-kind="string">
+      <label>Review model <span class="src-badge" data-badge></span><button type="button" class="settings-change" title="Discuss changing this setting">✦ change</button></label>
+      <input type="text" list="settings-model-list" data-input autocomplete="off" spellcheck="false">
+      <p class="muted field-help">Model for PR review sessions, as provider/model. Empty inherits the session default model.</p>
     </div>
   </section>
 

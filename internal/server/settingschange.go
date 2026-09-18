@@ -90,6 +90,10 @@ func settingsFieldValue(e EffectiveSettings, field string) (string, bool) {
 		return e.Prompts.Explorer, true
 	case "git.defaultBranch":
 		return e.Git.DefaultBranch, true
+	case "git.worktrees":
+		return strconv.FormatBool(e.Git.Worktrees), true
+	case "git.reviewModel":
+		return e.Git.ReviewModel, true
 	case "ui.showArchived":
 		return strconv.FormatBool(e.UI.ShowArchived), true
 	case "ui.accent":

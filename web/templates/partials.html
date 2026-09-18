@@ -48,6 +48,20 @@
 </div>
 {{end}}
 
+{{define "reviewDetail"}}
+<div class="modal">
+  <div class="modal-head">
+    <span class="chip">{{.ID}}</span>
+    <span class="title">Review</span>
+    <button type="button" class="modal-close" data-close-detail aria-label="Close">✕</button>
+  </div>
+  <div class="modal-panes">
+    <nav class="modal-toc" hidden></nav>
+    <div class="modal-body prose">{{markdown .Body}}</div>
+  </div>
+</div>
+{{end}}
+
 {{define "ledgerDetail"}}
 <div class="modal" data-doc="{{.Doc}}">
   <div class="modal-head">

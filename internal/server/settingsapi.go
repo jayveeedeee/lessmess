@@ -236,11 +236,12 @@ func validateModelChoice(ctx context.Context, oc *opencode.Client, repoDir, mode
 // then shows a hint and keeps values editable as text. Accents is the
 // static palette and is always populated.
 type settingsOptionsResponse struct {
-	Available    bool               `json:"available"`
-	Agents       []settingsAgentOpt `json:"agents"`
-	Models       []settingsModelOpt `json:"models"`
+	Available    bool                `json:"available"`
+	Agents       []settingsAgentOpt  `json:"agents"`
+	Models       []settingsModelOpt  `json:"models"`
 	Accents      []settingsAccentOpt `json:"accents"`
-	DefaultModel string             `json:"defaultModel,omitempty"`
+	Branches     []string            `json:"branches"`
+	DefaultModel string              `json:"defaultModel,omitempty"`
 }
 
 // settingsAccentOpt is one palette entry for the accent picker; the four
@@ -281,6 +282,9 @@ func (s *Server) settingsOptions(w http.ResponseWriter, r *http.Request) {
 // the opencode service, degrading to available:false.
 func settingsOptionsWith(oc *opencode.Client, repoDir string, w http.ResponseWriter, r *http.Request) {
 	resp := settingsOptionsResponse{Agents: []settingsAgentOpt{}, Models: []settingsModelOpt{}, Accents: accentOptions()}
+	// Local branches come from git, independent of the opencode service —
+	// suggestions for the git.baseBranch combobox.
+	resp.Branches = gitBranches(repoDir)
 	if oc == nil {
 		writeJSON(w, http.StatusOK, resp)
 		return

@@ -81,11 +81,23 @@ type PromptSettings struct {
 	Explorer   string `json:"explorer,omitempty"`
 }
 
-// GitSettings configure git-related defaults. DefaultBranch is recorded in
-// the root ledger Branch column for newly created changes; it is
-// informational only (no branch is created).
+// GitSettings configure git-related defaults. DefaultBranch is the base
+// branch for new change worktrees (branch `change/<id>` is cut from it);
+// with worktrees off it remains informational only — recorded in the root
+// ledger Branch column, no branch is created. Worktrees enables the
+// worktree-per-change pipeline (off by default); ReviewModel overrides the
+// model for PR review sessions (empty inherits the session default model).
 type GitSettings struct {
 	DefaultBranch string `json:"defaultBranch,omitempty"`
+	Worktrees     *bool  `json:"worktrees,omitempty"`
+	ReviewModel   string `json:"reviewModel,omitempty"`
+}
+
+// EffectiveGitSettings resolves GitSettings to concrete values.
+type EffectiveGitSettings struct {
+	DefaultBranch string `json:"defaultBranch"`
+	Worktrees     bool   `json:"worktrees"`
+	ReviewModel   string `json:"reviewModel"`
 }
 
 // UISettings configure page behavior. Accent is a palette id from
@@ -106,8 +118,8 @@ type DocsSettings struct {
 type EffectiveSettings struct {
 	General EffectiveGeneralSettings `json:"general"`
 	Session EffectiveSessionSettings `json:"session"`
-	Prompts PromptSettings           `json:"prompts"`
-	Git     GitSettings              `json:"git"`
+	Prompts  PromptSettings           `json:"prompts"`
+	Git      EffectiveGitSettings     `json:"git"`
 	UI      EffectiveUISettings      `json:"ui"`
 	Docs    EffectiveDocsSettings    `json:"docs"`
 }
@@ -260,6 +272,8 @@ func mergeSettings(project, personal Settings) (EffectiveSettings, map[string]st
 	eff.Prompts.Explorer = pickStr("prompts.explorer", project.Prompts.Explorer, personal.Prompts.Explorer)
 
 	eff.Git.DefaultBranch = pickStr("git.defaultBranch", project.Git.DefaultBranch, personal.Git.DefaultBranch)
+	eff.Git.Worktrees = pickBool("git.worktrees", false, project.Git.Worktrees, personal.Git.Worktrees)
+	eff.Git.ReviewModel = pickStr("git.reviewModel", project.Git.ReviewModel, personal.Git.ReviewModel)
 
 	eff.UI.ShowArchived = pickBool("ui.showArchived", true, project.UI.ShowArchived, personal.UI.ShowArchived)
 	eff.UI.Accent = pickStr("ui.accent", project.UI.Accent, personal.UI.Accent)
@@ -452,21 +466,45 @@ func GardenerModel(repoDir string) string {
 	return eff.Session.Model
 }
 
-// spawnSession creates an opencode session titled title, applying the
-// effective agent/model defaults at creation.
-func (s *Server) spawnSession(ctx context.Context, title string) (*opencode.Session, error) {
-	return spawnSessionWithModel(ctx, s.oc, s.st.Dir, title, "")
+// ReviewModel returns the model for PR review sessions: the
+// git.reviewModel override when set, else the effective session model
+// ("" = service default). Like GardenerModel, this is a model-only
+// override by design; the agent still comes from SessionDefaults.
+func ReviewModel(repoDir string) string {
+	eff, _, loadErr := loadEffectiveSettings(repoDir)
+	if loadErr != "" {
+		slog.Warn("settings load failed; using defaults", "err", loadErr)
+	}
+	if eff.Git.ReviewModel != "" {
+		return eff.Git.ReviewModel
+	}
+	return eff.Session.Model
 }
 
-// spawnSessionWithModel creates an opencode session applying the effective
-// agent defaults plus a model resolution: modelOverride (the docs
-// gardener's docs.gardenerModel) when non-empty, else the effective
-// session.model. When the service rejects the values (400 — typically a
-// stale or unknown name), attempts de-escalate agent+model → agent only →
-// model only → plain, so one stale value never costs the other and a bad
-// setting never blocks session creation. Each de-escalation logs a warning.
-func spawnSessionWithModel(ctx context.Context, oc *opencode.Client, repoDir, title, modelOverride string) (*opencode.Session, error) {
-	eff, _, loadErr := loadEffectiveSettings(repoDir)
+// spawnSession creates an opencode session titled title in the main tree,
+// applying the effective agent/model defaults at creation.
+func (s *Server) spawnSession(ctx context.Context, title string) (*opencode.Session, error) {
+	return spawnSessionWithModel(ctx, s.oc, s.st.Dir, s.st.Dir, title, "")
+}
+
+// spawnSessionIn creates an opencode session titled title whose working
+// directory is dir (a change's worktree) while settings still come from the
+// served repository root — settings are global; only the session's
+// directory follows the worktree.
+func (s *Server) spawnSessionIn(ctx context.Context, dir, title string) (*opencode.Session, error) {
+	return spawnSessionWithModel(ctx, s.oc, s.st.Dir, dir, title, "")
+}
+
+// spawnSessionWithModel creates an opencode session titled title working in
+// sessionDir, applying the effective agent/model defaults read from
+// settingsDir. modelOverride (the docs gardener's docs.gardenerModel) wins
+// over the effective session.model when non-empty. When the service
+// rejects the values (400 — typically a stale or unknown name), attempts
+// de-escalate agent+model → agent only → model only → plain, so one stale
+// value never costs the other and a bad setting never blocks session
+// creation. Each de-escalation logs a warning.
+func spawnSessionWithModel(ctx context.Context, oc *opencode.Client, settingsDir, sessionDir, title, modelOverride string) (*opencode.Session, error) {
+	eff, _, loadErr := loadEffectiveSettings(settingsDir)
 	if loadErr != "" {
 		slog.Warn("settings load failed; using defaults", "err", loadErr)
 	}
@@ -499,12 +537,12 @@ func spawnSessionWithModel(ctx context.Context, oc *opencode.Client, repoDir, ti
 
 	var firstErr error
 	for i, a := range attempts {
-		sess, err := oc.CreateSessionWith(ctx, title, repoDir, a.agent, a.model)
+		sess, err := oc.CreateSessionWith(ctx, title, sessionDir, a.agent, a.model)
 		if err == nil {
 			if i == 0 {
-				clearSpawnFallback(repoDir)
+				clearSpawnFallback(settingsDir)
 			} else {
-				writeSpawnFallback(repoDir, SpawnFallback{
+				writeSpawnFallback(settingsDir, SpawnFallback{
 					AttemptedAgent: eff.Session.Agent,
 					AttemptedModel: model,
 					Outcome:        a.name,

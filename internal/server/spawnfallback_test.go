@@ -89,7 +89,7 @@ func TestSpawnLadderStopsOnNon400(t *testing.T) {
 		Model: "prov/m",
 	}})
 
-	_, err := spawnSessionWithModel(context.Background(), s.oc, s.st.Dir, "t", "")
+	_, err := spawnSessionWithModel(context.Background(), s.oc, s.st.Dir, s.st.Dir, "t", "")
 	if err == nil {
 		t.Fatal("expected the non-400 error to propagate")
 	}
@@ -108,7 +108,7 @@ func TestSpawnLadderPlainFailureReturnsError(t *testing.T) {
 	}))
 	writeSettingsFile(t, s.st.Dir, Settings{Session: SessionSettings{Agent: "build", Model: "prov/m"}})
 
-	if _, err := spawnSessionWithModel(context.Background(), s.oc, s.st.Dir, "t", ""); err == nil {
+	if _, err := spawnSessionWithModel(context.Background(), s.oc, s.st.Dir, s.st.Dir, "t", ""); err == nil {
 		t.Fatal("expected an error when every attempt fails")
 	}
 }

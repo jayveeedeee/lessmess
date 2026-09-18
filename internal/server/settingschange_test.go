@@ -162,6 +162,23 @@ func TestSettingsFieldValueGardenerModel(t *testing.T) {
 	}
 }
 
+func TestSettingsFieldValueGit(t *testing.T) {
+	e := EffectiveSettings{Git: EffectiveGitSettings{Worktrees: true, DefaultBranch: "main", ReviewModel: "prov/r1"}}
+	if v, ok := settingsFieldValue(e, "git.worktrees"); !ok || v != "true" {
+		t.Errorf("settingsFieldValue(git.worktrees) = %q, %v; want true, true", v, ok)
+	}
+	if v, ok := settingsFieldValue(e, "git.defaultBranch"); !ok || v != "main" {
+		t.Errorf("settingsFieldValue(git.defaultBranch) = %q, %v; want main, true", v, ok)
+	}
+	if v, ok := settingsFieldValue(e, "git.reviewModel"); !ok || v != "prov/r1" {
+		t.Errorf("settingsFieldValue(git.reviewModel) = %q, %v; want prov/r1, true", v, ok)
+	}
+	off := EffectiveSettings{Git: EffectiveGitSettings{}}
+	if v, ok := settingsFieldValue(off, "git.worktrees"); !ok || v != "false" {
+		t.Errorf("settingsFieldValue(worktrees off) = %q, %v; want false, true", v, ok)
+	}
+}
+
 func TestSettingsChangeRejects(t *testing.T) {
 	fake := &scFake{}
 	s := mappingServer(t, fake.handler())

@@ -189,6 +189,7 @@ Rules:
 4. A task's status lives in its governing ledger: the change ledger for top-level tasks, the parent container's ledger below that. A container ledger uses the same pinned task-table schema, status vocabulary, and row-order-as-priority semantics as the change ledger, with minimal headers (`- Task: <id> (change <change-id>)` and `- Last updated:`) and one row per child task.
 5. Decomposition is user-instructed only: a board action, an explicit instruction in a session, or part of a plan the user approved. Agents may propose decompositions when work reveals complexity, but never create containers unprompted. Removing a decomposition means deleting the container directory; its children go with it.
 6. Progress rollup is display-only. Tools may compute and show aggregate progress for a task from its descendants (`Test` and `Done` count as complete; `Cancelled` leaves the denominator), but never write a status on rollup's behalf — statuses change only through the normal manual workflow, including the user-gated `Done`.
+7. Decomposition is a planning act. Creating a sub plan never changes the decomposed task's status (it stays exactly where it was), subtasks are created `Not started`, and no subtask work begins until the user explicitly instructs it.
 
 ### `ledger.md`
 
@@ -237,7 +238,7 @@ Recommended overall statuses are `Planned`, `In progress`, `Blocked`, `Done`, an
 
 1. Create the plan, task files, and ledger before implementation begins.
 2. Initialize every task as `Not started` and the overall change as `Planned`.
-3. Before modifying implementation files for a task, change that task to `In progress`, update its date, and set the overall status to `In progress`. Set overall statuses only through the deterministic path — the board's status control or `POST /changes/{id}/status` with `{"status":"Planned"|"In progress"|"Blocked"}` — which updates the change ledger and the root-ledger row atomically; never hand-edit an `Overall status:` line. `Done` remains user-gated via close (rule 9); `Cancelled` has no endpoint, so cancelling a change still means editing both ledgers by hand and recording the reason (rule 11).
+3. Before modifying implementation files for a task, change that task to `In progress` and update its date. The change's overall status is derived from the task tree by the tooling — `Planned` while nothing has started, `Blocked` when all open work is blocked, otherwise `In progress` — and written to both ledgers automatically on every task change and repository rescan; never hand-edit an `Overall status:` line. `Done` remains user-gated via close (rule 9); new open work on a closed change flips it back to `In progress`. Cancelling a change still means editing both ledgers by hand and recording the reason (rule 11).
 4. Record material findings, decisions, scope changes, and blockers in the relevant task notes. Summarize important decisions in the ledger decision log.
 5. When a blocker is resolved, return the task to `In progress` and record the resolution.
 6. Mark a task `Test` only after its documented verification and completion criteria pass. Record concise verification evidence. `Test` means the agent considers the task complete; it awaits user acceptance.

@@ -196,6 +196,32 @@ h3 { margin: 0; font-size: 0.82rem; font-weight: 600; }
   margin-bottom: 1.1rem;
 }
 
+/* Worktree strip: branch, health flag, PR link, review state, cleanup. */
+.worktree-strip {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin: -0.5rem 0 0.9rem;
+}
+.worktree-strip .wt-branch {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: var(--surface-3);
+  color: var(--text);
+}
+.worktree-strip .wt-flag {
+  background: var(--st-blocked-bg);
+  color: var(--st-blocked-fg);
+}
+.worktree-strip .wt-pr {
+  text-decoration: none;
+  background: var(--st-test-bg);
+  color: var(--st-test-fg);
+}
+.worktree-strip .wt-review[data-review="done"] { background: var(--st-done-bg); color: var(--st-done-fg); }
+.worktree-strip .wt-review[data-review="pending"] { background: var(--st-in-progress-bg); color: var(--st-in-progress-fg); }
+.worktree-strip .wt-review[data-review="failed"] { background: var(--st-blocked-bg); color: var(--st-blocked-fg); }
+
 .inline-form { display: flex; gap: 0.5rem; align-items: center; margin-left: auto; }
 input[type="text"] {
   background: var(--surface);
@@ -232,15 +258,6 @@ button:hover { background: var(--slate-hover); }
   color: var(--muted);
   border-radius: 3px;
   padding: 0.32rem 0.7rem;
-  font-size: 0.78rem;
-  font-weight: 600;
-}
-.status-select {
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  color: var(--muted);
-  border-radius: 3px;
-  padding: 0.32rem 0.45rem;
   font-size: 0.78rem;
   font-weight: 600;
 }

@@ -182,11 +182,19 @@ type boardView struct {
 	NodeTitle string      // viewed task title
 	Crumbs    []crumbView // ancestor chain, root change first
 
-	// Rollup progress for the header: descendants complete/total
-	// (change-wide on the root board, subtree on a drill-down).
-	ProgressDone    int
-	ProgressTotal   int
-	HasProgressData bool
+	// Worktree pipeline state; nil unless the change has a worktrees-state
+	// entry (worktree-backed change).
+	Worktree *worktreeView
+}
+
+// worktreeView is the board header's worktree strip: branch, path, health,
+// PR, and review state.
+type worktreeView struct {
+	Branch string
+	Path   string
+	State  string // "active" | "dirty" | "missing"
+	PRURL  string
+	Review string // "", pending, done, failed
 }
 
 type crumbView struct {
@@ -250,8 +258,6 @@ func newBoardView(c *store.Change) boardView {
 	}
 	v.Overall = string(c.Ledger.Overall)
 	v.Columns = columnsFromNodes(c.Roots)
-	st := c.AllTaskStats()
-	v.ProgressDone, v.ProgressTotal, v.HasProgressData = st.Complete, st.Total, true
 	return v
 }
 
@@ -283,8 +289,6 @@ func newTaskBoardView(c *store.Change, n *store.TaskNode) boardView {
 		}
 		v.Crumbs = append(v.Crumbs, crumbView{ID: p.ID, Title: title, URL: "/changes/" + c.ID + "?task=" + p.ID})
 	}
-	st := n.SubtreeStats()
-	v.ProgressDone, v.ProgressTotal, v.HasProgressData = st.Complete, st.Total, true
 	return v
 }
 

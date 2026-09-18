@@ -26,13 +26,19 @@ func TestSettingsDefaultsOnly(t *testing.T) {
 		t.Errorf("string defaults = %q/%q/%q, want all empty",
 			eff.Session.Agent, eff.Session.Model, eff.Git.DefaultBranch)
 	}
+	if eff.Git.Worktrees {
+		t.Errorf("worktrees default = true, want false")
+	}
+	if eff.Git.ReviewModel != "" {
+		t.Errorf("reviewModel default = %q, want empty", eff.Git.ReviewModel)
+	}
 	for field, src := range sources {
 		if src != "default" {
 			t.Errorf("sources[%s] = %q, want default", field, src)
 		}
 	}
-	if len(sources) != 15 {
-		t.Errorf("len(sources) = %d, want 15", len(sources))
+	if len(sources) != 17 {
+		t.Errorf("len(sources) = %d, want 17", len(sources))
 	}
 }
 
@@ -45,6 +51,7 @@ func TestSettingsProjectAndPersonalLayers(t *testing.T) {
 	})
 	writeJSONFile(t, settingsPersonalPath(dir), Settings{
 		Session: SessionSettings{Model: "me/personal-model"},
+		Git:     GitSettings{Worktrees: boolp(true)},
 		Docs:    DocsSettings{AutoGardenerOnClose: boolp(false)},
 	})
 
@@ -68,6 +75,9 @@ func TestSettingsProjectAndPersonalLayers(t *testing.T) {
 	}
 	if eff.Git.DefaultBranch != "main" || sources["git.defaultBranch"] != "project" {
 		t.Errorf("defaultBranch = %q (%s)", eff.Git.DefaultBranch, sources["git.defaultBranch"])
+	}
+	if eff.Git.Worktrees != true || sources["git.worktrees"] != "personal" {
+		t.Errorf("worktrees = %v (%s), want true (personal)", eff.Git.Worktrees, sources["git.worktrees"])
 	}
 	if eff.Docs.AutoGardenerOnClose != false || sources["docs.autoGardenerOnClose"] != "personal" {
 		t.Errorf("autoGardenerOnClose = %v (%s)", eff.Docs.AutoGardenerOnClose, sources["docs.autoGardenerOnClose"])
@@ -108,6 +118,32 @@ func TestGardenerModelPrecedence(t *testing.T) {
 	writeJSONFile(t, settingsPersonalPath(dir), Settings{})
 	if got := GardenerModel(dir); got != "prov/project-gardener" {
 		t.Errorf("cleared personal: GardenerModel = %q, want the project gardener model", got)
+	}
+}
+
+func TestReviewModelPrecedence(t *testing.T) {
+	dir := t.TempDir()
+	// Nothing set: falls through to the session model, then "".
+	if got := ReviewModel(dir); got != "" {
+		t.Errorf("empty layers: ReviewModel = %q, want empty", got)
+	}
+	writeJSONFile(t, settingsProjectPath(dir), Settings{
+		Session: SessionSettings{Model: "prov/session-model"},
+	})
+	if got := ReviewModel(dir); got != "prov/session-model" {
+		t.Errorf("unset override: ReviewModel = %q, want the session model", got)
+	}
+	// Personal override wins over the session model.
+	writeJSONFile(t, settingsPersonalPath(dir), Settings{
+		Git: GitSettings{ReviewModel: "prov/review-model"},
+	})
+	if got := ReviewModel(dir); got != "prov/review-model" {
+		t.Errorf("set override: ReviewModel = %q, want the review model", got)
+	}
+	// Clearing the personal layer restores the session model.
+	writeJSONFile(t, settingsPersonalPath(dir), Settings{})
+	if got := ReviewModel(dir); got != "prov/session-model" {
+		t.Errorf("cleared personal: ReviewModel = %q, want the session model", got)
 	}
 }
 
@@ -198,6 +234,33 @@ func TestApplySettingsPatchRejects(t *testing.T) {
 		if err := applySettingsPatch(dir, scope, []byte(body)); err == nil {
 			t.Errorf("%s: want error", name)
 		}
+	}
+}
+
+func TestApplySettingsPatchGitSection(t *testing.T) {
+	dir := t.TempDir()
+	body := `{"git":{"defaultBranch":"main","worktrees":true,"reviewModel":"prov/r1"}}`
+	if err := applySettingsPatch(dir, SettingsScopeProject, []byte(body)); err != nil {
+		t.Fatalf("patch git section: %v", err)
+	}
+	// The section round-trips to disk and back through the strict decoder.
+	b, err := os.ReadFile(settingsProjectPath(dir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var layer Settings
+	if err := json.Unmarshal(b, &layer); err != nil {
+		t.Fatal(err)
+	}
+	if layer.Git.DefaultBranch != "main" || layer.Git.Worktrees == nil || !*layer.Git.Worktrees || layer.Git.ReviewModel != "prov/r1" {
+		t.Errorf("saved git section = %+v, want defaultBranch main, worktrees true, reviewModel prov/r1", layer.Git)
+	}
+	eff, _, loadErr := loadEffectiveSettings(dir)
+	if loadErr != "" {
+		t.Fatalf("loadErr = %q, want empty", loadErr)
+	}
+	if !eff.Git.Worktrees || eff.Git.ReviewModel != "prov/r1" {
+		t.Errorf("effective git = %+v, want worktrees on and reviewModel prov/r1", eff.Git)
 	}
 }
 

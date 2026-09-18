@@ -9,7 +9,9 @@
   "prompts": {
     "discussion": "Question policy — this overrides the \"Ask questions\" instruction in step 1 of the base prompt:\n\n- Never open a discussion with questions. Start from the user's initial request: state your understanding, do read-only investigation, then present findings, options, and a recommendation.\n- Never ask about anything you can resolve yourself — from the repository, its docs, or a stated assumption. List assumptions explicitly so they can be corrected.\n- When a question is truly unavoidable, always present it as multiple choice: 2–5 labeled options with brief descriptions, one marked recommended. Never ask open-ended questions."
   },
-  "git": {},
+  "git": {
+    "defaultBranch": "main"
+  },
   "ui": {
     "accent": "fuchsia"
   },

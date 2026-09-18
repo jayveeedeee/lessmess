@@ -29,16 +29,19 @@ One row per change directory. This file is authoritative for change existence, t
 | [2026-09-13-5](2026-09-13-5/plan.md) | Learning staleness: ancestor gardening, reference lint, gardener model | LRN | — | Done | 2026-09-13 | 2026-09-14 |
 | [2026-09-14-0](2026-09-14-0/plan.md) | Settings split-shell layout and sticky header | SPS | — | Done | 2026-09-14 | 2026-09-14 |
 | [2026-09-14-1](2026-09-14-1/plan.md) | Discussion sessions open fresh | DSC | — | Done | 2026-09-14 | 2026-09-15 |
-| [2026-09-14-2](2026-09-14-2/plan.md) | Terminal persistence verification | TPV | — | Cancelled | 2026-09-14 | 2026-09-14 |
+| [2026-09-14-2](2026-09-14-2/plan.md) | Terminal persistence verification | TPV | — | Planned | 2026-09-14 | 2026-09-17 |
 | [2026-09-15-0](2026-09-15-0/plan.md) | Modal TOC and in-modal navigation | MTOC | — | Done | 2026-09-15 | 2026-09-15 |
 | [2026-09-15-1](2026-09-15-1/plan.md) | Random change-ID suffixes | CID | — | Done | 2026-09-15 | 2026-09-15 |
 | [2026-09-15-2](2026-09-15-2/plan.md) | Per-task subagent sessions | PSB | — | Done | 2026-09-15 | 2026-09-16 |
 | [2026-09-15-lk9or](2026-09-15-lk9or/plan.md) | Sortable change index columns | IDX | — | Done | 2026-09-15 | 2026-09-15 |
-| [2026-09-16-le45q](2026-09-16-le45q/plan.md) | Nested task decomposition | NTD | — | Done | 2026-09-16 | 2026-09-16 |
+| [2026-09-16-le45q](2026-09-16-le45q/plan.md) | Nested task decomposition | NTD | — | In progress | 2026-09-16 | 2026-09-17 |
 | [2026-09-16-7ueiv](2026-09-16-7ueiv/plan.md) | Accent color palette | ACC | — | Done | 2026-09-16 | 2026-09-17 |
-| [2026-09-16-j2g58](2026-09-16-j2g58/plan.md) | Deterministic change status endpoint | STS | — | Done | 2026-09-16 | 2026-09-16 |
+| [2026-09-16-j2g58](2026-09-16-j2g58/plan.md) | Deterministic change status endpoint | STS | — | Done | 2026-09-16 | 2026-09-17 |
 | [2026-09-16-43mc0](2026-09-16-43mc0/plan.md) | Curated doc learnings | LRN | — | Done | 2026-09-16 | 2026-09-17 |
 | [2026-09-17-4esfh](2026-09-17-4esfh/plan.md) | Project name branding | PROJ | — | Done | 2026-09-17 | 2026-09-17 |
 | [2026-09-17-39avm](2026-09-17-39avm/plan.md) | Change handoff | HOF | — | In progress | 2026-09-17 | 2026-09-17 |
 | [2026-09-17-rny74](2026-09-17-rny74/plan.md) | Spawn fallback hardening and default_agent alignment | SPF | — | Done | 2026-09-17 | 2026-09-17 |
 | [2026-09-17-d2x3h](2026-09-17-d2x3h/plan.md) | Remove board add-task form | FORM | — | Done | 2026-09-17 | 2026-09-17 |
+| [2026-09-17-kcmpx](2026-09-17-kcmpx/plan.md) | Worktree-per-change with gated PR and agent review | WTP | — | In progress | 2026-09-17 | 2026-09-17 |
+| [2026-09-18-f52mn](2026-09-18-f52mn/plan.md) | Workflow canon versioning and sync | WCV | main | Planned | 2026-09-18 | 2026-09-18 |
+| [2026-09-18-15tbl](2026-09-18-15tbl/plan.md) | JSON workflow state and instruction injection | JSI | main | Planned | 2026-09-18 | 2026-09-18 |

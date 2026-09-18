@@ -25,6 +25,18 @@ func uint16Or(q string, def uint16) uint16 {
 	return def
 }
 
+// terminalDir picks the working directory for a session's terminal: the
+// bound change's worktree when the session is change-bound and that change
+// has one, else the main tree.
+func (s *Server) terminalDir(sessionID string) string {
+	if s.mapErr == nil {
+		if changeID, ok := s.sessions.changeOf(sessionID); ok {
+			return s.changeSessionDir(changeID)
+		}
+	}
+	return s.st.Dir
+}
+
 // terminalWS upgrades GET /terminal/ws?session={id} to a WebSocket bridged
 // to a fresh in-process PTY running the opencode TUI on that session. The
 // PTY is killed when the socket closes; the session persists in the
@@ -46,7 +58,10 @@ func (s *Server) terminalWS(w http.ResponseWriter, r *http.Request) {
 	} else {
 		env = xdgEnv(xdg)
 	}
-	t, err := s.term.SpawnWithEnv(name, args, s.st.Dir, cols, rows, env)
+	// The PTY runs where the session lives: a change-bound session's
+	// worktree when it has one, else the main tree.
+	cwd := s.terminalDir(sessionID)
+	t, err := s.term.SpawnWithEnv(name, args, cwd, cols, rows, env)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return

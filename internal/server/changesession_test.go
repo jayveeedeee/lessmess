@@ -191,6 +191,17 @@ func TestScaffoldBoundSessionRefused(t *testing.T) {
 	if !strings.Contains(resp["error"], "continue the work within that change") {
 		t.Fatalf("error not agent-redirecting: %v", resp["error"])
 	}
+	// The refusal teaches old-primed bound sessions the sanctioned handoff.
+	for _, want := range []string{
+		"changes/2026-09-10-0/handoff-<topic>.md",
+		"POST /changes/2026-09-10-0/spawn-change",
+		`{"title","prefix","artifact","session"}`,
+		"explicit user approval",
+	} {
+		if !strings.Contains(resp["error"], want) {
+			t.Errorf("409 missing %q: %v", want, resp["error"])
+		}
+	}
 
 	// Nothing created; mapping untouched.
 	rootAfter, err := s.st.Root()

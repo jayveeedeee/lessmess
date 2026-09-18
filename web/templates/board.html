@@ -9,14 +9,6 @@
   <h2>{{.Data.ID}}</h2>
   {{end}}
   <span class="pill status-{{.Data.Overall | statusClass}}">{{.Data.Overall}}</span>
-  {{if or (eq .Data.Overall "Planned") (eq .Data.Overall "In progress") (eq .Data.Overall "Blocked")}}
-  <select id="overall-status" class="status-select" aria-label="Change status" title="Set change status (Done is via Close change)">
-    <option value="Planned" {{if eq .Data.Overall "Planned"}}selected{{end}}>Planned</option>
-    <option value="In progress" {{if eq .Data.Overall "In progress"}}selected{{end}}>In progress</option>
-    <option value="Blocked" {{if eq .Data.Overall "Blocked"}}selected{{end}}>Blocked</option>
-  </select>
-  {{end}}
-  {{if .Data.HasProgressData}}<span class="pill progress" title="Subtree progress (Test + Done of non-cancelled descendants)">{{.Data.ProgressDone}}/{{.Data.ProgressTotal}} ✓</span>{{end}}
   <button type="button" class="btn-accent" id="continue-session-btn">Continue session</button>
   <button type="button" class="btn-ghost"
           hx-get="/changes/{{.Data.ID}}/plan"
@@ -30,6 +22,18 @@
   <button type="button" class="btn-ghost" id="close-change-btn">Close change</button>
   {{end}}
 </section>
+{{if .Data.Worktree}}
+<div class="worktree-strip" data-state="{{.Data.Worktree.State}}">
+  <span class="pill wt-branch" title="Worktree: {{.Data.Worktree.Path}}">{{.Data.Worktree.Branch}}</span>
+  {{if eq .Data.Worktree.State "dirty"}}<span class="pill wt-flag" title="The worktree has uncommitted changes">uncommitted</span>{{end}}
+  {{if eq .Data.Worktree.State "missing"}}<span class="pill wt-flag" title="The registered worktree directory is gone">worktree missing</span>{{end}}
+  {{if .Data.Worktree.PRURL}}<a class="pill wt-pr" href="{{.Data.Worktree.PRURL}}" target="_blank" rel="noopener">PR ↗</a>{{end}}
+  {{if .Data.Worktree.Review}}<span class="pill wt-review" data-review="{{.Data.Worktree.Review}}">review: {{.Data.Worktree.Review}}</span>
+  <button type="button" class="btn-ghost" hx-get="/changes/{{.Data.ID}}/review"
+          hx-target="#detail" hx-swap="innerHTML">Review</button>{{end}}
+  <button type="button" class="btn-ghost" id="worktree-remove-btn" title="Remove the worktree (refused while it has uncommitted changes)">Remove worktree</button>
+</div>
+{{end}}
 <div id="board-subs" class="board-subs" hidden></div>
 <section id="sessions-panel" class="sessions-panel" hidden>
   <div class="sessions-head">

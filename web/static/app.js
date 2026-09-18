@@ -1020,22 +1020,6 @@
     if (reopenBtn) {
       reopenBtn.addEventListener("click", function () { postLifecycle("reopen"); });
     }
-    var statusSel = document.getElementById("overall-status");
-    if (statusSel) {
-      statusSel.addEventListener("change", function () {
-        fetch("/changes/" + changeID() + "/status", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Accept: "application/json" },
-          body: JSON.stringify({ status: statusSel.value }),
-        })
-          .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.statusText); return j; }); })
-          .then(function () { location.reload(); }) // status pill lives outside the board fragment
-          .catch(function (e) {
-            alert("Status change failed: " + e.message);
-            location.reload(); // repaint from server state so the select matches reality
-          });
-      });
-    }
     var commitBtn = document.getElementById("commit-btn");
     if (commitBtn) {
       commitBtn.addEventListener("click", function () {
@@ -1050,6 +1034,26 @@
           .catch(function (e) {
             setCommitBusy(false);
             alert("Commit failed: " + e.message);
+          });
+      });
+    }
+
+    // Worktree strip: explicit cleanup action. The server refuses a dirty
+    // worktree (422) and a disabled pipeline (409); both surface here.
+    var wtRemoveBtn = document.getElementById("worktree-remove-btn");
+    if (wtRemoveBtn) {
+      wtRemoveBtn.addEventListener("click", function () {
+        if (!window.confirm("Remove this change's worktree? The branch and its commits are kept.")) return;
+        wtRemoveBtn.disabled = true;
+        fetch("/changes/" + changeID() + "/worktree/remove", {
+          method: "POST",
+          headers: { Accept: "application/json" },
+        })
+          .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.statusText); return j; }); })
+          .then(function () { location.reload(); })
+          .catch(function (e) {
+            wtRemoveBtn.disabled = false;
+            alert("Worktree removal failed: " + e.message);
           });
       });
     }
@@ -1452,6 +1456,7 @@
       "session.autoOpenTerminal": true,
       "ui.showArchived": true,
       "docs.autoGardenerOnClose": true,
+      "git.worktrees": false,
     };
 
     function getPath(obj, path) {
@@ -1467,13 +1472,14 @@
       var v = getPath(other, field);
       if (isSet(v)) return v;
       if (field === "docs.gardenerModel") return getPath(view.effective, "session.model");
+      if (field === "git.reviewModel") return getPath(view.effective, "session.model");
       if (field === "general.projectName") return (view && view.defaultProjectName) || undefined;
       if (field in BOOL_DEFAULTS) return BOOL_DEFAULTS[field];
       return undefined;
     }
 
     function placeholderFor(field, fb) {
-      if (field === "docs.gardenerModel") {
+      if (field === "docs.gardenerModel" || field === "git.reviewModel") {
         return isSet(fb) ? "Session model (" + fb + ")" : "Service default";
       }
       if (isSet(fb)) return String(fb);
@@ -1581,6 +1587,14 @@
       // The accent palette is static server data — build the picker even
       // when the opencode service is unreachable.
       buildAccentSwatches();
+      // Local branch names come from git, not opencode — fill the
+      // git.defaultBranch combobox regardless of service availability.
+      var bl = document.getElementById("settings-branch-list");
+      (options.branches || []).forEach(function (b) {
+        var o = document.createElement("option");
+        o.value = b;
+        bl.appendChild(o);
+      });
       if (!options.available) {
         hint.hidden = false;
         return;

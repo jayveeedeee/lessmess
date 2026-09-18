@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"os"
+	"os/exec"
 	"strings"
 	"testing"
 )
@@ -285,6 +286,47 @@ func TestSettingsAgentsMergedWhenScopedEmpty(t *testing.T) {
 	// …and still rejects a typo.
 	if w := do(t, s.Handler(), "PUT", "/api/settings?scope=project", `{"session":{"agent":"ghost"}}`); w.Code != 422 {
 		t.Errorf("PUT ghost: code = %d, want 422", w.Code)
+	}
+}
+
+func TestSettingsOptionsBranches(t *testing.T) {
+	// A git-backed fixture lists its local branches even with the opencode
+	// service down; a non-repo degrades to an empty list.
+	s := gitFixtureServer(t, true, true)
+	s.SetOpencode(nil)
+	branch := func(name string) {
+		t.Helper()
+		cmd := exec.Command("git", "branch", name)
+		cmd.Dir = s.st.Dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git branch %s: %v\n%s", name, err, out)
+		}
+	}
+	branch("feature/two")
+	branch("feature/one")
+
+	w := do(t, s.Handler(), "GET", "/api/settings/options", "")
+	if w.Code != 200 {
+		t.Fatalf("code = %d", w.Code)
+	}
+	var resp settingsOptionsResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Branches) != 3 || resp.Branches[0] != "feature/one" || resp.Branches[1] != "feature/two" || resp.Branches[2] != "main" {
+		t.Errorf("branches = %v, want [feature/one feature/two main]", resp.Branches)
+	}
+	if resp.Available {
+		t.Error("available should stay false without the opencode service")
+	}
+
+	// Non-repo: empty, still 200.
+	s2 := mappingServer(t, nil)
+	w2 := do(t, s2.Handler(), "GET", "/api/settings/options", "")
+	var resp2 settingsOptionsResponse
+	json.Unmarshal(w2.Body.Bytes(), &resp2)
+	if len(resp2.Branches) != 0 {
+		t.Errorf("non-repo branches = %v, want empty", resp2.Branches)
 	}
 }
 

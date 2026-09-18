@@ -11,18 +11,20 @@ func TestNestedBoardMarkup(t *testing.T) {
 	h := s.Handler()
 
 	// Root board: expand affordance on plain tasks, rollup badge on the
-	// decomposed one, and change-level progress.
+	// decomposed one. No header progress pill, no status select.
 	w := htmlGet(t, h, "/changes/2026-09-10-0", false)
 	body := w.Body.String()
 	for _, want := range []string{
 		`data-expand="FIX-01"`,
 		`class="card-sub"`,
 		`1/2 ✓`,
-		`class="pill progress"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("root board missing %q", want)
 		}
+	}
+	if strings.Contains(body, `pill progress`) || strings.Contains(body, `id="overall-status"`) {
+		t.Error("root board must not render the header progress pill or a status select")
 	}
 
 	// Drill-down: breadcrumb and scoped board marker.

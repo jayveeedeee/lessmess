@@ -75,17 +75,23 @@ func (n *TaskNode) status() model.TaskStatus {
 	return model.StatusNotStarted
 }
 
-// AllTaskStats aggregates the whole task tree of a change.
+// AllTaskStats aggregates the change's entire task tree — the top-level
+// tasks themselves included, unlike SubtreeStats, which rolls up one
+// node's descendants only. This is the change-level progress shown in the
+// board header and the index counts.
 func (c *Change) AllTaskStats() SubtreeStats {
 	st := SubtreeStats{ByStatus: map[model.TaskStatus]int{}}
-	for _, root := range c.Roots {
-		s := root.SubtreeStats()
-		for k, v := range s.ByStatus {
-			st.ByStatus[k] += v
+	c.WalkTasks(func(n *TaskNode) bool {
+		s := n.NodeStatus()
+		st.ByStatus[s]++
+		if s != model.StatusCancelled {
+			st.Total++
+			if s == model.StatusTest || s == model.StatusDone {
+				st.Complete++
+			}
 		}
-		st.Total += s.Total
-		st.Complete += s.Complete
-	}
+		return true
+	})
 	return st
 }
 

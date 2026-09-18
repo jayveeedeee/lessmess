@@ -40,55 +40,6 @@ func TestCloseReopenEndpoints(t *testing.T) {
 	}
 }
 
-func TestStatusEndpoint(t *testing.T) {
-	s := mappingServer(t, nil)
-
-	// Every allowed transition updates both the change ledger and the root row.
-	for _, want := range []model.OverallStatus{model.OverallPlanned, model.OverallBlocked, model.OverallInProgress} {
-		w := do(t, s.Handler(), "POST", "/changes/2026-09-10-0/status", `{"status":"`+string(want)+`"}`)
-		if w.Code != 200 {
-			t.Fatalf("status %s: code = %d body = %s", want, w.Code, w.Body)
-		}
-		c, _ := s.st.Change("2026-09-10-0")
-		if c.Ledger.Overall != want {
-			t.Fatalf("overall = %q, want %q", c.Ledger.Overall, want)
-		}
-		root, _ := s.st.Root()
-		var rs model.OverallStatus
-		for _, row := range root.Rows {
-			if row.Change == "2026-09-10-0" {
-				rs = row.Status
-			}
-		}
-		if rs != want {
-			t.Fatalf("root status = %q, want %q", rs, want)
-		}
-	}
-
-	// Done is user-gated: the endpoint refuses it and points at close.
-	w := do(t, s.Handler(), "POST", "/changes/2026-09-10-0/status", `{"status":"Done"}`)
-	if w.Code != http.StatusConflict {
-		t.Fatalf("Done: code = %d body = %s", w.Code, w.Body)
-	}
-	if !strings.Contains(w.Body.String(), "/close") {
-		t.Fatalf("Done: body should point at close, got %s", w.Body)
-	}
-
-	// Cancelled is out of scope; unknown and missing values are 422.
-	for _, body := range []string{`{"status":"Cancelled"}`, `{"status":"Sideways"}`, `{}`} {
-		if w := do(t, s.Handler(), "POST", "/changes/2026-09-10-0/status", body); w.Code != http.StatusUnprocessableEntity {
-			t.Fatalf("body %s: code = %d, want 422", body, w.Code)
-		}
-	}
-	// Malformed JSON is 400; unknown change is 404.
-	if w := do(t, s.Handler(), "POST", "/changes/2026-09-10-0/status", `{`); w.Code != 400 {
-		t.Fatalf("malformed: code = %d, want 400", w.Code)
-	}
-	if w := do(t, s.Handler(), "POST", "/changes/2099-01-01-9/status", `{"status":"Blocked"}`); w.Code != 404 {
-		t.Fatalf("unknown change: code = %d, want 404", w.Code)
-	}
-}
-
 func TestCommitEndpoint(t *testing.T) {
 	var promptedText string
 	s := mappingServer(t, func(w http.ResponseWriter, r *http.Request) {

@@ -224,12 +224,12 @@ func TestBoardLifecycleButtons(t *testing.T) {
 	if !strings.Contains(body, `id="commit-btn"`) {
 		t.Errorf("missing Commit button")
 	}
-	// The status select renders for the three settable statuses, current preselected.
-	if !strings.Contains(body, `id="overall-status"`) {
-		t.Errorf("In progress board should render the status select")
+	// No manual status control anywhere: the pill is derived from tasks.
+	if strings.Contains(body, `id="overall-status"`) {
+		t.Errorf("board must not render a status select")
 	}
-	if !strings.Contains(body, `<option value="In progress" selected`) {
-		t.Errorf("status select should preselect the current overall status")
+	if strings.Contains(body, `pill progress`) {
+		t.Errorf("board must not render the progress pill")
 	}
 
 	// After closing, the board offers Reopen instead and drops the select.
@@ -242,7 +242,7 @@ func TestBoardLifecycleButtons(t *testing.T) {
 		t.Errorf("Done board should show Reopen only")
 	}
 	if strings.Contains(body, `id="overall-status"`) {
-		t.Errorf("Done board should not render the status select (Done is via close/reopen)")
+		t.Errorf("Done board must not render a status select")
 	}
 }
 

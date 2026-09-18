@@ -400,18 +400,19 @@ func (s *Server) createChangeSession(w http.ResponseWriter, r *http.Request) {
 
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
-	sess, err := s.spawnSession(ctx, title)
+	sess, err := s.spawnSessionIn(ctx, s.changeSessionDir(id), title)
 	if err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "create opencode session: " + err.Error()})
 		return
 	}
 	// The prime is built after the spawn: change primes carry the session's
 	// own ID so the agent can identify itself to session-taking endpoints.
+	// Worktree-backed changes get the worktree stanza appended.
 	var prime string
 	if taskNode != nil {
-		prime = s.promptWith(taskPrompt(id, taskNode), "change")
+		prime = s.promptWith(s.withWorktreeRule(id, taskPrompt(id, taskNode)), "change")
 	} else {
-		prime = s.promptWith(changePrompt(s.apiBase(), id, sess.ID), "change")
+		prime = s.promptWith(s.withWorktreeRule(id, changePrompt(s.apiBase(), id, sess.ID)), "change")
 	}
 	if err := s.oc.Prompt(ctx, sess.ID, prime); err != nil {
 		// Don't leak an unbound session: the binding is the whole point.

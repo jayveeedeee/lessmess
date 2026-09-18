@@ -1,7 +1,7 @@
 <!-- tasktracker:begin -->
 # Structure: internal
 
-<!-- tasktracker-meta: refreshed=2026-09-17 source=2026-09-16-43mc0 tree=ab5924cc7ef5 -->
+<!-- tasktracker-meta: refreshed=2026-09-18 source=2026-09-18-f52mn tree=1dbc4fd3565d -->
 
 Core Go packages behind the tasktracker binary: workflow model, store, HTTP server, docs management, opencode client, and terminal sessions.
 
@@ -10,6 +10,7 @@ Core Go packages behind the tasktracker binary: workflow model, store, HTTP serv
 | Entry | Purpose |
 | --- | --- |
 | `docs/` | Implements agentsdocs management: coverage config, per-folder STRUCTURE.md/AGENTS.md generation, seeding, summarization, validation, and refresh. |
+| `gitops/` | — |
 | `model/` | Parses and serializes the markdown files of the `changes/` workflow defined in AGENTS.md. |
 | `opencode/` | Minimal Go client for the opencode background service HTTP API. |
 | `server/` | HTTP server over the store: HTML pages, JSON endpoints, SSE updates, session mapping, PTY terminal, and the docs refresh queue |
