@@ -1,7 +1,3 @@
----
-id: LRN-02
-title: Snapshot/verify/restore for ancestor targets
----
 
 # LRN-02: Snapshot/verify/restore for ancestor targets
 

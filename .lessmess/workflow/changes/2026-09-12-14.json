@@ -1,0 +1,86 @@
+{
+  "version": 1,
+  "id": "2026-09-12-14",
+  "title": "Rename app to lessmess",
+  "prefix": "REN",
+  "status": {
+    "value": "Done",
+    "derived": false
+  },
+  "created": "2026-09-12",
+  "updated": "2026-09-12",
+  "tasks": [
+    {
+      "id": "REN-00",
+      "seq": 0,
+      "title": "Module path rename and import sweep",
+      "file": "tasks/00-module-path.md",
+      "status": "Done",
+      "updated": "2026-09-12",
+      "notes": "go.mod → module lessmess; 32 files swept; `go build ./...` OK; remaining \"tasktracker strings are tasktracker-meta syntax + REN-03 brand test."
+    },
+    {
+      "id": "REN-01",
+      "seq": 1,
+      "title": "Rename cmd/tasktracker to cmd/lessmess and rebuild binary",
+      "file": "tasks/01-cmd-and-binary.md",
+      "status": "Done",
+      "dependsOn": [
+        "REN-00"
+      ],
+      "updated": "2026-09-12",
+      "notes": "cmd/lessmess moved with doc pair; vet OK; lessmess binary builds and runs; old tasktracker binary removed; :9090 still serving (200)."
+    },
+    {
+      "id": "REN-02",
+      "seq": 2,
+      "title": "State dir .tasktracker → .lessmess with startup auto-migration",
+      "file": "tasks/02-state-dir.md",
+      "status": "Done",
+      "dependsOn": [
+        "REN-00"
+      ],
+      "updated": "2026-09-12",
+      "notes": "store.MigrateStateDir (rename-only, no merge) wired into serve/validate/docs-seed and server.New; all state paths + .gitignore + init.go output → .lessmess; 3 migration tests; vet+test green."
+    },
+    {
+      "id": "REN-03",
+      "seq": 3,
+      "title": "Brand and user-facing text sweep",
+      "file": "tasks/03-brand-and-text.md",
+      "status": "Done",
+      "dependsOn": [
+        "REN-00"
+      ],
+      "updated": "2026-09-12",
+      "notes": "Brand/title/templates/static comments/usage/README/AGENTS.md workflow text + drift asset regenerated; prompts needed no app-name edits (only apiBase comment); render_test flips to lessmess; vet+test green."
+    },
+    {
+      "id": "REN-04",
+      "seq": 4,
+      "title": "Full verification and relaunch on :9090",
+      "file": "tasks/04-verify-and-relaunch.md",
+      "status": "Done",
+      "dependsOn": [
+        "REN-01",
+        "REN-02",
+        "REN-03"
+      ],
+      "updated": "2026-09-12",
+      "notes": "vet+test green; fresh build; validate rc=0; old PID 48375 stopped; .tasktracker→.lessmess migrated (sessions byte-identical); lessmess serve live on :9090; session API returns this session live; brand in title+header."
+    },
+    {
+      "id": "REN-05",
+      "seq": 5,
+      "title": "App icon and favicon",
+      "file": "tasks/05-app-icon-and-favicon.md",
+      "status": "Done",
+      "dependsOn": [
+        "REN-01",
+        "REN-03"
+      ],
+      "updated": "2026-09-12",
+      "notes": "icon.svg + icon-512.png + favicon.ico (16/32/48) + apple-touch-icon.png; white \"lm\" on #e8641f (UI accent); links in layout head; icon also brands the header and terminal top bar (session-id chip removed); full suite green; server restarted, markup verified served."
+    }
+  ]
+}

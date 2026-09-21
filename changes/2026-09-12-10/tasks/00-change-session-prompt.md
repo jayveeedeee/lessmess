@@ -1,7 +1,3 @@
----
-id: BSB-00
-title: Change-scoped prime prompt for change sessions
----
 
 # BSB-00: Change-scoped prime prompt for change sessions
 

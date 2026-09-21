@@ -1,7 +1,3 @@
----
-id: DOC-08
-title: Dogfood on this repo and documentation
----
 
 # DOC-08: Dogfood on this repo and documentation
 

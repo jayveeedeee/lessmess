@@ -1,7 +1,3 @@
----
-id: SCF-02
-title: Scaffold trigger endpoint
----
 
 # SCF-02: Scaffold trigger endpoint
 

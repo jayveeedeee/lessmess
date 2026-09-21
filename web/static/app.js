@@ -19,8 +19,17 @@
     })
     .catch(function () {});
 
-  function maybeOpenTerminal(sessionID, title) {
-    if (autoOpenTerminal) openTerminal(sessionID, title);
+  function narrowSessionUI() {
+    return window.matchMedia && window.matchMedia("(max-width: 840px)").matches;
+  }
+
+  function openPreferredSession(sessionID, title) {
+    if (narrowSessionUI()) openChat(sessionID, title);
+    else openTerminal(sessionID, title);
+  }
+
+  function maybeOpenSession(sessionID, title) {
+    if (autoOpenTerminal) openPreferredSession(sessionID, title);
   }
 
   function boardEl() { return document.getElementById("board"); }
@@ -43,7 +52,7 @@
           var status = evt.to.getAttribute("data-status");
           fetch("/changes/" + encodeURIComponent(change) + "/move", {
             method: "POST",
-            headers: { "Content-Type": "application/json", Accept: "application/json" },
+            headers: { "Content-Type": "application/json", Accept: "application/json", "X-Lessmess-UI": "1" },
             body: JSON.stringify({ task: task, status: status, index: evt.newIndex }),
           })
             .then(function (r) {
@@ -72,6 +81,7 @@
     if (e.target && e.target.id === "board") {
       initSortable();
       if (boardEl()) syncTerminalTasks(boardEl(), boardEl().dataset.change);
+      if (chatOpen() && boardEl()) setChatTasks(boardEl(), boardEl().dataset.change);
       refreshSubs();
     }
   });
@@ -88,7 +98,7 @@
       try {
         var j = JSON.parse(e.detail.xhr.responseText);
         loadDiscussions();
-        maybeOpenTerminal(j.session, j.title);
+        maybeOpenSession(j.session, j.title);
       } catch (_) {}
     }
   });
@@ -112,14 +122,14 @@
       // destroy it — and the common cause of this event is the open
       // discussion scaffolding a change right now. Follow the session
       // to its new board instead of reloading.
-      else if (page === "index" && terminalOpen() && tstate.session) followSession();
+      else if (page === "index" && sessionOverlayOpen() && activeSessionID()) followSession();
       else if (page === "index") location.reload();
       // Terminal task panel: re-mirror an open panel, and pick up a
       // fresh binding (a discussion that just scaffolded a change —
       // the scaffold writes changes/, which fired this event).
-      if (terminalOpen()) {
+      if (sessionOverlayOpen()) {
         if (terminalPanelChange) loadTerminalTasks(terminalPanelChange);
-        else if (!(page === "board" && boardEl()) && tstate.session) resolveTerminalPanel(tstate.session);
+        else if (!(page === "board" && boardEl()) && activeSessionID()) resolveTerminalPanel(activeSessionID());
       }
     }, 250);
   }
@@ -130,12 +140,13 @@
   // with its task panel. Until it binds, skip the refresh entirely; the
   // stale list self-heals on navigation or when the terminal closes.
   function followSession() {
-    fetch("/api/sessions/" + encodeURIComponent(tstate.session) + "/change", { headers: { Accept: "application/json" } })
+    var sessionID = activeSessionID();
+    fetch("/api/sessions/" + encodeURIComponent(sessionID) + "/change", { headers: { Accept: "application/json" } })
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (j) {
         if (!j || !j.change) return;
-        if (!terminalOpen() || !tstate.session) return; // user moved on
-        location.assign("/changes/" + encodeURIComponent(j.change) + "?session=" + encodeURIComponent(tstate.session));
+        if (!sessionOverlayOpen() || activeSessionID() !== sessionID) return;
+        location.assign("/changes/" + encodeURIComponent(j.change) + "?session=" + encodeURIComponent(sessionID));
       })
       .catch(function () {});
   }
@@ -226,10 +237,35 @@
           return j;
         });
       })
-      .then(function (j) { openTerminal(j.session, j.title); })
+      .then(function (j) { openChat(j.session, j.title); })
       .catch(function (err) { alert(err.message); })
       .finally(function () { btn.disabled = false; });
   }, true);
+
+  // --- header chat button ---------------------------------------------------
+
+  // The header Chat button (every page) spawns a general codebase chat —
+  // a free agent, not bound to any change — and opens the Chat overlay.
+  // A deliberate open, so autoOpenTerminal never gates it.
+  document.addEventListener("click", function (e) {
+    var btn = e.target.closest("#chat-btn");
+    if (!btn) return;
+    btn.disabled = true;
+    fetch("/chat/session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: "{}",
+    })
+      .then(function (r) {
+        return r.json().then(function (j) {
+          if (!r.ok) throw new Error(j.error || "chat failed");
+          return j;
+        });
+      })
+      .then(function (j) { openChat(j.session, j.title); })
+      .catch(function (err) { alert(err.message); })
+      .finally(function () { btn.disabled = false; });
+  });
 
   // --- validation banner ---------------------------------------------------
 
@@ -456,9 +492,13 @@
           meta.textContent = (s.created || "").slice(0, 10);
           var actions = document.createElement("span");
           actions.className = "session-actions";
+          var chatBtn = document.createElement("button");
+          chatBtn.className = "btn-ghost";
+          chatBtn.textContent = "Chat";
+          chatBtn.addEventListener("click", function () { openChat(s.session, s.title); });
           var openBtn = document.createElement("button");
           openBtn.className = "btn-ghost";
-          openBtn.textContent = "Open";
+          openBtn.textContent = "Terminal";
           openBtn.addEventListener("click", function () { openTerminal(s.session, s.title); });
           var unBtn = document.createElement("button");
           unBtn.className = "btn-ghost";
@@ -469,6 +509,7 @@
               .then(function (r) { if (!r.ok) throw 0; loadDiscussions(); })
               .catch(function () { alert("Unlink failed"); });
           });
+          actions.appendChild(chatBtn);
           actions.appendChild(openBtn);
           actions.appendChild(unBtn);
           li.appendChild(title);
@@ -545,9 +586,13 @@
         }
         var actions = document.createElement("span");
         actions.className = "session-actions";
+        var chatBtn = document.createElement("button");
+        chatBtn.className = "btn-ghost";
+        chatBtn.textContent = "Chat";
+        chatBtn.addEventListener("click", function () { markOpened(s.session); openChat(s.session, s.title); });
         var openBtn = document.createElement("button");
         openBtn.className = "btn-ghost";
-        openBtn.textContent = "Open";
+        openBtn.textContent = "Terminal";
         openBtn.addEventListener("click", function () { markOpened(s.session); openTerminal(s.session, s.title); });
         var unBtn = document.createElement("button");
         unBtn.className = "btn-ghost";
@@ -558,6 +603,7 @@
             .then(function (r) { if (!r.ok) throw 0; loadSessions(); })
             .catch(function () { alert("Unlink failed"); });
         });
+        actions.appendChild(chatBtn);
         actions.appendChild(openBtn);
         actions.appendChild(unBtn);
         li.appendChild(title);
@@ -605,8 +651,8 @@
     stray.forEach(function (s) { strip.appendChild(subChip(s)); });
   }
 
-  // subChip is one subagent session: a live dot, its title, and a Talk
-  // button opening the terminal overlay on that session id. Dead sessions
+  // subChip is one subagent session with explicit Chat and Terminal actions.
+  // Dead sessions
   // (gone from the opencode service) render dimmed but stay openable.
   function subChip(s) {
     var chip = document.createElement("span");
@@ -622,12 +668,18 @@
     var talk = document.createElement("button");
     talk.type = "button";
     talk.className = "btn-ghost sub-talk";
-    talk.textContent = "Talk";
+    talk.textContent = "Chat";
     talk.title = s.live
-      ? "Open a terminal chat on this subagent session"
+      ? "Open Chat on this subagent session"
       : "Session not found in the opencode service";
-    talk.addEventListener("click", function () { markOpened(s.session); openTerminal(s.session, s.title); });
+    talk.addEventListener("click", function () { markOpened(s.session); openChat(s.session, s.title); });
     chip.appendChild(talk);
+    var terminal = document.createElement("button");
+    terminal.type = "button";
+    terminal.className = "btn-ghost sub-talk";
+    terminal.textContent = "Terminal";
+    terminal.addEventListener("click", function () { markOpened(s.session); openTerminal(s.session, s.title); });
+    chip.appendChild(terminal);
     return chip;
   }
 
@@ -642,7 +694,7 @@
     var nb = document.getElementById("new-session-btn");
     if (nb) {
       nb.addEventListener("click", function () {
-        createSessionAndOpen(nb, maybeOpenTerminal);
+        createSessionAndOpen(nb, maybeOpenSession);
       });
     }
     initSpawnChange();
@@ -718,7 +770,7 @@
           form.hidden = true;
           form.reset();
           spawnError("");
-          openTerminal(j.session, changeID() + " — " + j.title);
+          openPreferredSession(j.session, changeID() + " — " + j.title);
         })
         .catch(function (e) { spawnError("Spawn failed: " + e.message); })
         .finally(function () { submit.disabled = false; });
@@ -768,15 +820,2326 @@
       fetchSessions(function (sessions) {
         if (!sessions) { alert("Could not load sessions"); return; }
         var scoped = boardSessions(sessions);
-        if (!scoped.length) { createSessionAndOpen(btn, function (sid, title) { btn.textContent = "Continue session"; maybeOpenTerminal(sid, title); }); return; }
+        if (!scoped.length) { createSessionAndOpen(btn, function (sid, title) { btn.textContent = "Continue session"; maybeOpenSession(sid, title); }); return; }
         var stored = null;
         try { stored = localStorage.getItem(lastSessionKey()); } catch (_) {}
         var s = scoped.find(function (x) { return x.session === stored; }) || scoped[scoped.length - 1];
         markOpened(s.session);
-        openTerminal(s.session, s.title);
+        openPreferredSession(s.session, s.title);
       });
     });
   }
+
+  // --- chat overlay ---------------------------------------------------------
+
+  var cstate = {
+    session: null,
+    title: "",
+    timer: null,
+    request: null,
+    mutation: false,
+    snapshot: null,
+    drafts: {},
+    files: {},
+    references: {},
+    referenceCatalog: [],
+    controls: null,
+    skills: {},
+    scrolls: {},
+    restoreScroll: null,
+    lifecycle: null,
+    lifecycleAction: false,
+    lifecycleError: "",
+    revertTarget: null,
+    revertPreviewHTML: "",
+    revertPreviewValid: false,
+    compactPending: {},
+    inbox: [],
+    inboxRequest: null,
+    deliveryIDs: {},
+    navigation: null,
+    navigationRequest: null,
+    usageTimer: null,
+    usageRequest: null,
+    deletePreview: null,
+    viewStack: ["chat"],
+    viewScrolls: {},
+    viewFocus: [],
+    detailOpener: null,
+    detailViewportHandler: null,
+    detailTOCMedia: null,
+    detailTOCHandler: null,
+    opener: null,
+    auxiliaryFocus: {},
+    viewportHandler: null,
+  };
+
+  function compactChatUI() {
+    return window.matchMedia && window.matchMedia("(max-width: 840px)").matches;
+  }
+
+  function closeChatMessageActions(returnFocus) {
+    var menu = document.querySelector("#chat-transcript .chat-message-menu:not([hidden])");
+    if (!menu) return false;
+    var message = menu.closest("[data-chat-message-actions]");
+    menu.hidden = true;
+    if (message) {
+      message.setAttribute("aria-expanded", "false");
+      if (returnFocus) message.focus({ preventScroll: true });
+    }
+    return true;
+  }
+
+  function openChatMessageActions(message, focusMenu) {
+    var menu = message && message.querySelector(":scope > .chat-message-menu");
+    if (!menu) return;
+    closeChatMessageActions(false);
+    menu.hidden = false;
+    message.setAttribute("aria-expanded", "true");
+    if (focusMenu) {
+      var first = menu.querySelector("button:not([disabled])");
+      if (first) first.focus({ preventScroll: true });
+    }
+  }
+
+  function chatViewPanel(name) {
+    return document.querySelector('.chat-window [data-chat-view-panel="' + name + '"]');
+  }
+
+  function chatViewScroller(name) {
+    var panel = chatViewPanel(name);
+    if (!panel) return null;
+    if (name === "chat") return document.getElementById("chat-transcript");
+    return panel.querySelector("[data-chat-view-scroll], .ttp-scroll") || panel;
+  }
+
+  function saveChatViewPosition(name) {
+    if (!cstate.session) return;
+    var scroller = chatViewScroller(name);
+    if (!scroller) return;
+    if (!cstate.viewScrolls[cstate.session]) cstate.viewScrolls[cstate.session] = {};
+    cstate.viewScrolls[cstate.session][name] = scroller.scrollTop;
+    if (name === "chat") cstate.scrolls[cstate.session] = scroller.scrollTop;
+  }
+
+  function restoreChatViewPosition(name) {
+    if (!cstate.session) return;
+    var positions = cstate.viewScrolls[cstate.session] || {};
+    var top = Object.prototype.hasOwnProperty.call(positions, name) ? positions[name] : null;
+    if (top === null && name === "chat" && Object.prototype.hasOwnProperty.call(cstate.scrolls, cstate.session)) top = cstate.scrolls[cstate.session];
+    if (top === null) return;
+    requestAnimationFrame(function () {
+      var scroller = chatViewScroller(name);
+      if (scroller) scroller.scrollTop = top;
+    });
+  }
+
+  function syncChatView(focusView) {
+    var win = document.querySelector(".chat-window");
+    if (!win) return;
+    if (!compactChatUI()) {
+      win.dataset.chatView = "chat";
+      win.querySelectorAll("[data-chat-view-panel]").forEach(function (panel) {
+        var name = panel.dataset.chatViewPanel;
+        var selected = name === "chat" || (name === "work" && !panel.hidden && panel.classList.contains("open")) ||
+          (name === "agents" && !panel.hidden && panel.classList.contains("open")) || (name === "controls" && !panel.hidden);
+        panel.setAttribute("aria-hidden", String(!selected));
+        panel.inert = !selected;
+      });
+      document.getElementById("chat-tasks-btn").setAttribute("aria-expanded", String(document.getElementById("chat-tasks").classList.contains("open")));
+      document.getElementById("chat-agents-btn").setAttribute("aria-expanded", String(document.getElementById("chat-agents").classList.contains("open")));
+      document.getElementById("chat-controls-btn").setAttribute("aria-expanded", String(!document.getElementById("chat-controls-sheet").hidden));
+      return;
+    }
+    var active = cstate.viewStack[cstate.viewStack.length - 1] || "chat";
+    win.dataset.chatView = active;
+    win.querySelectorAll("[data-chat-view-panel]").forEach(function (panel) {
+      var selected = panel.dataset.chatViewPanel === active;
+      panel.setAttribute("aria-hidden", String(!selected));
+      panel.inert = !selected;
+    });
+    restoreChatViewPosition(active);
+    if (focusView) {
+      requestAnimationFrame(function () {
+        var panel = chatViewPanel(active);
+        var target = panel && panel.querySelector("[data-chat-view-back], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href]");
+        if (target) target.focus({ preventScroll: true });
+      });
+    }
+  }
+
+  function resetChatViews() {
+    cstate.viewStack = ["chat"];
+    cstate.viewFocus = [];
+    syncChatView(false);
+  }
+
+  function focusChatPanel(name) {
+    requestAnimationFrame(function () {
+      var panel = chatViewPanel(name);
+      var target = panel && panel.querySelector("button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href]");
+      if (target) target.focus({ preventScroll: true });
+    });
+  }
+
+  function restoreChatAuxiliaryFocus(name) {
+    var target = cstate.auxiliaryFocus[name];
+    delete cstate.auxiliaryFocus[name];
+    if (target && target.isConnected) requestAnimationFrame(function () { target.focus({ preventScroll: true }); });
+  }
+
+  function openChatView(name, opener) {
+    if (!compactChatUI() || !chatViewPanel(name)) return false;
+    closeChatMore(false);
+    var current = cstate.viewStack[cstate.viewStack.length - 1] || "chat";
+    if (current === name) return true;
+    saveChatViewPosition(current);
+    cstate.viewStack.push(name);
+    cstate.viewFocus.push(opener || document.activeElement);
+    syncChatView(true);
+    return true;
+  }
+
+  function closeChatView() {
+    if (!compactChatUI() || cstate.viewStack.length < 2) return false;
+    var current = cstate.viewStack.pop();
+    var returnFocus = cstate.viewFocus.pop();
+    saveChatViewPosition(current);
+    var toggle = document.getElementById(current === "agents" ? "chat-agents-btn" : current === "work" ? "chat-tasks-btn" : current === "controls" ? "chat-controls-btn" : "");
+    if (toggle) toggle.setAttribute("aria-expanded", "false");
+    if (current === "controls") document.getElementById("chat-controls-sheet").hidden = true;
+    if (current === "agents") {
+      document.getElementById("chat-agents").classList.remove("open");
+      document.getElementById("chat-agent-backdrop").hidden = true;
+    }
+    if (current === "work") {
+      document.getElementById("chat-tasks").classList.remove("open");
+      document.getElementById("chat-task-backdrop").hidden = true;
+    }
+    syncChatView(false);
+    if (returnFocus && returnFocus.isConnected) requestAnimationFrame(function () { returnFocus.focus({ preventScroll: true }); });
+    return true;
+  }
+
+  function closeTopChatAuxiliary() {
+    if (compactChatUI()) return closeChatView();
+    var controls = document.getElementById("chat-controls-sheet");
+    var agents = document.getElementById("chat-agents");
+    var work = document.getElementById("chat-tasks");
+    if (controls && !controls.hidden) { closeChatControls(); return true; }
+    if (agents && !agents.hidden && agents.classList.contains("open")) { closeChatAgents(); return true; }
+    if (work && !work.hidden && work.classList.contains("open")) { closeChatTasks(); return true; }
+    return false;
+  }
+
+  function chatOpen() {
+    var ov = document.getElementById("chat-overlay");
+    return ov && !ov.hidden;
+  }
+
+  function activeSessionID() {
+    if (chatOpen()) return cstate.session;
+    return terminalOpen() ? tstate.session : null;
+  }
+
+  function sessionOverlayOpen() { return chatOpen() || terminalOpen(); }
+
+  function syncChatModalInert(detailOpen) {
+    document.querySelectorAll("[data-chat-detail-inert-owned]").forEach(function (node) {
+      node.inert = false;
+      node.removeAttribute("data-chat-detail-inert-owned");
+    });
+    document.querySelectorAll("[data-chat-inert-owned]").forEach(function (node) {
+      node.inert = false;
+      node.removeAttribute("data-chat-inert-owned");
+    });
+    function ownInert(node, marker) {
+      if (!(node instanceof HTMLElement) || node.inert) return;
+      node.inert = true;
+      node.setAttribute(marker, "");
+    }
+    if (detailOpen) {
+      var detail = document.getElementById("detail");
+      var path = detail;
+      while (path && path !== document.body) {
+        var parent = path.parentElement;
+        if (!parent) break;
+        Array.prototype.forEach.call(parent.children, function (sibling) {
+          if (sibling !== path) ownInert(sibling, "data-chat-detail-inert-owned");
+        });
+        path = parent;
+      }
+      return;
+    }
+    if (chatOpen()) {
+      Array.prototype.forEach.call(document.body.children, function (child) {
+        if (child.id !== "chat-overlay") ownInert(child, "data-chat-inert-owned");
+      });
+    }
+  }
+
+  function openChat(sessionID, title) {
+    var opener = chatOpen() ? cstate.opener : document.activeElement;
+    closeTerminal(true);
+    closeChat(true, true);
+    cstate.opener = opener;
+    cstate.session = sessionID;
+    cstate.title = title || sessionID;
+    cstate.snapshot = null;
+    cstate.controls = null;
+    cstate.inbox = [];
+    cstate.lifecycle = null;
+    cstate.navigation = null;
+    cstate.deletePreview = null;
+    cstate.lifecycleError = "";
+    cstate.revertTarget = null;
+    cstate.revertPreviewHTML = "";
+    cstate.revertPreviewValid = false;
+    cstate.restoreScroll = Object.prototype.hasOwnProperty.call(cstate.scrolls, sessionID) ? cstate.scrolls[sessionID] : null;
+    var overlay = document.getElementById("chat-overlay");
+    overlay.hidden = false;
+    syncChatModalInert(false);
+    syncChatViewport();
+    resetChatViews();
+    document.getElementById("chat-title").textContent = cstate.title;
+    renderChatUsage(null);
+    setChatHeaderState("Connecting", "connecting");
+    var prompt = document.getElementById("chat-prompt");
+    prompt.value = cstate.drafts[sessionID] || "";
+    document.getElementById("chat-reference-picker").hidden = true;
+    document.getElementById("chat-reference-btn").setAttribute("aria-expanded", "false");
+    document.getElementById("chat-actions-sheet").hidden = true;
+    document.getElementById("chat-actions-backdrop").hidden = true;
+    document.getElementById("chat-actions-btn").setAttribute("aria-expanded", "false");
+    renderChatDraftFiles();
+    renderChatSkillChips();
+    closeChatControls();
+    resizeChatPrompt();
+    document.getElementById("chat-transcript").innerHTML = '<p class="chat-empty">Loading conversation…</p>';
+    renderChatInbox();
+    renderChatNavigation();
+    updateChatDeliveryControls();
+    setChatStatus("Connecting…");
+    setChatTasks(null, null);
+    if (page === "board" && boardEl() && boardEl().dataset.change) {
+      setChatTasks(boardEl(), boardEl().dataset.change);
+    } else {
+      resolveTerminalPanel(sessionID);
+    }
+    pollChat(true);
+    loadChatUsage(true);
+    loadChatLifecycle();
+    requestAnimationFrame(function () { prompt.focus({ preventScroll: true }); });
+  }
+
+  function closeChat(suppressRefresh, suppressFocus) {
+    if (!cstate.session && !chatOpen()) return;
+    var prompt = document.getElementById("chat-prompt");
+    if (prompt && cstate.session) cstate.drafts[cstate.session] = prompt.value;
+    var transcript = document.getElementById("chat-transcript");
+    if (transcript && cstate.session) cstate.scrolls[cstate.session] = transcript.scrollTop;
+    clearTimeout(cstate.timer);
+    if (cstate.request) cstate.request.abort();
+    if (cstate.inboxRequest) cstate.inboxRequest.abort();
+    if (cstate.navigationRequest) cstate.navigationRequest.abort();
+    clearTimeout(cstate.usageTimer);
+    if (cstate.usageRequest) cstate.usageRequest.abort();
+    closeChatMore(false);
+    cstate.timer = null;
+    cstate.request = null;
+    cstate.inboxRequest = null;
+    cstate.navigationRequest = null;
+    cstate.usageTimer = null;
+    cstate.usageRequest = null;
+    cstate.mutation = false;
+    cstate.lifecycleAction = false;
+    cstate.session = null;
+    var send = document.getElementById("chat-send-btn");
+    var interrupt = document.getElementById("chat-interrupt-btn");
+    if (send) send.disabled = false;
+    if (interrupt) interrupt.disabled = false;
+    terminalPanelChange = null;
+    var overlay = document.getElementById("chat-overlay");
+    if (overlay) overlay.hidden = true;
+    syncChatModalInert(false);
+    resetChatViews();
+    closeChatTasks(false);
+    closeChatAgents(false);
+    closeChatControls(false);
+    cstate.auxiliaryFocus = {};
+    if (!suppressFocus) {
+      var opener = cstate.opener;
+      cstate.opener = null;
+      if (opener && opener.isConnected) requestAnimationFrame(function () { opener.focus({ preventScroll: true }); });
+    }
+    if (!suppressRefresh && page === "index") scheduleRefresh();
+  }
+
+  function syncChatViewport() {
+    var win = document.querySelector(".chat-window");
+    if (!win || !window.visualViewport || !chatOpen()) return;
+    win.style.setProperty("--chat-viewport-height", window.visualViewport.height + "px");
+  }
+
+  function scheduleChatPoll(delay) {
+    clearTimeout(cstate.timer);
+    if (!chatOpen() || !cstate.session || document.hidden) return;
+    cstate.timer = setTimeout(function () { pollChat(false); }, delay);
+  }
+
+  function pollChat(initial) {
+    if (!chatOpen() || !cstate.session || document.hidden || cstate.request) return;
+    var sessionID = cstate.session;
+    var transcript = document.getElementById("chat-transcript");
+    var controller = new AbortController();
+    cstate.request = controller;
+    transcript.setAttribute("aria-busy", "true");
+    fetch("/api/sessions/" + encodeURIComponent(sessionID) + "/chat", {
+      headers: { Accept: "text/html" },
+      signal: controller.signal,
+    })
+      .then(function (r) {
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.text();
+      })
+      .then(function (html) {
+        if (!chatOpen() || cstate.session !== sessionID) return;
+        var nearBottom = transcript.scrollHeight - transcript.scrollTop - transcript.clientHeight < 96;
+        var oldTop = transcript.scrollTop;
+        var changed = cstate.snapshot !== html;
+        if (changed) {
+          var previousRoot = transcript.querySelector(".chat-snapshot");
+          var historyPages = previousRoot ? Array.prototype.slice.call(previousRoot.querySelectorAll(":scope > .chat-history-page")) : [];
+          var historyLoaded = previousRoot && previousRoot.dataset.historyLoaded === "true";
+          var historyCursor = historyLoaded ? (previousRoot.dataset.historyCursor || "") : null;
+          var openDetails = {};
+          transcript.querySelectorAll("details[data-chat-expand-key][open]").forEach(function (detail) {
+            var body = detail.hasAttribute("data-chat-detail-url") ? detail.querySelector(".chat-lazy-detail") : null;
+            openDetails[detail.dataset.chatExpandKey] = body ? body.innerHTML : null;
+          });
+          transcript.innerHTML = html;
+          var root = transcript.querySelector(".chat-snapshot");
+          if (root && cstate.lifecycle) {
+            var snapshotBusy = root.dataset.busy === "true";
+           if (cstate.lifecycle.busy !== snapshotBusy) {
+              cstate.lifecycle.busy = snapshotBusy;
+              renderChatLifecycle();
+               if (!snapshotBusy) loadChatLifecycle();
+             }
+           }
+           updateChatDeliveryControls();
+          var insertionPoint = root && root.querySelector("[data-chat-block], .chat-interaction");
+          historyPages.forEach(function (historyPage) {
+            if (root) root.insertBefore(historyPage, insertionPoint);
+          });
+          if (root && historyLoaded) {
+            root.dataset.historyLoaded = "true";
+            root.dataset.historyCursor = historyCursor;
+            var load = root.querySelector("[data-chat-load-older]");
+            if (historyCursor && load) load.dataset.cursor = historyCursor;
+            else if (load) load.closest(".chat-history-control").remove();
+          }
+          Object.keys(openDetails).forEach(function (key) {
+            var detail = Array.prototype.find.call(transcript.querySelectorAll("details[data-chat-expand-key]"), function (item) {
+              return item.dataset.chatExpandKey === key;
+            });
+            if (!detail) return;
+            detail.open = true;
+            if (detail.hasAttribute("data-chat-detail-url")) {
+              var body = detail.querySelector(".chat-lazy-detail");
+              if (body && openDetails[key]) body.innerHTML = openDetails[key];
+              loadChatDetail(detail, true);
+            }
+          });
+          cstate.snapshot = html;
+          if (window.htmx) htmx.process(transcript);
+          var compactions = transcript.querySelectorAll('[data-message-type="compaction"]');
+          var compact = compactions.length ? compactions[compactions.length - 1] : null;
+          if (compact && (compact.dataset.messageStatus === "completed" || compact.dataset.messageStatus === "failed")) {
+            cstate.compactPending[sessionID] = false;
+            renderChatLifecycle();
+          }
+          if (initial && cstate.restoreScroll != null) {
+            transcript.scrollTop = cstate.restoreScroll;
+            cstate.restoreScroll = null;
+          } else if (nearBottom || initial) transcript.scrollTop = transcript.scrollHeight;
+          else transcript.scrollTop = oldTop;
+          setChatStatus("Conversation updated");
+        } else {
+          setChatStatus("");
+        }
+      })
+      .catch(function (err) {
+        if (err.name !== "AbortError") {
+          setChatStatus("Disconnected from OpenCode. Retrying…", true, true);
+          setChatHeaderState("Disconnected", "error");
+        }
+      })
+      .finally(function () {
+        if (cstate.request === controller) {
+          cstate.request = null;
+          transcript.setAttribute("aria-busy", "false");
+           scheduleChatPoll(1200);
+           loadChatInbox(false);
+        }
+      });
+  }
+
+  function refreshChat() {
+    if (cstate.request) cstate.request.abort();
+    cstate.request = null;
+    pollChat(true);
+  }
+
+  function loadOlderChat(control) {
+    if (!cstate.session || cstate.request || !control.dataset.cursor) return;
+    var sessionID = cstate.session;
+    var transcript = document.getElementById("chat-transcript");
+    var controller = new AbortController();
+    var oldHeight = transcript.scrollHeight;
+    var oldTop = transcript.scrollTop;
+    cstate.request = controller;
+    control.disabled = true;
+    transcript.setAttribute("aria-busy", "true");
+    setChatStatus("Loading older messages…");
+    fetch("/api/sessions/" + encodeURIComponent(sessionID) + "/chat?cursor=" + encodeURIComponent(control.dataset.cursor), {
+      headers: { Accept: "text/html" },
+      signal: controller.signal,
+    })
+      .then(function (r) {
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.text();
+      })
+      .then(function (html) {
+        if (!chatOpen() || cstate.session !== sessionID) return;
+        var holder = document.createElement("template");
+        holder.innerHTML = html.trim();
+        var page = holder.content.querySelector(".chat-snapshot");
+        var root = transcript.querySelector(".chat-snapshot");
+        if (!page || !root) throw new Error("Invalid history response");
+        var existing = {};
+        root.querySelectorAll("[data-message]").forEach(function (message) { existing[message.dataset.message] = true; });
+        var insertionPoint = root.querySelector("[data-chat-block], .chat-interaction");
+        var historyPage = document.createElement("div");
+        historyPage.className = "chat-history-page";
+        page.querySelectorAll(":scope > [data-chat-block]").forEach(function (block) {
+          var source = (block.dataset.chatSource || "").trim().split(/\s+/).filter(Boolean);
+          if (source.length && source.every(function (id) { return existing[id]; })) return;
+          block.querySelectorAll("[data-message]").forEach(function (message) {
+            if (existing[message.dataset.message]) message.remove();
+            else existing[message.dataset.message] = true;
+          });
+          historyPage.appendChild(block);
+        });
+        if (historyPage.children.length) root.insertBefore(historyPage, insertionPoint);
+        var next = page.querySelector("[data-chat-load-older]");
+        root.dataset.historyLoaded = "true";
+        root.dataset.historyCursor = next ? next.dataset.cursor : "";
+        if (next) control.dataset.cursor = next.dataset.cursor;
+        else control.closest(".chat-history-control").remove();
+        if (window.htmx) htmx.process(transcript);
+        transcript.scrollTop = oldTop + transcript.scrollHeight - oldHeight;
+        setChatStatus("");
+      })
+      .catch(function (err) {
+        if (err.name !== "AbortError") setChatStatus("Could not load older messages. " + err.message, true);
+      })
+      .finally(function () {
+        if (cstate.request === controller) {
+          cstate.request = null;
+          transcript.setAttribute("aria-busy", "false");
+          if (document.contains(control)) control.disabled = false;
+          scheduleChatPoll(1200);
+        }
+      });
+  }
+
+  function setChatStatus(message, error, serviceLink) {
+    var el = document.getElementById("chat-status");
+    if (!el) return;
+    el.textContent = message || "";
+    el.classList.toggle("error", !!error);
+    if (serviceLink) {
+      var link = document.createElement("a");
+      link.href = "/settings/opencode";
+      link.textContent = "View service status";
+      link.className = "chat-service-link";
+      el.appendChild(link);
+    }
+  }
+
+  function chatBusy() {
+    var root = document.querySelector("#chat-transcript .chat-snapshot");
+    return root ? root.dataset.busy === "true" : !!(cstate.lifecycle && cstate.lifecycle.busy);
+  }
+
+  function setChatHeaderState(label, state) {
+    var el = document.getElementById("chat-session-state");
+    if (!el) return;
+    el.textContent = label;
+    el.dataset.state = state || "";
+  }
+
+  function updateChatDeliveryControls() {
+    var controls = document.getElementById("chat-delivery-controls");
+    if (!controls) return;
+    var busy = chatBusy();
+    if (cstate.lifecycle || document.querySelector("#chat-transcript .chat-snapshot")) {
+      setChatHeaderState(busy ? "Working" : "Idle", busy ? "busy" : "idle");
+    }
+    var cap = cstate.lifecycle && cstate.lifecycle.capabilities || {};
+    var files = !!cap.promptDeliveryFiles;
+    var skills = !!cap.promptDeliverySkills;
+    var available = !!cap.promptDelivery && !!cap.promptDeliveryID;
+    controls.hidden = !busy;
+    document.getElementById("chat-delivery-mode").disabled = !available;
+    document.getElementById("chat-delivery-note").textContent = !available
+      ? "Durable follow-ups are unavailable on this OpenCode service."
+      : files && skills ? "Choose queue for the next turn or steer the current turn."
+      : "Unsupported attachments, references, or skills remain in your draft until the session is idle.";
+    var addFile = document.querySelector(".chat-add-file");
+    if (addFile) addFile.classList.toggle("is-disabled", busy && !files);
+    if (addFile) addFile.disabled = busy && !files;
+    document.getElementById("chat-file-input").disabled = busy && !files;
+    document.getElementById("chat-reference-btn").disabled = busy && !files;
+    document.getElementById("chat-interrupt-btn").hidden = !busy;
+    renderChatControlsAvailability();
+  }
+
+  function renderChatControlsAvailability() {
+    var skills = !!(cstate.lifecycle && cstate.lifecycle.capabilities && cstate.lifecycle.capabilities.promptDeliverySkills);
+    document.querySelectorAll("#chat-skill-list [data-attach-skill]").forEach(function (button) {
+      button.disabled = chatBusy() && !skills;
+    });
+  }
+
+  function inboxTypeLabel(item) {
+    if (!item.known) return "Unsupported pending item (" + (item.type || "unknown") + ")";
+    return ({ user: "Follow-up", synthetic: "Synthetic message", compaction: "Compaction", move: "Session move" })[item.type] || "Pending item";
+  }
+
+  function renderChatInbox() {
+    var root = document.getElementById("chat-inbox");
+    if (!root) return;
+    root.innerHTML = "";
+    root.hidden = !cstate.inbox.length;
+    if (!cstate.inbox.length) return;
+    var heading = document.createElement("strong");
+    heading.textContent = "Pending in OpenCode (" + cstate.inbox.length + ")";
+    root.appendChild(heading);
+    var cap = cstate.lifecycle && cstate.lifecycle.capabilities || {};
+    cstate.inbox.forEach(function (item) {
+      var row = document.createElement("div");
+      row.className = "chat-inbox-item";
+      row.dataset.inboxID = item.id;
+      var copy = document.createElement("div");
+      copy.className = "chat-inbox-copy";
+      var label = document.createElement("small");
+      label.textContent = inboxTypeLabel(item);
+      copy.appendChild(label);
+      if (item.known && (item.text || item.description)) {
+        var text = document.createElement("p");
+        text.textContent = item.text || item.description;
+        copy.appendChild(text);
+      }
+      row.appendChild(copy);
+      var mode = document.createElement("select");
+      mode.setAttribute("aria-label", "Delivery mode for " + inboxTypeLabel(item));
+      ["queue", "steer"].forEach(function (value) {
+        var option = document.createElement("option");
+        option.value = value;
+        option.textContent = value === "queue" ? "Queued" : "Steering";
+        option.selected = item.delivery === value;
+        mode.appendChild(option);
+      });
+      mode.disabled = !cap.inboxDelivery;
+      mode.dataset.inboxDelivery = item.id;
+      row.appendChild(mode);
+      var cancel = document.createElement("button");
+      cancel.type = "button";
+      cancel.className = "btn-ghost";
+      cancel.textContent = "Cancel";
+      cancel.disabled = !cap.inboxCancel;
+      cancel.dataset.inboxCancel = item.id;
+      row.appendChild(cancel);
+      root.appendChild(row);
+    });
+  }
+
+  function loadChatInbox(reportError, propagateError) {
+    if (!cstate.session || cstate.inboxRequest) return Promise.resolve();
+    var cap = cstate.lifecycle && cstate.lifecycle.capabilities;
+    if (!cap || !cap.inboxList) {
+      cstate.inbox = [];
+      renderChatInbox();
+      return Promise.resolve();
+    }
+    var sessionID = cstate.session;
+    var controller = new AbortController();
+    cstate.inboxRequest = controller;
+    return fetch(lifecycleURL("/inbox"), { headers: { Accept: "application/json" }, signal: controller.signal })
+      .then(lifecycleResponse)
+      .then(function (data) {
+        if (cstate.session !== sessionID) return;
+        cstate.inbox = data.items || [];
+        renderChatInbox();
+        return data;
+      })
+      .catch(function (err) {
+        if (err.name !== "AbortError" && reportError && cstate.session === sessionID) setChatStatus("Pending follow-ups unavailable: " + err.message, true);
+        if (propagateError && err.name !== "AbortError") throw err;
+      })
+      .finally(function () { if (cstate.inboxRequest === controller) cstate.inboxRequest = null; });
+  }
+
+  function mutateChatInbox(itemID, method, body, control) {
+    if (!cstate.session || cstate.mutation) return Promise.reject(new Error("A request is already in progress"));
+    var sessionID = cstate.session;
+    cstate.mutation = true;
+    control.disabled = true;
+    var options = { method: method, headers: { Accept: "application/json" } };
+    if (body) {
+      options.headers["Content-Type"] = "application/json";
+      options.body = JSON.stringify(body);
+    }
+    return fetch(lifecycleURL("/inbox/" + encodeURIComponent(itemID)), options)
+      .then(lifecycleResponse)
+      .then(function () {
+        if (cstate.inboxRequest) {
+          cstate.inboxRequest.abort();
+          cstate.inboxRequest = null;
+        }
+        return loadChatInbox(true, true);
+      })
+      .then(function (data) {
+        if (cstate.session !== sessionID) return;
+        var pending = (data.items || []).some(function (item) { return item.id === itemID; });
+        if (method === "DELETE") {
+          setChatStatus(pending ? "Cancellation was requested, but the item is still pending." : "Item is no longer pending. It may have been delivered or cancelled.", pending);
+        } else {
+          setChatStatus(pending ? "Pending delivery mode refreshed." : "The item is no longer pending and may already have been delivered.");
+        }
+        refreshChat();
+      })
+      .catch(function (err) {
+        if (cstate.session === sessionID) setChatStatus(err.message, true);
+        throw err;
+      })
+      .finally(function () {
+        if (cstate.session === sessionID) {
+          cstate.mutation = false;
+          if (document.contains(control)) control.disabled = false;
+        }
+      });
+  }
+
+  function loadChatDetail(detail, refresh) {
+    if (!detail || !detail.open || !detail.dataset.chatDetailUrl || detail.dataset.loading === "true") return;
+    if (!refresh && detail.dataset.loaded === "true") return;
+    var body = detail.querySelector(".chat-lazy-detail");
+    if (!body) return;
+    detail.dataset.loading = "true";
+    if (!refresh) body.textContent = "Loading…";
+    fetch(detail.dataset.chatDetailUrl, { headers: { Accept: "text/html" } })
+      .then(function (r) {
+        if (!r.ok) return r.json().catch(function () { return {}; }).then(function (j) { throw new Error(j.error || "HTTP " + r.status); });
+        return r.text();
+      })
+      .then(function (html) {
+        if (!document.contains(detail) || !detail.open) return;
+        body.innerHTML = html;
+        detail.dataset.loaded = "true";
+      })
+      .catch(function (err) {
+        if (document.contains(detail) && detail.open) body.textContent = "Could not load detail: " + err.message;
+      })
+      .finally(function () { detail.dataset.loading = "false"; });
+  }
+
+  document.addEventListener("toggle", function (e) {
+    var detail = e.target.closest && e.target.closest("#chat-transcript details[data-chat-detail-url]");
+    if (detail && detail.open) loadChatDetail(detail, false);
+  }, true);
+
+  function chatMutation(path, body, control) {
+    if (!cstate.session || cstate.mutation) return Promise.reject(new Error("A request is already in progress"));
+    var sessionID = cstate.session;
+    cstate.mutation = true;
+    if (control) control.disabled = true;
+    setChatStatus("Sending…");
+    var options = { method: "POST", headers: { Accept: "application/json" } };
+    if (body instanceof FormData) {
+      options.body = body;
+    } else if (body !== undefined) {
+      options.headers["Content-Type"] = "application/json";
+      options.body = JSON.stringify(body);
+    }
+    return fetch("/api/sessions/" + encodeURIComponent(sessionID) + "/chat/" + path, options)
+      .then(function (r) {
+        if (r.ok) return;
+        return r.json().catch(function () { return {}; }).then(function (j) {
+          throw new Error(j.error || "Request failed (" + r.status + ")");
+        });
+      })
+      .then(function () {
+        if (cstate.session === sessionID) { setChatStatus(""); refreshChat(); }
+      })
+      .catch(function (err) {
+        if (cstate.session === sessionID) setChatStatus(err.message, true);
+        throw err;
+      })
+      .finally(function () {
+        if (cstate.session === sessionID) {
+          cstate.mutation = false;
+          if (control && document.contains(control)) control.disabled = false;
+        }
+      });
+  }
+
+  function newChatMessageID() {
+    var value = window.crypto && window.crypto.randomUUID ? window.crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2);
+    return "msg_" + value.replace(/-/g, "");
+  }
+
+  function deliverBusyPrompt(body, control) {
+    if (!cstate.session || cstate.mutation) return Promise.reject(new Error("A request is already in progress"));
+    var sessionID = cstate.session;
+    cstate.mutation = true;
+    control.disabled = true;
+    setChatStatus("Submitting durable follow-up…");
+    return fetch("/api/sessions/" + encodeURIComponent(sessionID) + "/deliver", {
+      method: "POST",
+      headers: { Accept: "application/json" },
+      body: body,
+    })
+      .then(lifecycleResponse)
+      .then(function () {
+        if (cstate.session !== sessionID) return;
+        delete cstate.deliveryIDs[sessionID];
+        if (cstate.inboxRequest) {
+          cstate.inboxRequest.abort();
+          cstate.inboxRequest = null;
+        }
+        return loadChatInbox(true).then(function () { refreshChat(); });
+      })
+      .catch(function (err) {
+        if (cstate.session === sessionID) setChatStatus(err.message, true);
+        throw err;
+      })
+      .finally(function () {
+        if (cstate.session === sessionID) {
+          cstate.mutation = false;
+          if (document.contains(control)) control.disabled = false;
+        }
+      });
+  }
+
+  function resizeChatPrompt() {
+    var input = document.getElementById("chat-prompt");
+    if (!input) return;
+    input.style.height = "auto";
+    input.style.height = Math.min(input.scrollHeight, 160) + "px";
+  }
+
+  function chatDraftFiles() {
+    if (!cstate.session) return [];
+    if (!cstate.files[cstate.session]) cstate.files[cstate.session] = [];
+    return cstate.files[cstate.session];
+  }
+
+  function chatDraftReferences() {
+    if (!cstate.session) return [];
+    if (!cstate.references[cstate.session]) cstate.references[cstate.session] = [];
+    return cstate.references[cstate.session];
+  }
+
+  function chatDraftSkills() {
+    if (!cstate.session) return [];
+    if (!cstate.skills[cstate.session]) cstate.skills[cstate.session] = [];
+    return cstate.skills[cstate.session];
+  }
+
+  function revokeChatFile(file) {
+    if (file.preview) URL.revokeObjectURL(file.preview);
+  }
+
+  function clearChatDraftFiles(sessionID) {
+    (cstate.files[sessionID] || []).forEach(revokeChatFile);
+    cstate.files[sessionID] = [];
+    cstate.references[sessionID] = [];
+  }
+
+  function renderChatDraftFiles() {
+    var tray = document.getElementById("chat-draft-files");
+    if (!tray) return;
+    tray.innerHTML = "";
+    chatDraftFiles().forEach(function (item, index) {
+      var chip = document.createElement("div");
+      chip.className = "chat-draft-file";
+      if (item.preview) {
+        var img = document.createElement("img");
+        img.src = item.preview;
+        img.alt = "";
+        chip.appendChild(img);
+      }
+      var name = document.createElement("span");
+      name.textContent = item.file.name;
+      chip.appendChild(name);
+      var remove = document.createElement("button");
+      remove.type = "button";
+      remove.dataset.removeChatFile = String(index);
+      remove.setAttribute("aria-label", "Remove " + item.file.name);
+      remove.textContent = "×";
+      chip.appendChild(remove);
+      tray.appendChild(chip);
+    });
+    chatDraftReferences().forEach(function (ref) {
+      var chip = document.createElement("div");
+      chip.className = "chat-draft-file is-reference";
+      var name = document.createElement("span");
+      name.textContent = ref.name;
+      chip.appendChild(name);
+      var remove = document.createElement("button");
+      remove.type = "button";
+      remove.dataset.removeChatReference = ref.alias;
+      remove.setAttribute("aria-label", "Remove reference " + ref.name);
+      remove.textContent = "×";
+      chip.appendChild(remove);
+      tray.appendChild(chip);
+    });
+    tray.hidden = !tray.children.length;
+  }
+
+  function renderChatSkillChips() {
+    var tray = document.getElementById("chat-skill-chips");
+    if (!tray) return;
+    tray.innerHTML = "";
+    chatDraftSkills().forEach(function (skill) {
+      var chip = document.createElement("div");
+      chip.className = "chat-draft-file is-skill";
+      var name = document.createElement("span");
+      name.textContent = "Skill: " + (skill.name || skill.id);
+      chip.appendChild(name);
+      var remove = document.createElement("button");
+      remove.type = "button";
+      remove.dataset.removeChatSkill = skill.id;
+      remove.setAttribute("aria-label", "Remove skill " + (skill.name || skill.id));
+      remove.textContent = "×";
+      chip.appendChild(remove);
+      tray.appendChild(chip);
+    });
+    tray.hidden = !tray.children.length;
+  }
+
+  function closeChatControls(returnFocus) {
+    var sheet = document.getElementById("chat-controls-sheet");
+    var button = document.getElementById("chat-controls-btn");
+    if (compactChatUI() && cstate.viewStack[cstate.viewStack.length - 1] === "controls") closeChatView();
+    if (sheet) sheet.hidden = true;
+    if (button) button.setAttribute("aria-expanded", "false");
+    syncChatView(false);
+    if (!compactChatUI() && returnFocus !== false) restoreChatAuxiliaryFocus("controls");
+  }
+
+  function requestChatAuxiliary(name) {
+    if (compactChatUI()) return false;
+    if (name !== "work") closeChatTasks(false);
+    if (name !== "agents") closeChatAgents(false);
+    if (name !== "controls") closeChatControls(false);
+    return true;
+  }
+
+  function openChatControls(opener) {
+    var sheet = document.getElementById("chat-controls-sheet");
+    if (!compactChatUI()) requestChatAuxiliary("controls");
+    if (!compactChatUI()) cstate.auxiliaryFocus.controls = opener || document.activeElement;
+    sheet.hidden = false;
+    document.getElementById("chat-controls-btn").setAttribute("aria-expanded", "true");
+    if (compactChatUI()) openChatView("controls", opener);
+    else { syncChatView(false); focusChatPanel("controls"); }
+    return loadChatControls();
+  }
+
+  function optionLabel(item) { return item.name ? item.name + " · " + (item.value || item.id) : (item.value || item.id); }
+
+  function fillChatSelect(select, items, current, placeholder) {
+    select.innerHTML = "";
+    var empty = document.createElement("option");
+    empty.value = "";
+    empty.textContent = placeholder;
+    empty.disabled = true;
+    select.appendChild(empty);
+    items.forEach(function (item) {
+      var option = document.createElement("option");
+      option.value = item.value || item.id || item.name;
+      option.textContent = optionLabel(item);
+      option.dataset.search = ((item.name || "") + " " + (item.description || "") + " " + option.value).toLowerCase();
+      option.selected = option.value === current;
+      select.appendChild(option);
+    });
+    if (!current || !items.some(function (item) { return (item.value || item.id || item.name) === current; })) select.selectedIndex = 0;
+  }
+
+  function conciseTokens(value) {
+    value = Number(value) || 0;
+    if (value >= 1000000) return (value / 1000000).toFixed(value >= 10000000 ? 0 : 1).replace(/\.0$/, "") + "m";
+    if (value >= 1000) return Math.round(value / 1000) + "k";
+    return String(value);
+  }
+
+  function renderChatUsage(usage) {
+    usage = usage || {};
+    var header = document.getElementById("chat-context-usage");
+    var available = !!usage.contextAvailable && !!usage.contextLimit;
+    header.textContent = available ? "Context " + usage.percent + "%" : "Context unavailable";
+    header.title = available ? conciseTokens(usage.estimatedContext) + " / " + conciseTokens(usage.contextLimit) : "Active context usage unavailable";
+    header.classList.toggle("warning", available && !!usage.warning);
+
+    var usageEl = document.getElementById("chat-usage");
+    if (!usageEl) return;
+    var usageText = "Session totals: " + conciseTokens(usage.input) + " input, " + conciseTokens(usage.output) + " output, " + conciseTokens(usage.reasoning) + " reasoning, " + conciseTokens(usage.cacheRead) + " cache read, " + conciseTokens(usage.cacheWrite) + " cache write.";
+    if (available) usageText += " Active context: " + conciseTokens(usage.estimatedContext) + " / " + conciseTokens(usage.contextLimit) + " (" + usage.percent + "%).";
+    else usageText += " Active context usage is unavailable.";
+    usageEl.textContent = usageText;
+    usageEl.classList.toggle("warning", available && !!usage.warning);
+    if (available && usage.warning) usageEl.textContent += " Context is at least 80% full; compaction may happen soon.";
+  }
+
+  function loadChatUsage(immediate) {
+    clearTimeout(cstate.usageTimer);
+    if (!chatOpen() || !cstate.session) return;
+    if (!immediate) {
+      cstate.usageTimer = setTimeout(function () { loadChatUsage(true); }, 15000);
+      return;
+    }
+    var sessionID = cstate.session;
+    if (cstate.usageRequest) cstate.usageRequest.abort();
+    cstate.usageRequest = new AbortController();
+    fetch("/api/sessions/" + encodeURIComponent(sessionID) + "/chat/usage", {
+      headers: { Accept: "application/json" }, signal: cstate.usageRequest.signal
+    }).then(function (r) {
+      if (!r.ok) throw new Error("Context usage unavailable");
+      return r.json();
+    }).then(function (usage) {
+      if (cstate.session !== sessionID) return;
+      if (cstate.controls) cstate.controls.usage = usage;
+      renderChatUsage(usage);
+      renderChatLifecycle();
+    }).catch(function (err) {
+      if (err.name === "AbortError" || cstate.session !== sessionID) return;
+      var usage = cstate.controls && cstate.controls.usage || {};
+      usage.contextAvailable = false;
+      if (cstate.controls) cstate.controls.usage = usage;
+      renderChatUsage(usage);
+      renderChatLifecycle();
+    }).finally(function () {
+      if (cstate.session === sessionID) {
+        cstate.usageRequest = null;
+        loadChatUsage(false);
+      }
+    });
+  }
+
+  function renderChatControls(data) {
+    cstate.controls = data;
+    fillChatSelect(document.getElementById("chat-agent-select"), data.agents || [], data.agent, "Choose agent");
+    fillChatSelect(document.getElementById("chat-model-select"), data.models || [], data.model, "Choose model");
+    fillChatSelect(document.getElementById("chat-command-select"), data.commands || [], "", "Choose command");
+    renderChatUsage(data.usage);
+    var list = document.getElementById("chat-skill-list");
+    list.innerHTML = "";
+    (data.skills || []).forEach(function (skill) {
+      var row = document.createElement("div");
+      row.className = "chat-skill-row";
+      row.dataset.search = ((skill.name || "") + " " + skill.id + " " + (skill.description || "")).toLowerCase();
+      var text = document.createElement("span");
+      text.textContent = skill.name || skill.id;
+      if (skill.description) text.title = skill.description;
+      row.appendChild(text);
+      var attach = document.createElement("button");
+      attach.type = "button";
+      attach.className = "btn-ghost";
+      attach.dataset.attachSkill = skill.id;
+      attach.textContent = "Attach";
+      row.appendChild(attach);
+      var activate = document.createElement("button");
+      activate.type = "button";
+      activate.className = "btn-ghost";
+      activate.dataset.activateSkill = skill.id;
+      activate.textContent = "Activate";
+      activate.disabled = !data.standaloneSkill;
+      row.appendChild(activate);
+      list.appendChild(row);
+    });
+    document.getElementById("chat-controls-note").textContent = data.standaloneSkill ? "Attach adds a skill to your next prompt. Activate runs it immediately." : "Standalone activation is unavailable on this OpenCode service. Prompt attachment remains available.";
+    renderChatLifecycle();
+    renderChatManagement();
+    renderChatControlsAvailability();
+  }
+
+  function lifecycleURL(path) {
+    return "/api/sessions/" + encodeURIComponent(cstate.session) + (path === undefined ? "/lifecycle" : path);
+  }
+
+  function lifecycleResponse(r) {
+    if (r.ok) return r.status === 204 ? null : r.json();
+    return r.json().catch(function () { return {}; }).then(function (body) {
+      var err = new Error(body.error || "Request failed (" + r.status + ")");
+      err.status = r.status;
+      throw err;
+    });
+  }
+
+  function navigationMeta(item) {
+    var parts = [];
+    if (item.task) parts.push(item.task);
+    parts.push(item.busy ? "working" : "idle");
+    if (item.pendingInput) parts.push(item.pendingInput + " pending input" + (item.pendingInput === 1 ? "" : "s"));
+    return parts.join(" · ");
+  }
+
+  function switchChatSession(item) {
+    if (!item || !item.session || item.session === cstate.session) return;
+    openChat(item.session, item.title || item.session);
+  }
+
+  function appendNavigationButton(parent, item, className) {
+    var button = document.createElement("button");
+    button.type = "button";
+    button.className = className || "btn-ghost";
+    var label = document.createElement("span");
+    label.textContent = item.title || item.session;
+    button.appendChild(label);
+    button.title = navigationMeta(item);
+    button.addEventListener("click", function () { switchChatSession(item); });
+    parent.appendChild(button);
+    return button;
+  }
+
+  function owningSessionLink(item) {
+    if (!item || !item.change) return null;
+    var link = document.createElement("a");
+    link.href = "/changes/" + encodeURIComponent(item.change) + (item.task ? "?task=" + encodeURIComponent(item.task) : "");
+    link.textContent = item.task ? "Return to " + item.task : "Return to change";
+    return link;
+  }
+
+  function renderChatNavigation() {
+    var bar = document.getElementById("chat-family-bar");
+    var drawer = document.getElementById("chat-agents");
+    var toggle = document.getElementById("chat-agents-btn");
+    if (!bar || !drawer || !toggle) return;
+    bar.innerHTML = "";
+    drawer.innerHTML = "";
+    var data = cstate.navigation;
+    if (!data || !data.current) {
+      bar.hidden = true;
+      drawer.hidden = true;
+      toggle.hidden = true;
+      closeChatAgents();
+      return;
+    }
+    (data.ancestors || []).forEach(function (item) {
+      appendNavigationButton(bar, item);
+      bar.appendChild(document.createTextNode("/"));
+    });
+    var current = document.createElement("strong");
+    current.textContent = data.current.title || data.current.session;
+    bar.appendChild(current);
+    var meta = document.createElement("span");
+    meta.className = "chat-family-meta";
+    meta.textContent = navigationMeta(data.current);
+    bar.appendChild(meta);
+    var owner = owningSessionLink(data.current);
+    if (owner) bar.appendChild(owner);
+    bar.hidden = false;
+
+    var descendants = data.descendants || [];
+    toggle.hidden = descendants.length === 0;
+    drawer.hidden = descendants.length === 0;
+    if (!descendants.length) {
+      closeChatAgents();
+      return;
+    }
+    var heading = document.createElement("div");
+    heading.className = "chat-agents-head";
+    var back = document.createElement("button");
+    back.type = "button";
+    back.className = "chat-view-back btn-ghost";
+    back.dataset.chatViewBack = "";
+    back.textContent = "Back to Chat";
+    var strong = document.createElement("strong");
+    strong.textContent = "Child activity";
+    var close = document.createElement("button");
+    close.type = "button";
+    close.className = "modal-close";
+    close.setAttribute("aria-label", "Close agent drawer");
+    close.textContent = "✕";
+    close.addEventListener("click", closeChatAgents);
+    heading.appendChild(back);
+    heading.appendChild(strong);
+    heading.appendChild(close);
+    drawer.appendChild(heading);
+    descendants.forEach(function (item) {
+      var row = appendNavigationButton(drawer, item, "chat-agent-row");
+      row.style.marginLeft = Math.min(Math.max((item.depth || 1) - 1, 0) * 12, 48) + "px";
+      var state = document.createElement("span");
+      state.className = "chat-agent-state";
+      state.textContent = item.pendingInput ? "Needs input" : (item.busy ? "Working" : "Idle");
+      row.appendChild(state);
+      var detail = document.createElement("small");
+      detail.textContent = (item.task ? item.task + " · " : "") + (item.change ? item.change : "Unmapped");
+      row.appendChild(detail);
+    });
+  }
+
+  function loadChatNavigation() {
+    if (!cstate.session) return Promise.resolve(null);
+    if (cstate.navigationRequest) cstate.navigationRequest.abort();
+    var sessionID = cstate.session;
+    var controller = new AbortController();
+    cstate.navigationRequest = controller;
+    return fetch("/api/sessions/" + encodeURIComponent(sessionID) + "/navigation", { headers: { Accept: "application/json" }, signal: controller.signal })
+      .then(lifecycleResponse)
+      .then(function (data) {
+        if (cstate.session !== sessionID) return null;
+        cstate.navigation = data;
+        if (data.current && data.current.title) {
+          cstate.title = data.current.title;
+          document.getElementById("chat-title").textContent = cstate.title;
+        }
+        renderChatNavigation();
+        return data;
+      })
+      .catch(function (err) {
+        if (err.name !== "AbortError" && cstate.session === sessionID) setChatStatus("Agent activity unavailable: " + err.message, true);
+        return null;
+      })
+      .finally(function () { if (cstate.navigationRequest === controller) cstate.navigationRequest = null; });
+  }
+
+  function closeChatAgents(returnFocus) {
+    var drawer = document.getElementById("chat-agents");
+    var backdrop = document.getElementById("chat-agent-backdrop");
+    var button = document.getElementById("chat-agents-btn");
+    if (compactChatUI() && cstate.viewStack[cstate.viewStack.length - 1] === "agents") closeChatView();
+    if (drawer) drawer.classList.remove("open");
+    if (backdrop) backdrop.hidden = true;
+    if (button) button.setAttribute("aria-expanded", "false");
+    syncChatView(false);
+    if (!compactChatUI() && returnFocus !== false) restoreChatAuxiliaryFocus("agents");
+  }
+
+  function openChatAgents(opener) {
+    var drawer = document.getElementById("chat-agents");
+    var button = document.getElementById("chat-agents-btn");
+    if (compactChatUI()) {
+      button.setAttribute("aria-expanded", "true");
+      openChatView("agents", opener);
+      return;
+    }
+    requestChatAuxiliary("agents");
+    cstate.auxiliaryFocus.agents = opener || document.activeElement;
+    drawer.classList.add("open");
+    button.setAttribute("aria-expanded", "true");
+    document.getElementById("chat-agent-backdrop").hidden = false;
+    syncChatView(false);
+    focusChatPanel("agents");
+  }
+
+  function loadChatLifecycle() {
+    if (!cstate.session) return Promise.resolve(null);
+    var sessionID = cstate.session;
+    return fetch(lifecycleURL(), { headers: { Accept: "application/json" } })
+      .then(lifecycleResponse)
+      .then(function (data) {
+        if (cstate.session !== sessionID) return null;
+        cstate.lifecycle = data;
+        cstate.lifecycleError = "";
+        renderChatLifecycle();
+        renderChatManagement();
+        updateChatDeliveryControls();
+        loadChatInbox(true);
+        loadChatNavigation();
+        return data;
+      })
+      .catch(function (err) {
+        if (cstate.session === sessionID) {
+          cstate.lifecycleError = err.message;
+          renderChatLifecycle();
+          renderChatManagement();
+        }
+        return null;
+      });
+  }
+
+  function lifecycleFingerprint(data) {
+    var session = data && data.session;
+    var revert = session && session.revert;
+    return revert ? session.id + ":" + revert.messageID + ":" + session.updated : "";
+  }
+
+  function appendRevertFiles(parent, files) {
+    var list = document.createElement("div");
+    list.className = "chat-revert-files";
+    if (!files || !files.length) {
+      list.textContent = "No file restoration is reported for this staged revert.";
+    } else {
+      files.forEach(function (file) {
+        var detail = document.createElement("details");
+        detail.className = "chat-revert-file";
+        var summary = document.createElement("summary");
+        var name = document.createElement("code");
+        name.textContent = file.file || "unnamed file";
+        var stats = document.createElement("span");
+        stats.textContent = "+" + (file.additions || 0) + " / -" + (file.deletions || 0);
+        summary.appendChild(name);
+        summary.appendChild(stats);
+        detail.appendChild(summary);
+        if (file.patch) {
+          var patch = document.createElement("pre");
+          patch.textContent = file.patch;
+          detail.appendChild(patch);
+        }
+        list.appendChild(detail);
+      });
+    }
+    parent.appendChild(list);
+  }
+
+  function renderChatLifecycle() {
+    var root = document.getElementById("chat-lifecycle");
+    if (!root) return;
+    var state = document.getElementById("chat-lifecycle-state");
+    var panel = document.getElementById("chat-revert-panel");
+    var compact = document.getElementById("chat-compact-btn");
+    var compactNote = document.getElementById("chat-compact-note");
+    panel.innerHTML = "";
+    if (cstate.lifecycleError) state.textContent = "Session state unavailable: " + cstate.lifecycleError;
+    else if (!cstate.lifecycle) state.textContent = "Loading session state...";
+    else state.textContent = cstate.lifecycle.busy ? "OpenCode is working. History changes are paused." : "Session is idle.";
+
+    var data = cstate.lifecycle;
+    var cap = data && data.capabilities || {};
+    var session = data && data.session;
+    var staged = session && session.revert;
+    if (staged) {
+      var box = document.createElement("div");
+      box.className = "chat-revert-staged";
+      var heading = document.createElement("strong");
+      heading.textContent = "Staged revert";
+      box.appendChild(heading);
+      var range = document.createElement("p");
+      range.textContent = "Transcript range: " + staged.messageID + " through the current end of the conversation.";
+      box.appendChild(range);
+      appendRevertFiles(box, staged.files || []);
+      var fingerprint = lifecycleFingerprint(data);
+      var label = document.createElement("label");
+      label.className = "chat-revert-confirm";
+      label.textContent = cstate.revertPreviewValid ? "Type the fingerprint to confirm" : "Refresh this preview before committing";
+      var code = document.createElement("code");
+      code.textContent = fingerprint;
+      label.appendChild(code);
+      var input = document.createElement("input");
+      input.id = "chat-revert-fingerprint";
+      input.type = "text";
+      input.autocomplete = "off";
+      input.spellcheck = false;
+      label.appendChild(input);
+      box.appendChild(label);
+      var actions = document.createElement("div");
+      actions.className = "chat-lifecycle-actions";
+      var refresh = document.createElement("button");
+      refresh.type = "button";
+      refresh.dataset.chatRevertRefresh = staged.messageID;
+      refresh.textContent = "Refresh preview";
+      refresh.hidden = cstate.revertPreviewValid;
+      var commit = document.createElement("button");
+      commit.type = "button";
+      commit.dataset.chatRevertCommit = "1";
+      commit.textContent = "Commit revert";
+      commit.disabled = !cstate.revertPreviewValid || !!(data && data.busy) || cstate.lifecycleAction;
+      var cancel = document.createElement("button");
+      cancel.type = "button";
+      cancel.className = "btn-ghost";
+      cancel.dataset.chatRevertCancel = "1";
+      cancel.textContent = "Cancel staged revert";
+      cancel.disabled = cstate.lifecycleAction;
+      actions.appendChild(refresh);
+      actions.appendChild(commit);
+      actions.appendChild(cancel);
+      box.appendChild(actions);
+      input.addEventListener("input", function () {
+        commit.disabled = input.value !== fingerprint || !!data.busy || cstate.lifecycleAction;
+        cancel.disabled = input.value !== fingerprint || cstate.lifecycleAction;
+      });
+      cancel.disabled = true;
+      panel.appendChild(box);
+    } else if (cstate.revertTarget) {
+      var preview = document.createElement("div");
+      preview.className = "chat-revert-preview";
+      var title = document.createElement("strong");
+      title.textContent = "Read-only revert preview";
+      preview.appendChild(title);
+      var transcript = document.getElementById("chat-transcript");
+      var messages = Array.prototype.slice.call(transcript.querySelectorAll("[data-message]"));
+      var index = messages.findIndex(function (message) { return message.dataset.message === cstate.revertTarget; });
+      var affected = index < 0 ? [] : messages.slice(index);
+      var rangeText = document.createElement("p");
+      rangeText.textContent = "Transcript range: " + cstate.revertTarget + " through " + (affected.length ? affected[affected.length - 1].dataset.message : "the current end") + " (" + affected.length + " loaded messages).";
+      preview.appendChild(rangeText);
+      var diff = document.createElement("div");
+      diff.innerHTML = cstate.revertPreviewHTML || '<p class="muted">Loading affected files...</p>';
+      preview.appendChild(diff);
+      var files = document.createElement("label");
+      var check = document.createElement("input");
+      check.id = "chat-revert-files";
+      check.type = "checkbox";
+      files.appendChild(check);
+      files.appendChild(document.createTextNode(" Restore the displayed file changes as well as conversation history"));
+      preview.appendChild(files);
+      var stage = document.createElement("button");
+      stage.type = "button";
+      stage.dataset.chatRevertStage = cstate.revertTarget;
+      stage.textContent = "Stage this revert";
+      stage.disabled = !cstate.revertPreviewHTML || !data || data.busy || !cap.revertStage || cstate.lifecycleAction;
+      preview.appendChild(stage);
+      panel.appendChild(preview);
+    } else {
+      var hint = document.createElement("p");
+      hint.className = "muted";
+      hint.textContent = cap.revertStage === false ? "Revert is unavailable on this OpenCode service." : "Choose Preview revert on a transcript message to inspect the affected range and files.";
+      panel.appendChild(hint);
+    }
+
+    var usage = cstate.controls && cstate.controls.usage || {};
+    var pending = !!(cstate.session && cstate.compactPending[cstate.session]);
+    var canCompact = !!(data && cap.compact && !data.busy && usage.contextAvailable && usage.contextLimit && !pending && !cstate.lifecycleAction);
+    compact.disabled = !canCompact;
+    compact.textContent = pending ? "Compaction in progress..." : "Compact context";
+    if (pending) compactNote.textContent = "Progress and any failure appear asynchronously in the transcript.";
+    else if (!cap.compact && data) compactNote.textContent = "Manual compaction is unavailable on this OpenCode service.";
+    else if (data && data.busy) compactNote.textContent = "Wait for the active response to finish before compacting.";
+    else if (!usage.contextAvailable || !usage.contextLimit) compactNote.textContent = "Active context usage is required before manual compaction.";
+    else compactNote.textContent = "Active context: " + conciseTokens(usage.estimatedContext) + " / " + conciseTokens(usage.contextLimit) + " (" + (usage.percent || 0) + "%). Progress appears in the transcript.";
+  }
+
+  function renderChatManagement() {
+    var data = cstate.lifecycle;
+    var cap = data && data.capabilities || {};
+    var session = data && data.session;
+    var title = document.getElementById("chat-rename-title");
+    var rename = document.getElementById("chat-rename-btn");
+    var exportButton = document.getElementById("chat-export-btn");
+    var exportNote = document.getElementById("chat-export-note");
+    var unlink = document.getElementById("chat-unlink-btn");
+    var deletion = document.getElementById("chat-delete-preview-btn");
+    if (!title || !rename) return;
+    if (session && document.activeElement !== title) title.value = session.title || "";
+    title.disabled = !session || !cap.rename;
+    rename.disabled = !session || !cap.rename || cstate.lifecycleAction;
+    exportButton.disabled = !session || !cap.export || cstate.lifecycleAction;
+    exportNote.textContent = data && !cap.export ? "Sanitized export is unavailable on this OpenCode version." : "Export always requests OpenCode sanitization.";
+    unlink.disabled = !session || !data.mapping || cstate.lifecycleAction;
+    deletion.disabled = !session || !cap.delete || cstate.lifecycleAction;
+    deletion.textContent = cap.delete || !data ? "Review OpenCode deletion" : "OpenCode deletion unavailable";
+    renderChatDeletePreview();
+  }
+
+  function renderChatDeletePreview() {
+    var root = document.getElementById("chat-delete-preview");
+    if (!root) return;
+    root.innerHTML = "";
+    var preview = cstate.deletePreview;
+    root.hidden = !preview;
+    if (!preview) return;
+    var warning = document.createElement("p");
+    warning.textContent = "Delete this OpenCode session and " + (preview.count - 1) + " descendant(s). All " + preview.mappings.length + " affected lessmess mapping(s) will also be removed.";
+    root.appendChild(warning);
+    var fingerprint = document.createElement("p");
+    fingerprint.appendChild(document.createTextNode("Current tree fingerprint: "));
+    var code = document.createElement("code");
+    code.textContent = preview.fingerprint;
+    fingerprint.appendChild(code);
+    root.appendChild(fingerprint);
+    var list = document.createElement("ul");
+    (preview.sessions || []).forEach(function (item) {
+      var row = document.createElement("li");
+      row.textContent = (item.depth ? "Child: " : "") + (item.title || item.sessionID) + " (" + item.sessionID + ")";
+      list.appendChild(row);
+    });
+    (preview.mappings || []).forEach(function (item) {
+      var row = document.createElement("li");
+      row.textContent = "Mapping: " + item.session + " -> " + (item.change || "Unassigned") + (item.task ? " / " + item.task : "");
+      list.appendChild(row);
+    });
+    root.appendChild(list);
+    var label = document.createElement("label");
+    label.textContent = "Type the current title exactly to confirm";
+    var input = document.createElement("input");
+    input.id = "chat-delete-title";
+    input.type = "text";
+    input.autocomplete = "off";
+    label.appendChild(input);
+    root.appendChild(label);
+    var confirm = document.createElement("button");
+    confirm.type = "button";
+    confirm.className = "chat-delete-confirm";
+    confirm.dataset.chatDeleteConfirm = "1";
+    confirm.textContent = "Delete OpenCode tree and mappings";
+    confirm.disabled = true;
+    input.addEventListener("input", function () { confirm.disabled = input.value !== preview.title || cstate.lifecycleAction; });
+    root.appendChild(confirm);
+  }
+
+  function sessionManagementRequest(path, method, body) {
+    var options = { method: method, headers: { Accept: "application/json" } };
+    if (body !== undefined) {
+      options.headers["Content-Type"] = "application/json";
+      options.body = JSON.stringify(body);
+    }
+    return fetch(lifecycleURL(path), options).then(lifecycleResponse);
+  }
+
+  function safeSessionExportFilename(sessionID) {
+    return "session-" + sessionID.replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 128) + ".json";
+  }
+
+  function previewChatRevert(messageID) {
+    if (!cstate.session || cstate.lifecycleAction) return;
+    var sessionID = cstate.session;
+    cstate.lifecycleAction = true;
+    cstate.revertTarget = messageID;
+    cstate.revertPreviewHTML = "";
+    cstate.revertPreviewValid = false;
+    openChatControls();
+    renderChatLifecycle();
+    Promise.all([
+      loadChatLifecycle(),
+      fetch(lifecycleURL("/chat/diff?from=" + encodeURIComponent(messageID)), { headers: { Accept: "text/html" } }).then(function (r) {
+        if (!r.ok) throw new Error("Affected files unavailable (HTTP " + r.status + ")");
+        return r.text();
+      })
+    ]).then(function (values) {
+      if (cstate.session !== sessionID) return;
+      cstate.revertPreviewHTML = values[1];
+      cstate.revertPreviewValid = true;
+    }).catch(function (err) {
+      if (cstate.session === sessionID) cstate.lifecycleError = err.message;
+    }).finally(function () {
+      if (cstate.session === sessionID) {
+        cstate.lifecycleAction = false;
+        renderChatLifecycle();
+      }
+    });
+  }
+
+  function runLifecycleAction(path, body, onSuccess) {
+    if (!cstate.session || cstate.lifecycleAction) return Promise.reject(new Error("A history action is already in progress"));
+    var sessionID = cstate.session;
+    cstate.lifecycleAction = true;
+    renderChatLifecycle();
+    return fetch(lifecycleURL(path), {
+      method: "POST",
+      headers: { Accept: "application/json", "Content-Type": "application/json" },
+      body: JSON.stringify(body || {})
+    }).then(lifecycleResponse).then(function (result) {
+      if (cstate.session === sessionID && onSuccess) onSuccess(result);
+      return result;
+    }).catch(function (err) {
+      if (cstate.session === sessionID) {
+        cstate.lifecycleError = err.message;
+        if (err.status === 409) {
+          cstate.revertPreviewValid = false;
+          cstate.revertPreviewHTML = "";
+        }
+      }
+      throw err;
+    }).finally(function () {
+      if (cstate.session === sessionID) {
+        cstate.lifecycleAction = false;
+        loadChatLifecycle();
+        renderChatLifecycle();
+      }
+    });
+  }
+
+  function loadChatControls() {
+    if (!cstate.session) return Promise.resolve();
+    var sessionID = cstate.session;
+    document.getElementById("chat-controls-note").textContent = "Loading controls…";
+    return fetch("/api/sessions/" + encodeURIComponent(sessionID) + "/chat/controls", { headers: { Accept: "application/json" } })
+      .then(function (r) { if (!r.ok) return r.json().catch(function () { return {}; }).then(function (j) { throw new Error(j.error || "Controls unavailable"); }); return r.json(); })
+      .then(function (data) { if (cstate.session === sessionID) renderChatControls(data); })
+      .catch(function (err) { if (cstate.session === sessionID) document.getElementById("chat-controls-note").textContent = err.message; });
+  }
+
+  function inferredChatMIME(file) {
+    if (file.type) return file.type.toLowerCase();
+    var ext = file.name.toLowerCase().split(".").pop();
+    return ({ txt: "text/plain", md: "text/markdown", json: "application/json", xml: "application/xml", js: "application/javascript", css: "text/css", html: "text/html", yaml: "application/yaml", yml: "application/yaml", toml: "application/toml", svg: "image/svg+xml", png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp" })[ext] || "text/plain";
+  }
+
+  function addChatFiles(list) {
+    if (cstate.session) delete cstate.deliveryIDs[cstate.session];
+    var files = chatDraftFiles();
+    var refs = chatDraftReferences();
+    var total = files.reduce(function (sum, item) { return sum + item.file.size; }, 0);
+    Array.prototype.forEach.call(list, function (file) {
+      var mime = inferredChatMIME(file);
+      if (files.length + refs.length >= 10) { setChatStatus("At most 10 files and references are allowed.", true); return; }
+      if (file.size > 20 * 1024 * 1024 || total + file.size > 20 * 1024 * 1024) { setChatStatus("Attachments may be at most 20 MiB each and total.", true); return; }
+      if (!mime) { setChatStatus("Unsupported file type: " + file.name, true); return; }
+      var preview = /^(image\/(png|jpeg|gif|webp))$/.test(mime) ? URL.createObjectURL(file) : "";
+      files.push({ file: file, mime: mime, preview: preview });
+      total += file.size;
+    });
+    renderChatDraftFiles();
+  }
+
+  function loadChatReferences() {
+    var list = document.getElementById("chat-reference-list");
+    list.textContent = "Loading…";
+    return fetch("/api/sessions/" + encodeURIComponent(cstate.session) + "/chat/references", { headers: { Accept: "application/json" } })
+      .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+      .then(function (data) { cstate.referenceCatalog = data.references || []; renderChatReferenceList(); })
+      .catch(function () { list.textContent = "Could not load project references."; });
+  }
+
+  function renderChatReferenceList() {
+    var list = document.getElementById("chat-reference-list");
+    var query = document.getElementById("chat-reference-search").value.toLowerCase();
+    var selected = {};
+    chatDraftReferences().forEach(function (ref) { selected[ref.alias] = true; });
+    list.innerHTML = "";
+    cstate.referenceCatalog.forEach(function (ref) {
+      if (query && (ref.name + " " + (ref.description || "")).toLowerCase().indexOf(query) < 0) return;
+      var label = document.createElement("label");
+      var check = document.createElement("input");
+      check.type = "checkbox";
+      check.dataset.chatReference = ref.alias;
+      check.checked = !!selected[ref.alias];
+      label.appendChild(check);
+      var text = document.createElement("span");
+      text.textContent = ref.name;
+      label.appendChild(text);
+      list.appendChild(label);
+    });
+    if (!list.children.length) list.textContent = "No matching references.";
+  }
+
+  function closeChatTasks(returnFocus) {
+    var panel = document.getElementById("chat-tasks");
+    var toggle = document.getElementById("chat-tasks-btn");
+    var backdrop = document.getElementById("chat-task-backdrop");
+    if (compactChatUI() && cstate.viewStack[cstate.viewStack.length - 1] === "work") closeChatView();
+    if (panel) panel.classList.remove("open");
+    if (toggle) toggle.setAttribute("aria-expanded", "false");
+    if (backdrop) backdrop.hidden = true;
+    syncChatView(false);
+    if (!compactChatUI() && returnFocus !== false) restoreChatAuxiliaryFocus("work");
+  }
+
+  function openChatTasks(opener) {
+    var panel = document.getElementById("chat-tasks");
+    var button = document.getElementById("chat-tasks-btn");
+    if (compactChatUI()) {
+      button.setAttribute("aria-expanded", "true");
+      openChatView("work", opener);
+      return;
+    }
+    requestChatAuxiliary("work");
+    cstate.auxiliaryFocus.work = opener || document.activeElement;
+    panel.classList.add("open");
+    button.setAttribute("aria-expanded", "true");
+    document.getElementById("chat-task-backdrop").hidden = false;
+    syncChatView(false);
+    focusChatPanel("work");
+  }
+
+  function setChatTasks(src, change) {
+    var panel = document.getElementById("chat-tasks");
+    var toggle = document.getElementById("chat-tasks-btn");
+    if (!panel || !toggle) return;
+    if (!change) closeChatTasks();
+    panel.innerHTML = "";
+    panel.hidden = !change;
+    toggle.hidden = !change;
+    if (change) renderTaskPanel(panel, src, change);
+  }
+
+  function closeChatMore(returnFocus) {
+    var button = document.getElementById("chat-more-btn");
+    var menu = document.getElementById("chat-more-menu");
+    var backdrop = document.getElementById("chat-more-backdrop");
+    if (!button || !menu || menu.hidden) return false;
+    menu.hidden = true;
+    backdrop.hidden = true;
+    button.setAttribute("aria-expanded", "false");
+    if (returnFocus !== false && button.isConnected) button.focus({ preventScroll: true });
+    return true;
+  }
+
+  function openChatMore() {
+    var button = document.getElementById("chat-more-btn");
+    var menu = document.getElementById("chat-more-menu");
+    var backdrop = document.getElementById("chat-more-backdrop");
+    menu.hidden = false;
+    backdrop.hidden = false;
+    button.setAttribute("aria-expanded", "true");
+    var first = menu.querySelector('[role="menuitem"]:not([disabled])');
+    if (first) first.focus({ preventScroll: true });
+  }
+
+  (function initChat() {
+    var composer = document.getElementById("chat-composer");
+    if (!composer) return;
+    var prompt = document.getElementById("chat-prompt");
+    var send = document.getElementById("chat-send-btn");
+    var fileInput = document.getElementById("chat-file-input");
+    var actionsButton = document.getElementById("chat-actions-btn");
+    var actionsSheet = document.getElementById("chat-actions-sheet");
+    var actionsBackdrop = document.getElementById("chat-actions-backdrop");
+    var moreButton = document.getElementById("chat-more-btn");
+    var moreMenu = document.getElementById("chat-more-menu");
+    var moreBackdrop = document.getElementById("chat-more-backdrop");
+    var referencePicker = document.getElementById("chat-reference-picker");
+    var referenceButton = document.getElementById("chat-reference-btn");
+
+    function closeChatReferences(returnFocus) {
+      if (referencePicker.hidden) return false;
+      referencePicker.hidden = true;
+      referenceButton.setAttribute("aria-expanded", "false");
+      if (returnFocus !== false) actionsButton.focus({ preventScroll: true });
+      return true;
+    }
+
+    function closeChatActions(returnFocus) {
+      if (actionsSheet.hidden) return false;
+      actionsSheet.hidden = true;
+      actionsBackdrop.hidden = true;
+      actionsButton.setAttribute("aria-expanded", "false");
+      if (returnFocus !== false) actionsButton.focus({ preventScroll: true });
+      return true;
+    }
+
+    function openChatActions() {
+      closeChatMore(false);
+      closeChatReferences(false);
+      actionsSheet.hidden = false;
+      actionsBackdrop.hidden = false;
+      actionsButton.setAttribute("aria-expanded", "true");
+      var first = actionsSheet.querySelector("button:not([disabled])");
+      if (first) first.focus({ preventScroll: true });
+    }
+
+    actionsButton.addEventListener("click", function () {
+      if (!closeChatActions(true)) openChatActions();
+    });
+    actionsBackdrop.addEventListener("click", function () { closeChatActions(true); });
+    document.getElementById("chat-reference-close").addEventListener("click", function () { closeChatReferences(true); });
+    moreButton.addEventListener("click", function () {
+      if (!closeChatMore(true)) {
+        closeChatActions(false);
+        closeChatReferences(false);
+        openChatMore();
+      }
+    });
+    moreBackdrop.addEventListener("click", function () { closeChatMore(true); });
+    moreMenu.addEventListener("click", function (e) {
+      var item = e.target.closest("[data-chat-more-target]");
+      if (!item) return;
+      var target = document.getElementById(item.dataset.chatMoreTarget);
+      closeChatMore(false);
+      if (target && target.id === "chat-controls-btn") openChatControls(moreButton);
+      else if (target) target.click();
+    });
+    document.querySelector(".chat-add-file").addEventListener("click", function () {
+      closeChatActions(true);
+      fileInput.click();
+    });
+    prompt.addEventListener("input", function () {
+      if (cstate.session) {
+        cstate.drafts[cstate.session] = prompt.value;
+        delete cstate.deliveryIDs[cstate.session];
+      }
+      resizeChatPrompt();
+    });
+    prompt.addEventListener("keydown", function (e) {
+      if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+        e.preventDefault();
+        composer.requestSubmit();
+      }
+    });
+    composer.addEventListener("submit", function (e) {
+      e.preventDefault();
+      var text = prompt.value.trim();
+      var files = chatDraftFiles(), refs = chatDraftReferences(), skills = chatDraftSkills();
+      if ((!text && !files.length && !refs.length && !skills.length) || cstate.mutation) return;
+      var sessionID = cstate.session;
+      var busy = chatBusy();
+      var cap = cstate.lifecycle && cstate.lifecycle.capabilities || {};
+      if (busy && (!cap.promptDelivery || !cap.promptDeliveryID)) {
+        setChatStatus("Durable follow-ups are unavailable on this OpenCode service.", true);
+        return;
+      }
+      if (busy && !cap.promptDeliveryFiles && (files.length || refs.length)) {
+        setChatStatus("This service cannot deliver attachments or references while busy. Remove them or wait until the session is idle.", true);
+        return;
+      }
+      if (busy && !cap.promptDeliverySkills && skills.length) {
+        setChatStatus("This service cannot deliver skills while busy. Remove them or wait until the session is idle.", true);
+        return;
+      }
+      var body = new FormData();
+      body.append("text", text);
+      files.forEach(function (item) {
+        var upload = item.file.type === item.mime ? item.file : new File([item.file], item.file.name, { type: item.mime });
+        body.append("files", upload, item.file.name);
+      });
+      refs.forEach(function (ref) { body.append("references", ref.alias); });
+      skills.forEach(function (skill) { body.append("skills", skill.id); });
+      var request;
+      if (busy) {
+        if (!cstate.deliveryIDs[sessionID]) cstate.deliveryIDs[sessionID] = newChatMessageID();
+        body.append("id", cstate.deliveryIDs[sessionID]);
+        body.append("delivery", document.getElementById("chat-delivery-mode").value);
+        request = deliverBusyPrompt(body, send);
+      } else {
+        request = chatMutation("prompt", body, send);
+      }
+      request.then(function () {
+        cstate.drafts[sessionID] = "";
+        clearChatDraftFiles(sessionID);
+        cstate.skills[sessionID] = [];
+        if (cstate.session === sessionID) {
+          prompt.value = "";
+          fileInput.value = "";
+          renderChatDraftFiles();
+          renderChatSkillChips();
+          resizeChatPrompt();
+        }
+      }).catch(function () {});
+    });
+    fileInput.addEventListener("change", function () { addChatFiles(fileInput.files); fileInput.value = ""; });
+    document.getElementById("chat-draft-files").addEventListener("click", function (e) {
+      var fileButton = e.target.closest("[data-remove-chat-file]");
+      if (fileButton) {
+        delete cstate.deliveryIDs[cstate.session];
+        var removed = chatDraftFiles().splice(Number(fileButton.dataset.removeChatFile), 1)[0];
+        if (removed) revokeChatFile(removed);
+        renderChatDraftFiles();
+      }
+      var refButton = e.target.closest("[data-remove-chat-reference]");
+      if (refButton) {
+        delete cstate.deliveryIDs[cstate.session];
+        cstate.references[cstate.session] = chatDraftReferences().filter(function (ref) { return ref.alias !== refButton.dataset.removeChatReference; });
+        renderChatDraftFiles();
+        renderChatReferenceList();
+      }
+    });
+    document.getElementById("chat-skill-chips").addEventListener("click", function (e) {
+      var button = e.target.closest("[data-remove-chat-skill]");
+      if (!button) return;
+      delete cstate.deliveryIDs[cstate.session];
+      cstate.skills[cstate.session] = chatDraftSkills().filter(function (skill) { return skill.id !== button.dataset.removeChatSkill; });
+      renderChatSkillChips();
+    });
+    document.getElementById("chat-inbox").addEventListener("change", function (e) {
+      var select = e.target.closest("[data-inbox-delivery]");
+      if (!select) return;
+      mutateChatInbox(select.dataset.inboxDelivery, "PATCH", { delivery: select.value }, select).catch(function () { loadChatInbox(false); });
+    });
+    document.getElementById("chat-inbox").addEventListener("click", function (e) {
+      var button = e.target.closest("[data-inbox-cancel]");
+      if (!button) return;
+      mutateChatInbox(button.dataset.inboxCancel, "DELETE", null, button).catch(function () { loadChatInbox(false); });
+    });
+    document.getElementById("chat-reference-btn").addEventListener("click", function (e) {
+      closeChatActions(false);
+      referencePicker.hidden = !referencePicker.hidden;
+      e.currentTarget.setAttribute("aria-expanded", String(!referencePicker.hidden));
+      if (!referencePicker.hidden) loadChatReferences().then(function () { document.getElementById("chat-reference-search").focus({ preventScroll: true }); });
+      else actionsButton.focus({ preventScroll: true });
+    });
+    document.getElementById("chat-skill-btn").addEventListener("click", function () {
+      closeChatActions(false);
+      openChatControls(actionsButton).then(function () {
+        var skill = document.querySelector("#chat-skill-list [data-attach-skill]");
+        (skill || document.getElementById("chat-controls-search")).focus({ preventScroll: true });
+      });
+    });
+    document.getElementById("chat-reference-search").addEventListener("input", renderChatReferenceList);
+    document.getElementById("chat-reference-list").addEventListener("change", function (e) {
+      var input = e.target.closest("[data-chat-reference]");
+      if (!input) return;
+      var ref = cstate.referenceCatalog.find(function (item) { return item.alias === input.dataset.chatReference; });
+      var selected = chatDraftReferences();
+      if (input.checked && ref && !selected.some(function (item) { return item.alias === ref.alias; })) {
+        if (selected.length + chatDraftFiles().length >= 10) { input.checked = false; setChatStatus("At most 10 files and references are allowed.", true); return; }
+        selected.push(ref);
+      } else if (!input.checked) {
+        cstate.references[cstate.session] = selected.filter(function (item) { return item.alias !== input.dataset.chatReference; });
+      }
+      delete cstate.deliveryIDs[cstate.session];
+      renderChatDraftFiles();
+    });
+    document.getElementById("chat-interrupt-btn").addEventListener("click", function (e) {
+      chatMutation("interrupt", undefined, e.currentTarget).catch(function () {});
+    });
+    document.getElementById("chat-controls-btn").addEventListener("click", function (e) {
+      var sheet = document.getElementById("chat-controls-sheet");
+      if (sheet.hidden || compactChatUI()) openChatControls(e.currentTarget);
+      else closeChatControls();
+    });
+    document.getElementById("chat-controls-close").addEventListener("click", closeChatControls);
+    document.getElementById("chat-lifecycle-refresh").addEventListener("click", function (e) {
+      if (cstate.lifecycleAction) return;
+      e.currentTarget.disabled = true;
+      loadChatLifecycle().finally(function () { e.currentTarget.disabled = false; });
+    });
+    document.getElementById("chat-compact-btn").addEventListener("click", function () {
+      var data = cstate.lifecycle;
+      if (!data || data.busy || !data.capabilities.compact || !cstate.controls || !cstate.controls.usage.contextAvailable || !cstate.controls.usage.contextLimit) return;
+      if (!window.confirm("Compact this session's context now? The transcript remains available.")) return;
+      runLifecycleAction("/compact", {
+        delivery: "queue",
+        confirmation: { sessionID: data.session.id, updated: data.session.updated }
+      }, function () {
+        cstate.compactPending[cstate.session] = true;
+        setChatStatus("Compaction queued. Progress will appear in the transcript.");
+        refreshChat();
+      }).catch(function () {});
+    });
+    document.getElementById("chat-rename-btn").addEventListener("click", function (e) {
+      var value = document.getElementById("chat-rename-title").value.trim();
+      if (!value || !cstate.lifecycle || cstate.lifecycleAction) return;
+      var button = e.currentTarget;
+      cstate.lifecycleAction = true;
+      button.disabled = true;
+      sessionManagementRequest("", "PATCH", { title: value }).then(function () {
+        if (!cstate.lifecycle) return;
+        cstate.lifecycle.session.title = value;
+        cstate.title = value;
+        document.getElementById("chat-title").textContent = value;
+        setChatStatus("Session renamed. The persisted fallback title was updated.");
+        return loadChatNavigation();
+      }).catch(function (err) {
+        setChatStatus("Rename failed: " + err.message, true);
+      }).finally(function () {
+        cstate.lifecycleAction = false;
+        renderChatManagement();
+      });
+    });
+    document.getElementById("chat-export-btn").addEventListener("click", function (e) {
+      if (!cstate.session || cstate.lifecycleAction) return;
+      var sessionID = cstate.session, button = e.currentTarget;
+      cstate.lifecycleAction = true;
+      button.disabled = true;
+      fetch(lifecycleURL("/export"), { headers: { Accept: "application/json" } }).then(function (response) {
+        if (!response.ok) return lifecycleResponse(response);
+        return response.blob().then(function (blob) {
+          var href = URL.createObjectURL(blob);
+          var link = document.createElement("a");
+          link.href = href;
+          link.download = safeSessionExportFilename(sessionID);
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+          URL.revokeObjectURL(href);
+          setChatStatus("Sanitized export downloaded.");
+        });
+      }).catch(function (err) {
+        setChatStatus("Export failed: " + err.message, true);
+      }).finally(function () {
+        cstate.lifecycleAction = false;
+        renderChatManagement();
+      });
+    });
+    document.getElementById("chat-unlink-btn").addEventListener("click", function () {
+      if (!cstate.lifecycle || !cstate.lifecycle.mapping || cstate.lifecycleAction) return;
+      if (!window.confirm("Unlink this lessmess mapping only? The OpenCode session and its conversation will remain.")) return;
+      cstate.lifecycleAction = true;
+      sessionManagementRequest("/mapping", "DELETE").then(function () {
+        if (cstate.lifecycle) cstate.lifecycle.mapping = null;
+        setChatStatus("Mapping unlinked. The OpenCode session remains available.");
+        loadChatNavigation();
+      }).catch(function (err) {
+        setChatStatus("Unlink failed: " + err.message, true);
+      }).finally(function () {
+        cstate.lifecycleAction = false;
+        renderChatManagement();
+      });
+    });
+    document.getElementById("chat-delete-preview-btn").addEventListener("click", function () {
+      if (!cstate.session || cstate.lifecycleAction) return;
+      var sessionID = cstate.session;
+      cstate.lifecycleAction = true;
+      cstate.deletePreview = null;
+      renderChatManagement();
+      sessionManagementRequest("/delete-preview", "GET").then(function (preview) {
+        if (cstate.session === sessionID) cstate.deletePreview = preview;
+      }).catch(function (err) {
+        setChatStatus("Deletion preview failed: " + err.message, true);
+      }).finally(function () {
+        if (cstate.session === sessionID) {
+          cstate.lifecycleAction = false;
+          renderChatManagement();
+        }
+      });
+    });
+    document.getElementById("chat-delete-preview").addEventListener("click", function (e) {
+      var button = e.target.closest("[data-chat-delete-confirm]");
+      var preview = cstate.deletePreview;
+      var input = document.getElementById("chat-delete-title");
+      if (!button || !preview || !input || input.value !== preview.title || cstate.lifecycleAction) return;
+      if (!window.confirm("Permanently delete this OpenCode session, all displayed descendants, and every displayed lessmess mapping? This is not unlink.")) return;
+      cstate.lifecycleAction = true;
+      button.disabled = true;
+      sessionManagementRequest("", "DELETE", { confirmation: {
+        sessionID: preview.sessionID, fingerprint: preview.fingerprint, count: preview.count, title: preview.title
+      }}).then(function () {
+        setChatStatus("OpenCode session tree and affected mappings deleted.");
+        closeChat();
+      }).catch(function (err) {
+        if (err.status === 409) cstate.deletePreview = null;
+        setChatStatus("Delete failed: " + err.message, true);
+      }).finally(function () {
+        cstate.lifecycleAction = false;
+        if (chatOpen()) renderChatManagement();
+      });
+    });
+    document.getElementById("chat-agent-select").addEventListener("change", function (e) {
+      var select = e.currentTarget, prior = cstate.controls && cstate.controls.agent;
+      chatMutation("agent", { agent: select.value }, select).then(loadChatControls).catch(function () { select.value = prior || ""; });
+    });
+    document.getElementById("chat-model-select").addEventListener("change", function (e) {
+      var select = e.currentTarget, prior = cstate.controls && cstate.controls.model;
+      chatMutation("model", { model: select.value }, select).then(loadChatControls).catch(function () { select.value = prior || ""; });
+    });
+    document.getElementById("chat-command-run").addEventListener("click", function (e) {
+      var command = document.getElementById("chat-command-select").value;
+      if (!command) { setChatStatus("Choose a command first.", true); return; }
+      chatMutation("command", { command: command, arguments: document.getElementById("chat-command-args").value }, e.currentTarget).then(function () {
+        document.getElementById("chat-command-args").value = "";
+        closeChatControls();
+      }).catch(function () {});
+    });
+    document.getElementById("chat-skill-list").addEventListener("click", function (e) {
+      var attach = e.target.closest("[data-attach-skill]");
+      var activate = e.target.closest("[data-activate-skill]");
+      var id = attach ? attach.dataset.attachSkill : activate && activate.dataset.activateSkill;
+      if (!id || !cstate.controls) return;
+      var skill = (cstate.controls.skills || []).find(function (item) { return item.id === id; });
+      if (attach && skill) {
+        delete cstate.deliveryIDs[cstate.session];
+        if (!chatDraftSkills().some(function (item) { return item.id === id; })) chatDraftSkills().push(skill);
+        renderChatSkillChips();
+        closeChatControls();
+      } else if (activate) {
+        chatMutation("skill", { skill: id }, activate).then(closeChatControls).catch(function () {});
+      }
+    });
+    document.getElementById("chat-controls-search").addEventListener("input", function (e) {
+      var query = e.currentTarget.value.toLowerCase();
+      ["chat-agent-select", "chat-model-select", "chat-command-select"].forEach(function (id) {
+        document.getElementById(id).querySelectorAll("option[data-search]").forEach(function (option) { option.hidden = !!query && option.dataset.search.indexOf(query) < 0; });
+      });
+      document.querySelectorAll("#chat-skill-list .chat-skill-row").forEach(function (row) { row.hidden = !!query && row.dataset.search.indexOf(query) < 0; });
+    });
+    document.getElementById("chat-terminal-btn").addEventListener("click", function () {
+      var sid = cstate.session, title = cstate.title;
+      openTerminal(sid, title);
+    });
+    document.getElementById("terminal-chat-btn").addEventListener("click", function () {
+      if (tstate.session) openChat(tstate.session, document.getElementById("terminal-title").textContent);
+    });
+    document.getElementById("chat-agents-btn").addEventListener("click", function (e) {
+      var drawer = document.getElementById("chat-agents");
+      if (drawer.classList.contains("open") && !compactChatUI()) closeChatAgents();
+      else openChatAgents(e.currentTarget);
+    });
+    document.getElementById("chat-agent-backdrop").addEventListener("click", closeChatAgents);
+    document.getElementById("chat-tasks-btn").addEventListener("click", function (e) {
+      var panel = document.getElementById("chat-tasks");
+      if (panel.classList.contains("open") && !compactChatUI()) closeChatTasks();
+      else openChatTasks(e.currentTarget);
+    });
+    document.getElementById("chat-task-backdrop").addEventListener("click", closeChatTasks);
+    document.querySelector(".chat-window").addEventListener("click", function (e) {
+      if (e.target.closest("[data-chat-view-back]")) closeChatView();
+    });
+    function menuKeyboard(menu, close) {
+      menu.addEventListener("keydown", function (e) {
+        var items = Array.prototype.filter.call(menu.querySelectorAll('[role="menuitem"]'), function (item) { return !item.disabled && !item.hidden; });
+        var index = items.indexOf(document.activeElement);
+        if (e.key === "Escape") { e.preventDefault(); close(true); return; }
+        if (e.key !== "ArrowDown" && e.key !== "ArrowUp" && e.key !== "Home" && e.key !== "End") return;
+        e.preventDefault();
+        if (e.key === "Home") index = 0;
+        else if (e.key === "End") index = items.length - 1;
+        else index = (index + (e.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
+        if (items[index]) items[index].focus({ preventScroll: true });
+      });
+    }
+    menuKeyboard(actionsSheet, closeChatActions);
+    menuKeyboard(moreMenu, closeChatMore);
+
+    var compactQuery = window.matchMedia && window.matchMedia("(max-width: 840px)");
+    if (compactQuery) compactQuery.addEventListener("change", function () {
+      closeChatActions(false);
+      closeChatMore(false);
+      closeChatReferences(false);
+      closeChatTasks(false);
+      closeChatAgents(false);
+      closeChatControls(false);
+      resetChatViews();
+    });
+    if (window.visualViewport) {
+      cstate.viewportHandler = syncChatViewport;
+      window.visualViewport.addEventListener("resize", cstate.viewportHandler);
+      window.visualViewport.addEventListener("scroll", cstate.viewportHandler);
+    }
+    document.addEventListener("visibilitychange", function () {
+      if (document.hidden) {
+        clearTimeout(cstate.timer);
+        if (cstate.request) cstate.request.abort();
+        cstate.request = null;
+        document.getElementById("chat-transcript").setAttribute("aria-busy", "false");
+      } else if (chatOpen()) {
+        refreshChat();
+        loadChatLifecycle();
+      }
+    });
+    window.addEventListener("beforeunload", function () {
+      Object.keys(cstate.files).forEach(function (sessionID) { (cstate.files[sessionID] || []).forEach(revokeChatFile); });
+    });
+    document.addEventListener("keydown", function (e) {
+      if (e.key !== "Escape") return;
+      var detail = document.getElementById("detail");
+      if (detail && !detail.hidden) return;
+      if (closeChatMessageActions(true) || closeChatActions(true) || closeChatMore(true) || closeChatReferences(true)) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+      }
+    }, true);
+    document.addEventListener("keydown", function (e) {
+      if (e.key !== "Tab" || !chatOpen()) return;
+      var detail = document.getElementById("detail");
+      if (detail && !detail.hidden) return;
+      var win = document.querySelector(".chat-window");
+      var focusable = Array.prototype.filter.call(win.querySelectorAll('button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])'), function (item) {
+        return !item.hidden && !item.closest("[hidden], [inert]") && item.getClientRects().length > 0;
+      });
+      if (!focusable.length) return;
+      var first = focusable[0], last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    });
+  })();
+
+  document.addEventListener("click", function (e) {
+    var menu = e.target.closest("#chat-transcript .chat-message-menu");
+    if (menu) {
+      if (e.target.closest("button")) closeChatMessageActions(false);
+      return;
+    }
+    var message = e.target.closest("#chat-transcript [data-chat-message-actions]");
+    if (message && !e.target.closest("a, button, input, select, textarea, details, summary")) {
+      openChatMessageActions(message, false);
+      return;
+    }
+    closeChatMessageActions(false);
+  }, true);
+
+  document.addEventListener("keydown", function (e) {
+    var message = e.target.closest && e.target.closest("#chat-transcript [data-chat-message-actions]");
+    if (!message || (e.key !== "Enter" && e.key !== " ")) return;
+    if (e.target.closest(".chat-message-menu")) return;
+    e.preventDefault();
+    openChatMessageActions(message, true);
+  });
+
+  document.addEventListener("click", function (e) {
+    var fork = e.target.closest("#chat-transcript [data-chat-fork]");
+    if (fork) {
+      e.preventDefault();
+      var parentID = cstate.session;
+      runLifecycleAction("/fork", { before: fork.dataset.chatFork }, function (result) {
+        if (!result || !result.session) throw new Error("Fork response did not include the child session");
+        cstate.scrolls[parentID] = document.getElementById("chat-transcript").scrollTop;
+        markOpened(result.session.id);
+        openChat(result.session.id, result.session.title || "Forked session");
+      }).catch(function (err) { setChatStatus("Fork failed: " + err.message, true); });
+      return;
+    }
+    var revert = e.target.closest("#chat-transcript [data-chat-revert]");
+    if (revert) {
+      e.preventDefault();
+      previewChatRevert(revert.dataset.chatRevert);
+      return;
+    }
+    var refreshRevert = e.target.closest("[data-chat-revert-refresh]");
+    if (refreshRevert) {
+      e.preventDefault();
+      previewChatRevert(refreshRevert.dataset.chatRevertRefresh);
+      return;
+    }
+    var stageRevert = e.target.closest("[data-chat-revert-stage]");
+    if (stageRevert) {
+      e.preventDefault();
+      var stageData = cstate.lifecycle;
+      if (!stageData || !cstate.revertPreviewValid) return;
+      runLifecycleAction("/revert/stage", {
+        messageID: stageRevert.dataset.chatRevertStage,
+        files: document.getElementById("chat-revert-files").checked,
+        confirmation: { sessionID: stageData.session.id, updated: stageData.session.updated }
+      }, function () {
+        cstate.revertPreviewValid = true;
+        setChatStatus("Revert staged. Review the authoritative staged state before committing or cancelling.");
+      }).catch(function () {});
+      return;
+    }
+    var finalRevert = e.target.closest("[data-chat-revert-commit], [data-chat-revert-cancel]");
+    if (finalRevert) {
+      e.preventDefault();
+      var finalData = cstate.lifecycle;
+      var fingerprint = lifecycleFingerprint(finalData);
+      var fingerprintInput = document.getElementById("chat-revert-fingerprint");
+      if (!finalData || !finalData.session.revert || !fingerprintInput || fingerprintInput.value !== fingerprint) return;
+      var committing = finalRevert.hasAttribute("data-chat-revert-commit");
+      if (committing && !cstate.revertPreviewValid) return;
+      var prompt = committing
+        ? "Commit this staged revert? This applies exactly the displayed staged transcript and file operation."
+        : "Cancel this staged revert? OpenCode may not restore files after clearing a files-enabled stage.";
+      if (!window.confirm(prompt)) return;
+      runLifecycleAction(committing ? "/revert/commit" : "/revert/clear", {
+        confirmation: {
+          sessionID: finalData.session.id,
+          updated: finalData.session.updated,
+          messageID: finalData.session.revert.messageID
+        }
+      }, function () {
+        cstate.revertTarget = null;
+        cstate.revertPreviewHTML = "";
+        cstate.revertPreviewValid = false;
+        setChatStatus(committing ? "Revert committed." : "Staged revert cancelled.");
+        refreshChat();
+      }).catch(function () {});
+      return;
+    }
+    var copy = e.target.closest("#chat-transcript [data-chat-copy]");
+    if (copy) {
+      e.preventDefault();
+      var section = copy.closest("section, .chat-diff-file");
+      var source = section && section.querySelector(".chat-copy-source");
+      if (source && navigator.clipboard) navigator.clipboard.writeText(source.textContent).then(function () {
+        var old = copy.textContent;
+        copy.textContent = "Copied";
+        setTimeout(function () { if (document.contains(copy)) copy.textContent = old; }, 1200);
+      }).catch(function () { setChatStatus("Could not copy text.", true); });
+      return;
+    }
+    var copyMessage = e.target.closest("#chat-transcript [data-chat-copy-message]");
+    if (copyMessage) {
+      e.preventDefault();
+      var message = copyMessage.closest("[data-chat-message-actions]");
+      var text = Array.prototype.map.call(message ? message.querySelectorAll(".chat-markdown") : [], function (part) {
+        return part.textContent.trim();
+      }).filter(Boolean).join("\n\n");
+      if (!text || !navigator.clipboard) {
+        setChatStatus("Could not copy message.", true);
+        return;
+      }
+      navigator.clipboard.writeText(text).then(function () {
+        setChatStatus("Message copied.");
+      }).catch(function () { setChatStatus("Could not copy message.", true); });
+      return;
+    }
+    var more = e.target.closest("#chat-transcript [data-chat-load-more]");
+    if (more) {
+      e.preventDefault();
+      more.disabled = true;
+      fetch(more.dataset.chatLoadMore, { headers: { Accept: "text/html" } })
+        .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.text(); })
+        .then(function (html) {
+          var holder = document.createElement("template");
+          holder.innerHTML = html.trim();
+          var incoming = holder.content.querySelector(".chat-tool-detail");
+          var current = more.closest(".chat-tool-detail");
+          var output = incoming && incoming.querySelector(".chat-tool-output");
+          var target = current && current.querySelector(".chat-tool-output");
+          if (output && target) target.textContent += output.textContent;
+          else if (output && current) current.insertBefore(output.closest("section"), more);
+          var next = incoming && incoming.querySelector("[data-chat-load-more]");
+          if (next) { more.dataset.chatLoadMore = next.dataset.chatLoadMore; more.disabled = false; }
+          else {
+            var capped = incoming && incoming.querySelector(".chat-truncated");
+            if (capped && current) current.appendChild(capped);
+            more.remove();
+          }
+        })
+        .catch(function (err) { more.disabled = false; setChatStatus("Could not load more output. " + err.message, true); });
+      return;
+    }
+    var loadOlder = e.target.closest("#chat-transcript [data-chat-load-older]");
+    if (loadOlder) {
+      e.preventDefault();
+      loadOlderChat(loadOlder);
+      return;
+    }
+    var decision = e.target.closest('#chat-transcript [data-permission-decision], #chat-transcript [data-decision], #chat-transcript button[name="decision"]');
+    if (!decision) return;
+    var request = decision.closest("[data-permission], [data-request-id], [data-permission-id]");
+    if (!request) return;
+    e.preventDefault();
+    var message = request.querySelector('[name="message"]');
+    var requestID = request.dataset.permission || request.dataset.requestId || request.dataset.permissionId;
+    chatMutation(
+      "permissions/" + encodeURIComponent(requestID) + "/reply",
+      { decision: decision.dataset.permissionDecision || decision.dataset.decision || decision.value, message: message && message.value ? message.value : undefined },
+      decision
+    ).catch(function () {});
+  });
+
+  document.addEventListener("submit", function (e) {
+    var permission = e.target.closest("#chat-transcript form[data-permission], #chat-transcript form[data-request-id], #chat-transcript form[data-permission-id]");
+    if (permission) {
+      e.preventDefault();
+      var submitter = e.submitter || permission.querySelector('[type="submit"]');
+      var message = permission.querySelector('[name="message"]');
+      var requestID = permission.dataset.permission || permission.dataset.requestId || permission.dataset.permissionId;
+      chatMutation(
+        "permissions/" + encodeURIComponent(requestID) + "/reply",
+        { decision: submitter && (submitter.dataset.permissionDecision || submitter.dataset.decision || submitter.value), message: message && message.value ? message.value : undefined },
+        submitter
+      ).catch(function () {});
+      return;
+    }
+    var form = e.target.closest("#chat-transcript form[data-form-id], #chat-transcript form[data-chat-form]");
+    if (!form) return;
+    e.preventDefault();
+    var answers = {};
+    form.querySelectorAll("[name]").forEach(function (field) {
+      var type = field.dataset.fieldType || "string";
+      if (type === "boolean") answers[field.name] = field.checked;
+      else if (type === "multiselect") {
+        answers[field.name] = Array.prototype.filter.call(field.options, function (o) { return o.selected; })
+          .map(function (o) { return o.value; });
+      } else if (type === "integer") {
+        answers[field.name] = field.value === "" ? null : parseInt(field.value, 10);
+      } else if (type === "number") {
+        answers[field.name] = field.value === "" ? null : Number(field.value);
+      } else {
+        answers[field.name] = field.value;
+      }
+    });
+    chatMutation(
+      "forms/" + encodeURIComponent(form.dataset.formId || form.dataset.chatForm) + "/reply",
+      { answers: answers },
+      form.querySelector('[type="submit"]')
+    ).catch(function () {});
+  });
 
   var tstate = { term: null, ws: null, ro: null, session: null };
   // The change id the task panel currently shows for a non-board terminal
@@ -784,7 +3147,9 @@
   var terminalPanelChange = null;
 
   function openTerminal(sessionID, title) {
-    closeTerminal();
+    var fromChat = chatOpen();
+    closeChat(true, true);
+    closeTerminal(fromChat);
     var overlay = document.getElementById("terminal-overlay");
     overlay.hidden = false;
     // The task panel serves any change-bound terminal: mirrored from the
@@ -854,7 +3219,7 @@
     tstate = { term: term, ws: ws, ro: ro, session: sessionID };
   }
 
-  function closeTerminal() {
+  function closeTerminal(suppressRefresh) {
     if (tstate.ro) tstate.ro.disconnect();
     if (tstate.ws && tstate.ws.readyState <= 1) tstate.ws.close();
     if (tstate.term) tstate.term.dispose();
@@ -866,7 +3231,7 @@
     if (panel) { panel.hidden = true; panel.innerHTML = ""; }
     // On the index a refresh was deferred while the terminal was open
     // (see followSession); now that a reload is safe again, catch up.
-    if (page === "index") scheduleRefresh();
+    if (!suppressRefresh && page === "index") scheduleRefresh();
   }
 
   function terminalOpen() {
@@ -894,7 +3259,17 @@
   function syncTerminalTasks(src, change) {
     var panel = terminalTasksEl();
     if (!panel || panel.hidden) return;
-    var html = '<div class="ttp-scroll"><div class="ttp-head">Tasks</div>';
+    renderTaskPanel(panel, src, change);
+  }
+
+  function renderTaskPanel(panel, src, change) {
+    var chatWork = panel.id === "chat-tasks";
+    var html = '<div class="chat-view-head"><button type="button" class="chat-view-back btn-ghost" data-chat-view-back>Back to Chat</button><strong>Work</strong></div><div class="ttp-scroll" data-chat-view-scroll>';
+    if (chatWork && change) {
+      html += '<a class="ttp-plan ttp-plan-first" data-work-document="plan" hx-get="/changes/' +
+        encodeURIComponent(change) + '/plan" hx-target="#detail" hx-swap="innerHTML"><span><strong>Plan</strong><small>Read the change plan</small></span><span aria-hidden="true">&rsaquo;</span></a>';
+    }
+    html += '<div class="ttp-head">Tasks</div>';
     var groups = 0;
     if (src) {
       src.querySelectorAll(".cards[data-status]").forEach(function (col) {
@@ -909,7 +3284,7 @@
           var a = card.querySelector(".card-title");
           var href = a && a.getAttribute("hx-get");
           if (!href) return;
-          html += '<a class="ttp-row" hx-get="' + esc(href) + '" hx-headers=\'{"Accept": "text/html"}\'' +
+          html += '<a class="ttp-row"' + (chatWork ? ' data-work-document="task"' : '') + ' hx-get="' + esc(href) + '" hx-headers=\'{"Accept": "text/html"}\'' +
             ' hx-target="#detail" hx-swap="innerHTML"><span class="chip">' +
             esc(card.getAttribute("data-task") || "") + '</span><span class="ttp-row-title">' +
             esc(a.textContent) + "</span></a>";
@@ -937,7 +3312,7 @@
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (j) {
         if (!j || !j.change) return;
-        if (!terminalOpen() || tstate.session !== sessionID) return; // user moved on
+        if (!sessionOverlayOpen() || activeSessionID() !== sessionID) return;
         loadTerminalTasks(j.change);
       })
       .catch(function () {});
@@ -947,14 +3322,17 @@
     fetch("/changes/" + encodeURIComponent(changeID), { headers: { Accept: "text/html", "HX-Request": "true" } })
       .then(function (r) { return r.ok ? r.text() : null; })
       .then(function (html) {
-        if (html == null || !terminalOpen()) return;
-        var panel = terminalTasksEl();
-        if (!panel) return;
+        if (html == null || !sessionOverlayOpen()) return;
         var src = document.createElement("div");
         src.innerHTML = html;
         terminalPanelChange = changeID;
-        panel.hidden = false;
-        syncTerminalTasks(src, changeID);
+        if (terminalOpen()) {
+          var panel = terminalTasksEl();
+          if (!panel) return;
+          panel.hidden = false;
+          syncTerminalTasks(src, changeID);
+        }
+        if (chatOpen()) setChatTasks(src, changeID);
       })
       .catch(function () {});
   }
@@ -971,15 +3349,20 @@
       .then(function (j) {
         var s = (j.sessions || []).find(function (x) { return x.session === sid; });
         markOpened(sid);
-        openTerminal(sid, s ? s.title : sid);
+        openPreferredSession(sid, s ? s.title : sid);
       })
-      .catch(function () { openTerminal(sid, sid); });
+      .catch(function () { openPreferredSession(sid, sid); });
   }
 
   document.addEventListener("click", function (e) {
     if (e.target.closest("[data-close-terminal]")) { closeTerminal(); return; }
+    if (e.target.closest("[data-close-chat]")) { closeChat(); return; }
     var ov = document.getElementById("terminal-overlay");
     if (ov && !ov.hidden && e.target === ov) closeTerminal();
+    var chat = document.getElementById("chat-overlay");
+    if (chat && !chat.hidden && e.target === chat) {
+      if (!closeTopChatAuxiliary()) closeChat();
+    }
   });
 
   // --- lifecycle buttons ---------------------------------------------------
@@ -998,7 +3381,7 @@
   function postLifecycle(action) {
     fetch("/changes/" + changeID() + "/" + action, {
       method: "POST",
-      headers: { Accept: "application/json" },
+      headers: { Accept: "application/json", "X-Lessmess-UI": "1" },
     })
       .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.statusText); return j; }); })
       .then(function () { location.reload(); }) // status pill lives outside the board fragment
@@ -1098,18 +3481,55 @@
   function closeDetail() {
     var d = document.getElementById("detail");
     if (d) d.hidden = true;
+    if (chatOpen()) syncChatModalInert(false);
+    if (cstate.detailViewportHandler && window.visualViewport) {
+      window.visualViewport.removeEventListener("resize", cstate.detailViewportHandler);
+    }
+    if (cstate.detailTOCMedia && cstate.detailTOCHandler) {
+      cstate.detailTOCMedia.removeEventListener("change", cstate.detailTOCHandler);
+    }
+    cstate.detailViewportHandler = null;
+    cstate.detailTOCMedia = null;
+    cstate.detailTOCHandler = null;
+    var opener = cstate.detailOpener;
+    cstate.detailOpener = null;
+    if (opener && opener.isConnected) requestAnimationFrame(function () { opener.focus({ preventScroll: true }); });
   }
+
+  function closeDetailContents(returnFocus) {
+    var toggle = document.getElementById("detail-contents-toggle");
+    var list = document.getElementById("detail-contents-list");
+    if (!compactChatUI() || !toggle || !list || toggle.getAttribute("aria-expanded") !== "true") return false;
+    toggle.setAttribute("aria-expanded", "false");
+    list.hidden = true;
+    if (returnFocus !== false) toggle.focus({ preventScroll: true });
+    return true;
+  }
+
+  document.addEventListener("htmx:beforeRequest", function (e) {
+    var opener = e.detail && e.detail.elt;
+    if (opener && opener.matches('[hx-target="#detail"]')) {
+      cstate.detailOpener = opener;
+    }
+  });
 
   document.addEventListener("click", function (e) {
     if (e.target.closest("[data-close-detail]")) { closeDetail(); return; }
     var d = document.getElementById("detail");
-    if (d && !d.hidden && e.target === d) closeDetail(); // backdrop click
+    if (d && !d.hidden && e.target === d && !closeDetailContents(true)) closeDetail(); // backdrop click
   });
 
   document.addEventListener("keydown", function (e) {
     if (e.key !== "Escape") return;
     var d = document.getElementById("detail");
-    if (d && !d.hidden) { closeDetail(); return; } // the detail modal stacks above the terminal
+    if (d && !d.hidden) {
+      if (!closeDetailContents(true)) closeDetail();
+      return;
+    } // the detail modal stacks above the terminal
+    if (chatOpen()) {
+      if (!closeTopChatAuxiliary()) closeChat();
+      return;
+    }
     if (terminalOpen()) { closeTerminal(); return; }
     closeDetail();
   });
@@ -1117,14 +3537,20 @@
   document.addEventListener("htmx:afterSwap", function (e) {
     if (e.target && e.target.id === "detail") {
       e.target.hidden = false;
+      if (chatOpen()) syncChatModalInert(true);
       buildDetailTOC();
+      requestAnimationFrame(function () {
+        var close = e.target.querySelector("[data-close-detail]");
+        if (close) close.focus({ preventScroll: true });
+      });
     }
   });
 
   // --- detail modal TOC --------------------------------------------------------
   // The server renders headings with ids (goldmark auto heading IDs); we build
-  // the left-rail contents from the swapped DOM so plan, task, and ledger
-  // modals all share one code path.
+  // the contents from the swapped DOM so all detail shapes share one code
+  // path. CSS keeps this as a desktop rail and moves it above the document at
+  // compact widths.
 
   function currentChangeID() {
     var m = location.pathname.match(/^\/changes\/([^\/]+)/);
@@ -1143,6 +3569,22 @@
     var toc = d && d.querySelector(".modal-toc");
     var body = d && d.querySelector(".modal-body");
     if (!modal || !toc || !body) return;
+    if (cstate.detailViewportHandler && window.visualViewport) {
+      window.visualViewport.removeEventListener("resize", cstate.detailViewportHandler);
+    }
+    if (cstate.detailTOCMedia && cstate.detailTOCHandler) {
+      cstate.detailTOCMedia.removeEventListener("change", cstate.detailTOCHandler);
+    }
+    cstate.detailViewportHandler = null;
+    cstate.detailTOCMedia = null;
+    cstate.detailTOCHandler = null;
+    if (window.visualViewport) {
+      cstate.detailViewportHandler = function () {
+        modal.style.setProperty("--detail-viewport-height", window.visualViewport.height + "px");
+      };
+      cstate.detailViewportHandler();
+      window.visualViewport.addEventListener("resize", cstate.detailViewportHandler);
+    }
     var heads = body.querySelectorAll("h2, h3");
     toc.innerHTML = "";
     if (heads.length < 2) {
@@ -1155,6 +3597,17 @@
     label.className = "toc-title";
     label.textContent = "Contents";
     toc.appendChild(label);
+    var toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "toc-toggle";
+    toggle.id = "detail-contents-toggle";
+    toggle.setAttribute("aria-controls", "detail-contents-list");
+    toggle.innerHTML = '<span>Contents</span><span class="toc-chevron" aria-hidden="true">⌄</span>';
+    toc.appendChild(toggle);
+    var list = document.createElement("div");
+    list.className = "toc-links";
+    list.id = "detail-contents-list";
+    toc.appendChild(list);
     Array.prototype.forEach.call(heads, function (h) {
       if (!h.id) {
         var slug = h.textContent.toLowerCase().replace(/[^\w\s-]/g, "").trim().replace(/\s+/g, "-") || "section";
@@ -1169,14 +3622,40 @@
       if (h.tagName === "H3") a.classList.add("toc-h3");
       a.addEventListener("click", function (e) {
         e.preventDefault();
-        body.scrollTo({ top: paneOffset(body, h) - 12, behavior: "smooth" });
+        if (compactChatUI()) {
+          toggle.setAttribute("aria-expanded", "false");
+          list.hidden = true;
+        }
+        requestAnimationFrame(function () {
+          body.scrollTo({ top: Math.max(0, paneOffset(body, h) - 12), behavior: "smooth" });
+          if (compactChatUI()) {
+            if (!h.hasAttribute("tabindex")) h.setAttribute("tabindex", "-1");
+            h.focus({ preventScroll: true });
+          }
+        });
       });
-      toc.appendChild(a);
+      list.appendChild(a);
     });
     toc.hidden = false;
     modal.classList.add("has-toc");
 
-    var links = toc.querySelectorAll("a");
+    function syncDisclosure(compact) {
+      toggle.setAttribute("aria-expanded", String(!compact));
+      list.hidden = compact;
+    }
+    var media = window.matchMedia("(max-width: 840px)");
+    syncDisclosure(media.matches);
+    toggle.addEventListener("click", function () {
+      if (!media.matches) return;
+      var expanded = toggle.getAttribute("aria-expanded") === "true";
+      toggle.setAttribute("aria-expanded", String(!expanded));
+      list.hidden = expanded;
+    });
+    cstate.detailTOCMedia = media;
+    cstate.detailTOCHandler = function (event) { syncDisclosure(event.matches); };
+    media.addEventListener("change", cstate.detailTOCHandler);
+
+    var links = list.querySelectorAll("a");
     function spy() {
       var top = body.getBoundingClientRect().top + 24;
       var cur = heads[0];
@@ -1714,7 +4193,7 @@
         body: JSON.stringify({ field: field, scope: scope }),
       })
         .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.statusText); return j; }); })
-        .then(function (j) { openTerminal(j.session, j.title); })
+        .then(function (j) { openPreferredSession(j.session, j.title); })
         .catch(function (err) { alert("Change request failed: " + err.message); })
         .finally(function () { btn.disabled = false; });
     });
@@ -2517,6 +4996,689 @@
     loadPrereqs().then(loadAgentOptions);
   }
 
+  // --- OpenCode service status -----------------------------------------------
+
+  function initOpencodeStatus() {
+    var root = document.getElementById("opencode-status-page");
+    if (!root) return;
+    var message = document.getElementById("oc-status-message");
+    var summary = document.getElementById("oc-status-summary");
+    var rediscover = document.getElementById("oc-rediscover");
+    var returnChat = document.getElementById("oc-return-chat");
+    returnChat.addEventListener("click", function () {
+      var chat = document.getElementById("chat-btn");
+      if (chat) chat.click();
+    });
+
+    function finding(section, finding) {
+      var body = root.querySelector('[data-oc-section="' + section + '"] [data-oc-body]');
+      body.textContent = "";
+      var pill = document.createElement("span");
+      pill.className = "oc-state oc-state-" + ((finding && finding.state) || "unknown");
+      pill.textContent = (finding && finding.state) || "unknown";
+      body.appendChild(pill);
+      if (finding && finding.message) {
+        var note = document.createElement("p");
+        note.className = "muted";
+        note.textContent = finding.message;
+        body.appendChild(note);
+      }
+      return body;
+    }
+
+    function list(body, items, label) {
+      if (!items || !items.length) {
+        var empty = document.createElement("p");
+        empty.className = "muted";
+        empty.textContent = "No " + label + " reported.";
+        body.appendChild(empty);
+        return;
+      }
+      var ul = document.createElement("ul");
+      ul.className = "oc-inventory";
+      items.forEach(function (item) {
+        var li = document.createElement("li");
+        var name = document.createElement("strong");
+        name.textContent = item.name || item.id || "Unnamed";
+        li.appendChild(name);
+        var detail = [];
+        if (item.providerID) detail.push(item.providerID + "/" + item.id);
+        else if (item.id && item.name) detail.push(item.id);
+        if (item.activation) detail.push(item.activation);
+        if (typeof item.enabled === "boolean") detail.push(item.enabled ? "enabled" : "disabled");
+        if (item.status) detail.push(item.status);
+        if (item.sourceKind) detail.push(item.sourceKind);
+        if (item.failure) detail.push(item.failure.replace(/_/g, " "));
+        if (detail.length) {
+          var meta = document.createElement("span");
+          meta.textContent = detail.join(" · ");
+          li.appendChild(meta);
+        }
+        ul.appendChild(li);
+      });
+      body.appendChild(ul);
+    }
+
+    function render(view) {
+      summary.textContent = "";
+      var state = document.createElement("span");
+      state.className = "oc-state oc-state-" + view.state;
+      state.textContent = view.state;
+      summary.appendChild(state);
+      summary.appendChild(document.createTextNode(view.version ? " OpenCode " + view.version : " OpenCode service"));
+
+      var service = finding("service", view.service);
+      if (view.version) service.appendChild(document.createTextNode("Identity: " + view.version + " via " + (view.identityVia || "service API") + "."));
+      var project = finding("project", view.project);
+      if (view.location) project.appendChild(document.createTextNode("Project " + view.location.name + " (" + (view.location.matchesRepository ? "matched" : "different location") + ")."));
+      list(finding("providers", view.providers), view.providerList, "providers");
+      var models = finding("models", view.models);
+      if (view.defaultModel) {
+        var def = document.createElement("p");
+        def.textContent = "Default: " + view.defaultModel.providerID + "/" + view.defaultModel.id;
+        models.appendChild(def);
+      }
+      list(models, view.modelList, "models");
+      list(finding("plugins", view.plugins), view.pluginList, "plugins");
+      var capabilities = finding("capabilities", view.capability);
+      var capItems = Object.keys(view.capabilities || {}).map(function (key) {
+        return { name: key.replace(/([A-Z])/g, " $1"), id: key, status: view.capabilities[key] ? "supported" : "unsupported" };
+      });
+      list(capabilities, capItems, "capabilities");
+      message.hidden = true;
+    }
+
+    function load() {
+      summary.textContent = "Loading service status...";
+      return fetch("/api/opencode/status", { headers: { Accept: "application/json" }, cache: "no-store" })
+        .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.statusText); return j; }); })
+        .then(render)
+        .catch(function () { summary.textContent = "Status unavailable."; message.textContent = "Could not load OpenCode status."; message.hidden = false; });
+    }
+
+    rediscover.addEventListener("click", function () {
+      rediscover.disabled = true;
+      message.textContent = "Rediscovering the registered service...";
+      message.hidden = false;
+      fetch("/api/opencode/rediscover", { method: "POST", headers: { Accept: "application/json", "X-Lessmess-UI": "1" }, cache: "no-store" })
+        .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.statusText); return j; }); })
+        .then(render)
+        .catch(function (err) { message.textContent = err.message; message.hidden = false; })
+        .finally(function () { rediscover.disabled = false; });
+    });
+    load();
+  }
+
+  // --- OpenCode integrations -------------------------------------------------
+
+  function initOpencodeIntegrations() {
+    var root = document.getElementById("opencode-status-page");
+    var listRoot = document.getElementById("oc-integrations-list");
+    if (!root || !listRoot) return;
+    var dialog = document.getElementById("oc-integration-dialog");
+    var detailRoot = document.getElementById("oc-integration-detail");
+    var title = document.getElementById("oc-integration-title");
+    var message = document.getElementById("oc-integration-message");
+    var pollTimer = null;
+    var pollRequest = null;
+    var activeAttempt = null;
+
+    function api(path, options) {
+      options = options || {};
+      options.cache = "no-store";
+      options.headers = Object.assign({ Accept: "application/json" }, options.headers || {});
+      if (options.method && options.method !== "GET") {
+        options.headers["Content-Type"] = "application/json";
+        options.headers["X-Lessmess-UI"] = "1";
+      }
+      return fetch(path, options).then(function (r) {
+        return r.json().catch(function () { return {}; }).then(function (body) {
+          if (!r.ok) throw new Error(body.error || "The integration operation failed.");
+          return body;
+        });
+      });
+    }
+
+    function setMessage(text) {
+      message.textContent = text || "";
+      message.hidden = !text;
+    }
+
+    function clearPoll() {
+      if (pollTimer) window.clearTimeout(pollTimer);
+      pollTimer = null;
+      if (pollRequest) pollRequest.abort();
+      pollRequest = null;
+    }
+
+    function clearSensitive(form) {
+      Array.prototype.forEach.call(form.querySelectorAll("input, select, textarea"), function (input) {
+        if (input.type === "checkbox") input.checked = false;
+        else input.value = "";
+      });
+    }
+
+    function sensitiveInput(name, label, required) {
+      var wrap = document.createElement("label");
+      wrap.textContent = label;
+      var input = document.createElement("input");
+      input.type = "password";
+      input.name = name;
+      input.required = !!required;
+      input.autocomplete = "new-password";
+      input.autocapitalize = "none";
+      input.spellcheck = false;
+      wrap.appendChild(input);
+      return wrap;
+    }
+
+    function valuesFor(form, fields) {
+      var answer = {};
+      fields.forEach(function (field) {
+        if (field.type === "external") return;
+        var input = form.elements[field.key];
+        if (!input) return;
+        if (field.type === "boolean") answer[field.key] = input.checked;
+        else if (field.type === "number" || field.type === "integer") answer[field.key] = input.value === "" ? null : Number(input.value);
+        else if (field.type === "multiselect") answer[field.key] = input.value ? input.value.split(",").map(function (v) { return v.trim(); }).filter(Boolean) : [];
+        else answer[field.key] = input.value;
+      });
+      return answer;
+    }
+
+    function appendFields(form, fields) {
+      (fields || []).forEach(function (field) {
+        if (field.type === "external") {
+          if (!field.url) return;
+          var external = document.createElement("a");
+          external.href = field.url;
+          external.target = "_blank";
+          external.rel = "noopener noreferrer external";
+          external.referrerPolicy = "no-referrer";
+          external.textContent = field.title || "Open provider instructions";
+          form.appendChild(external);
+          return;
+        }
+        var label = field.title || field.key;
+        if (field.type === "boolean") {
+          var checkboxLabel = document.createElement("label");
+          var checkbox = document.createElement("input");
+          checkbox.type = "checkbox";
+          checkbox.name = field.key;
+          checkbox.autocomplete = "off";
+          checkboxLabel.appendChild(checkbox);
+          checkboxLabel.appendChild(document.createTextNode(" " + label));
+          form.appendChild(checkboxLabel);
+        } else {
+          form.appendChild(sensitiveInput(field.key, label, field.required));
+        }
+        if (field.description) {
+          var help = document.createElement("small");
+          help.className = "muted";
+          help.textContent = field.description;
+          form.appendChild(help);
+        }
+      });
+    }
+
+    function attemptExpired(expires) {
+      if (!expires) return false;
+      return Date.now() >= (expires < 100000000000 ? expires * 1000 : expires);
+    }
+
+    function showAttempt(kind, integration, attempt) {
+      clearPoll();
+      activeAttempt = { kind: kind, integration: integration, attempt: attempt };
+      detailRoot.textContent = "";
+      var box = document.createElement("section");
+      box.className = "oc-attempt";
+      var heading = document.createElement("h3");
+      heading.textContent = kind === "oauth" ? "OAuth connection" : "Command connection";
+      box.appendChild(heading);
+      if (kind === "oauth" && attempt.mode === "auto") {
+        var limit = document.createElement("p");
+        limit.textContent = "Automatic loopback completion depends on the provider and may complete on the device running OpenCode, not this phone. Keep this dialog open; use code completion only when the provider supplies a code.";
+        box.appendChild(limit);
+      }
+      if (attempt.instructions) {
+        var instructions = document.createElement("p");
+        instructions.textContent = attempt.instructions;
+        box.appendChild(instructions);
+      }
+      if (attempt.url) {
+        var link = document.createElement("a");
+        link.href = attempt.url;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer external";
+        link.referrerPolicy = "no-referrer";
+        link.textContent = "Continue with provider";
+        box.appendChild(link);
+      }
+      var status = document.createElement("p");
+      status.className = "muted";
+      status.textContent = "Waiting for OpenCode...";
+      box.appendChild(status);
+      if (kind === "oauth") {
+        var codeForm = document.createElement("form");
+        codeForm.className = "oc-sensitive-form";
+        codeForm.autocomplete = "off";
+        codeForm.appendChild(sensitiveInput("code", "Authorization code (when requested)", false));
+        var complete = document.createElement("button");
+        complete.type = "submit";
+        complete.textContent = "Complete with code";
+        codeForm.appendChild(complete);
+        codeForm.addEventListener("submit", function (event) {
+          event.preventDefault();
+          var payload = JSON.stringify({ code: codeForm.elements.code.value, confirm: true, expectedStatus: "pending" });
+          clearSensitive(codeForm);
+          complete.disabled = true;
+          api("/api/opencode/integrations/" + encodeURIComponent(integration.id) + "/attempts/oauth/" + encodeURIComponent(attempt.attemptID) + "/complete", { method: "POST", body: payload })
+            .then(function () { status.textContent = "Connection complete."; activeAttempt = null; clearPoll(); })
+            .catch(function (err) { setMessage(err.message); })
+            .finally(function () { complete.disabled = false; });
+        });
+        box.appendChild(codeForm);
+      }
+      var cancel = document.createElement("button");
+      cancel.type = "button";
+      cancel.className = "btn-ghost";
+      cancel.textContent = "Cancel attempt";
+      cancel.addEventListener("click", function () {
+        if (!window.confirm("Cancel this connection attempt?")) return;
+        api("/api/opencode/integrations/" + encodeURIComponent(integration.id) + "/attempts/" + kind + "/" + encodeURIComponent(attempt.attemptID) + "/cancel", { method: "POST", body: '{"confirm":true,"expectedStatus":"pending"}' })
+          .then(function () { activeAttempt = null; clearPoll(); status.textContent = "Attempt cancelled."; })
+          .catch(function (err) { setMessage(err.message); });
+      });
+      box.appendChild(cancel);
+      detailRoot.appendChild(box);
+
+      function poll() {
+        pollTimer = null;
+        if (!dialog.open || document.hidden || attemptExpired(attempt.expires)) {
+          if (attemptExpired(attempt.expires)) { status.textContent = "Attempt expired. Start a new connection."; activeAttempt = null; }
+          return;
+        }
+        pollRequest = new AbortController();
+        api("/api/opencode/integrations/" + encodeURIComponent(integration.id) + "/attempts/" + kind + "/" + encodeURIComponent(attempt.attemptID), { signal: pollRequest.signal })
+          .then(function (view) {
+            pollRequest = null;
+            status.textContent = view.message || (view.status === "pending" ? "Waiting for OpenCode..." : "Connection " + view.status + ".");
+            if (view.status === "pending" && !attemptExpired(view.expires)) pollTimer = window.setTimeout(poll, 1500);
+            else { clearPoll(); activeAttempt = null; }
+          })
+          .catch(function (err) { pollRequest = null; if (err.name !== "AbortError") status.textContent = err.message; clearPoll(); });
+      }
+      pollTimer = window.setTimeout(poll, 500);
+    }
+
+    function renderIntegration(integration) {
+      activeAttempt = null;
+      title.textContent = integration.name || integration.id || "Integration";
+      detailRoot.textContent = "";
+      setMessage("");
+      var credentials = (integration.connections || []).filter(function (connection) { return connection.type === "credential"; });
+      (integration.methods || []).forEach(function (method) {
+        var section = document.createElement("section");
+        section.className = "oc-method";
+        var heading = document.createElement("h3");
+        heading.textContent = method.label || (method.type === "key" ? "API key" : method.type === "oauth" ? "OAuth" : method.type === "command" ? "Provider command" : "Environment");
+        section.appendChild(heading);
+        if (method.type === "unknown") {
+          section.appendChild(document.createTextNode("This connection method is not supported by this lessmess version."));
+        } else if (method.type === "env") {
+          var remedy = document.createElement("p");
+          remedy.textContent = "Set " + ((method.names || []).join(" or ") || "the required variable") + " in the OpenCode service environment, then restart that service. Environment connections cannot be removed here.";
+          section.appendChild(remedy);
+        } else {
+          var form = document.createElement("form");
+          form.className = "oc-sensitive-form";
+          form.autocomplete = "off";
+          appendFields(form, method.fields || []);
+          if (method.type === "key") form.insertBefore(sensitiveInput("key", method.label || "API key", true), form.firstChild);
+          var button = document.createElement("button");
+          button.type = "submit";
+          button.textContent = credentials.length && method.type === "key" ? "Reconnect" : "Connect";
+          form.appendChild(button);
+          form.addEventListener("submit", function (event) {
+            event.preventDefault();
+            var confirmation = credentials.length && method.type === "key"
+              ? "Reconnect this integration with a new key? The old credential remains available until you remove it."
+              : "Start this " + method.type + " connection? OpenCode may save provider credentials.";
+            if (!window.confirm(confirmation)) return;
+            var payload = { answer: valuesFor(form, method.fields || []), confirm: true };
+            var path = "/api/opencode/integrations/" + encodeURIComponent(integration.id) + "/connect/" + method.type;
+            if (method.type === "key") {
+              payload.key = form.elements.key.value;
+              if (credentials.length) {
+                payload.confirmReplace = true;
+                payload.expectedCredentialID = credentials[0].id;
+                payload.expectedLabel = credentials[0].label || "";
+              }
+            } else payload.methodID = method.id;
+            var body = JSON.stringify(payload);
+            clearSensitive(form);
+            button.disabled = true;
+            api(path, { method: "POST", body: body })
+              .then(function (result) {
+                if (method.type === "key") return openIntegration(integration.id);
+                showAttempt(method.type, integration, result);
+              })
+              .catch(function (err) { setMessage(err.message); })
+              .finally(function () { button.disabled = false; });
+          });
+          section.appendChild(form);
+        }
+        detailRoot.appendChild(section);
+      });
+      (integration.connections || []).forEach(function (connection) {
+        var section = document.createElement("section");
+        section.className = "oc-connection";
+        var heading = document.createElement("h3");
+        heading.textContent = connection.type === "credential" ? (connection.label || "Saved credential") : connection.type === "env" ? "Service environment" : "Unknown connection";
+        section.appendChild(heading);
+        if (connection.type === "unknown") {
+          section.appendChild(document.createTextNode("This connection type is not supported by this lessmess version."));
+        } else if (connection.type !== "credential") {
+          var env = document.createElement("p");
+          env.textContent = "Provided by " + (connection.name || "the OpenCode service environment") + ". Change or remove it in the service environment and restart OpenCode.";
+          section.appendChild(env);
+        } else {
+          var actions = document.createElement("div");
+          actions.className = "oc-credential-actions";
+          function actionButton(text, action, methodName, body) {
+            var btn = document.createElement("button");
+            btn.type = "button";
+            btn.className = "btn-ghost";
+            btn.textContent = text;
+            btn.addEventListener("click", function () {
+              var prompt = action === "" ? "Delete this saved credential?" : "Activate this saved credential?";
+              if (!window.confirm(prompt)) return;
+              btn.disabled = true;
+              api("/api/opencode/integrations/" + encodeURIComponent(integration.id) + "/credentials/" + encodeURIComponent(connection.id) + action, { method: methodName, body: JSON.stringify(body()) })
+                .then(function () { return openIntegration(integration.id); })
+                .catch(function (err) { setMessage(err.message); })
+                .finally(function () { btn.disabled = false; });
+            });
+            actions.appendChild(btn);
+          }
+          actionButton("Activate", "/activate", "POST", function () { return { confirm: true, expectedLabel: connection.label || "" }; });
+          var labelForm = document.createElement("form");
+          labelForm.className = "oc-sensitive-form";
+          labelForm.autocomplete = "off";
+          labelForm.appendChild(sensitiveInput("label", "New label", true));
+          var rename = document.createElement("button");
+          rename.type = "submit";
+          rename.textContent = "Rename";
+          labelForm.appendChild(rename);
+          labelForm.addEventListener("submit", function (event) {
+            event.preventDefault();
+            if (!window.confirm("Rename this saved credential?")) return;
+            var body = JSON.stringify({ label: labelForm.elements.label.value, expectedLabel: connection.label || "", confirm: true });
+            clearSensitive(labelForm);
+            api("/api/opencode/integrations/" + encodeURIComponent(integration.id) + "/credentials/" + encodeURIComponent(connection.id), { method: "PATCH", body: body })
+              .then(function () { return openIntegration(integration.id); })
+              .catch(function (err) { setMessage(err.message); });
+          });
+          section.appendChild(labelForm);
+          actionButton("Delete", "", "DELETE", function () { return { confirm: true, expectedLabel: connection.label || "" }; });
+          section.appendChild(actions);
+        }
+        detailRoot.appendChild(section);
+      });
+      if (!dialog.open) dialog.showModal();
+    }
+
+    function openIntegration(id) {
+      clearPoll();
+      activeAttempt = null;
+      return api("/api/opencode/integrations/" + encodeURIComponent(id)).then(renderIntegration).catch(function (err) { setMessage(err.message); });
+    }
+
+    function load() {
+      listRoot.textContent = "";
+      listRoot.appendChild(document.createTextNode("Loading integrations..."));
+      return api("/api/opencode/integrations").then(function (view) {
+        listRoot.textContent = "";
+        if (!view.available) {
+          listRoot.appendChild(document.createTextNode("Integration management is unsupported by this OpenCode service."));
+          return;
+        }
+        if (!view.integrations.length) {
+          var empty = document.createElement("p");
+          empty.className = "muted";
+          empty.textContent = "No integrations reported by this OpenCode service.";
+          listRoot.appendChild(empty);
+          return;
+        }
+        view.integrations.forEach(function (integration) {
+          var row = document.createElement("button");
+          row.type = "button";
+          row.className = "oc-integration-row";
+          var name = document.createElement("strong");
+          name.textContent = integration.name || integration.id || "Unnamed integration";
+          var count = document.createElement("span");
+          count.textContent = (integration.connections || []).length + " connection(s)";
+          row.appendChild(name);
+          row.appendChild(count);
+          row.addEventListener("click", function () { openIntegration(integration.id); });
+          listRoot.appendChild(row);
+        });
+      }).catch(function () {
+        listRoot.textContent = "";
+        var unavailable = document.createElement("p");
+        unavailable.className = "settings-error";
+        unavailable.textContent = "Could not load connections. Check Status and try again.";
+        listRoot.appendChild(unavailable);
+      });
+    }
+
+    document.getElementById("oc-integrations-refresh").addEventListener("click", load);
+    document.addEventListener("tt:open-integration", function (event) {
+      if (event.detail && event.detail.id) openIntegration(event.detail.id);
+    });
+    function clearDialog() { clearPoll(); activeAttempt = null; detailRoot.textContent = ""; title.textContent = "Integration"; setMessage(""); }
+    document.getElementById("oc-integration-close").addEventListener("click", function () { dialog.close(); clearDialog(); });
+    dialog.addEventListener("close", clearDialog);
+    document.addEventListener("visibilitychange", function () {
+      if (document.hidden) clearPoll();
+      else if (dialog.open && activeAttempt) showAttempt(activeAttempt.kind, activeAttempt.integration, activeAttempt.attempt);
+    });
+    load();
+  }
+
+  // --- MCP and permissions --------------------------------------------------
+
+  function managementAPI(path, options) {
+    options = options || {};
+    options.cache = "no-store";
+    options.headers = Object.assign({ Accept: "application/json" }, options.headers || {});
+    if (options.method && options.method !== "GET") {
+      options.headers["Content-Type"] = "application/json";
+      options.headers["X-Lessmess-UI"] = "1";
+    }
+    return fetch(path, options).then(function (response) {
+      return response.json().catch(function () { return {}; }).then(function (body) {
+        if (!response.ok) throw new Error(body.error || "OpenCode management operation failed.");
+        return body;
+      });
+    });
+  }
+
+  function managementRow(title, detail) {
+    var row = document.createElement("div");
+    row.className = "oc-management-row";
+    var copy = document.createElement("div");
+    var heading = document.createElement("strong");
+    heading.textContent = title;
+    copy.appendChild(heading);
+    if (detail) {
+      var text = document.createElement("p");
+      text.textContent = detail;
+      copy.appendChild(text);
+    }
+    var actions = document.createElement("div");
+    actions.className = "oc-management-actions";
+    row.appendChild(copy);
+    row.appendChild(actions);
+    return { row: row, actions: actions };
+  }
+
+  function initOpencodeMCP() {
+    var list = document.getElementById("oc-mcp-list");
+    if (!list) return;
+    var resources = document.getElementById("oc-mcp-resources");
+    var message = document.getElementById("oc-mcp-message");
+
+    function setMessage(text) { message.textContent = text || ""; message.hidden = !text; }
+    function mutate(server, connect, button) {
+      if (!connect && !window.confirm("Disconnect " + server.name + " from this OpenCode runtime?")) return;
+      button.disabled = true;
+      managementAPI("/api/opencode/mcp/" + encodeURIComponent(server.name) + "/" + (connect ? "connect" : "disconnect"), {
+        method: "POST",
+        body: JSON.stringify({ expectedStatus: server.status, confirm: !connect }),
+      }).then(load).catch(function (err) { setMessage(err.message); }).finally(function () { button.disabled = false; });
+    }
+    function load() {
+      setMessage("");
+      list.textContent = "Loading MCP servers...";
+      resources.textContent = "";
+      return managementAPI("/api/opencode/mcp").then(function (view) {
+        list.textContent = "";
+        resources.textContent = "";
+        if (!view.available) {
+          list.appendChild(document.createTextNode("MCP status is unavailable on this OpenCode service."));
+          return;
+        }
+        var notice = document.createElement("p");
+        notice.className = "muted";
+        notice.textContent = view.runtimeNotice;
+        list.appendChild(notice);
+        var rows = document.createElement("div");
+        rows.className = "oc-management-list";
+        (view.servers || []).forEach(function (server) {
+          var detail = server.status.replace(/_/g, " ");
+          if (server.failure) detail += " · " + server.failure.replace(/_/g, " ");
+          var item = managementRow(server.name || "Unnamed MCP server", detail);
+          if (server.status === "needs_auth") {
+            if (server.authIntegrationID) {
+              var auth = document.createElement("button");
+              auth.type = "button";
+              auth.className = "btn-ghost";
+              auth.textContent = "Open integration";
+              auth.addEventListener("click", function () { document.dispatchEvent(new CustomEvent("tt:open-integration", { detail: { id: server.authIntegrationID } })); });
+              item.actions.appendChild(auth);
+            } else {
+              item.row.firstChild.appendChild(document.createElement("p")).textContent = "Authenticate in the OpenCode TUI, or run: opencode2 mcp auth <server-name>";
+            }
+          }
+          if ((server.status === "disabled" || server.status === "failed") && view.connectAvailable) {
+            var connect = document.createElement("button");
+            connect.type = "button";
+            connect.textContent = server.status === "failed" ? "Reconnect" : "Connect";
+            connect.addEventListener("click", function () { mutate(server, true, connect); });
+            item.actions.appendChild(connect);
+          }
+          if (server.status === "connected" && view.disconnectAvailable) {
+            var disconnect = document.createElement("button");
+            disconnect.type = "button";
+            disconnect.className = "btn-ghost";
+            disconnect.textContent = "Disconnect";
+            disconnect.addEventListener("click", function () { mutate(server, false, disconnect); });
+            item.actions.appendChild(disconnect);
+          }
+          rows.appendChild(item.row);
+        });
+        if (!(view.servers || []).length) rows.appendChild(document.createTextNode("No MCP servers are configured for this repository."));
+        list.appendChild(rows);
+        var allResources = (view.resources || []).concat(view.templates || []);
+        var heading = document.createElement("h3");
+        heading.className = "oc-management-subhead";
+        heading.textContent = "Resources";
+        resources.appendChild(heading);
+        if (!view.resourcesAvailable) resources.appendChild(document.createTextNode("Resource discovery is unavailable."));
+        else if (!allResources.length) resources.appendChild(document.createTextNode("No resources reported by connected servers."));
+        else {
+          var resourceRows = document.createElement("div");
+          resourceRows.className = "oc-management-list";
+          allResources.forEach(function (resource) {
+            resourceRows.appendChild(managementRow(resource.name || "Unnamed resource", (resource.server || "unknown server") + " · " + (resource.uri || resource.uriTemplate || "URI redacted")).row);
+          });
+          resources.appendChild(resourceRows);
+        }
+      }).catch(function (err) { list.textContent = "MCP status unavailable."; resources.textContent = ""; setMessage(err.message); });
+    }
+    document.getElementById("oc-mcp-refresh").addEventListener("click", load);
+    load();
+  }
+
+  function initOpencodePermissions() {
+    var activeRoot = document.getElementById("oc-active-permissions");
+    if (!activeRoot) return;
+    var savedRoot = document.getElementById("oc-saved-permissions");
+    var message = document.getElementById("oc-permissions-message");
+    function setMessage(text) { message.textContent = text || ""; message.hidden = !text; }
+    function section(root, title) {
+      root.textContent = "";
+      var heading = document.createElement("h3");
+      heading.className = "oc-management-subhead";
+      heading.textContent = title;
+      root.appendChild(heading);
+      var rows = document.createElement("div");
+      rows.className = "oc-management-list";
+      root.appendChild(rows);
+      return rows;
+    }
+    function load() {
+      setMessage("");
+      activeRoot.textContent = "Loading active permissions...";
+      savedRoot.textContent = "Loading saved permissions...";
+      return managementAPI("/api/opencode/permissions").then(function (view) {
+        var active = section(activeRoot, "Active requests");
+        if (!view.activeAvailable) active.appendChild(document.createTextNode("Active permission discovery is unavailable."));
+        else if (!view.active.length) active.appendChild(document.createTextNode("No active permission requests."));
+        (view.active || []).forEach(function (request) {
+          var item = managementRow(request.action || "Permission request", request.resourceCount + " resource(s) · " + request.sessionID);
+          if (request.chat) {
+            var chat = document.createElement("button");
+            chat.type = "button";
+            chat.textContent = "Open Chat";
+            chat.addEventListener("click", function () { openChat(request.sessionID, request.sessionTitle || request.sessionID); });
+            item.actions.appendChild(chat);
+          }
+          active.appendChild(item.row);
+        });
+        var saved = section(savedRoot, "Saved allow rules");
+        if (!view.savedAvailable) saved.appendChild(document.createTextNode("Saved permission review is unavailable."));
+        else if (!view.saved.length) saved.appendChild(document.createTextNode("No saved allow rules for this project."));
+        (view.saved || []).forEach(function (rule) {
+          var item = managementRow(rule.action || "allow", rule.resource || "all resources");
+          if (view.removeAvailable) {
+            var remove = document.createElement("button");
+            remove.type = "button";
+            remove.className = "btn-ghost";
+            remove.textContent = "Remove";
+            remove.addEventListener("click", function () {
+              if (!window.confirm("Remove this saved allow rule? OpenCode may ask again next time.")) return;
+              remove.disabled = true;
+              managementAPI("/api/opencode/permissions/saved/" + encodeURIComponent(rule.id), {
+                method: "DELETE",
+                body: JSON.stringify({ confirm: true, expectedProject: rule.projectID, expectedAction: rule.action, expectedResource: rule.resource }),
+              }).then(load).catch(function (err) { setMessage(err.message); }).finally(function () { remove.disabled = false; });
+            });
+            item.actions.appendChild(remove);
+          }
+          saved.appendChild(item.row);
+        });
+      }).catch(function (err) {
+        activeRoot.textContent = "Active permission status unavailable.";
+        savedRoot.textContent = "Saved permission status unavailable.";
+        setMessage(err.message);
+      });
+    }
+    document.getElementById("oc-permissions-refresh").addEventListener("click", load);
+    load();
+  }
+
   // --- init -----------------------------------------------------------------
 
   document.addEventListener("DOMContentLoaded", function () {
@@ -2528,6 +5690,10 @@
     initCommitAll();
     initIndexSort();
     initSettings();
+    initOpencodeStatus();
+    initOpencodeIntegrations();
+    initOpencodeMCP();
+    initOpencodePermissions();
     initSetup();
     initOnboardingBanner();
     checkValidation();

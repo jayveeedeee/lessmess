@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "id": "2026-09-15-lk9or",
+  "title": "Sortable change index columns",
+  "prefix": "IDX",
+  "status": {
+    "value": "Done",
+    "derived": false
+  },
+  "created": "2026-09-15",
+  "updated": "2026-09-15",
+  "tasks": [
+    {
+      "id": "IDX-00",
+      "seq": 0,
+      "title": "Sortable index table markup and server-emitted sort keys",
+      "file": "tasks/00-sortable-index-markup.md",
+      "status": "Done",
+      "updated": "2026-09-15",
+      "notes": "`go vet ./...` + `go test ./...` pass; new `TestIndexSortableMarkup` and `TestStatusRankTemplateFunc` assert the six sort buttons, row `data-*` keys, and workflow-order ranks; `TestIndexNewestFirst` still passes. Visual rebuild check folds into IDX-01's verification (same binary)."
+    },
+    {
+      "id": "IDX-01",
+      "seq": 1,
+      "title": "Client-side sorting, indicators, and persistence",
+      "file": "tasks/01-index-sort-behavior.md",
+      "status": "Done",
+      "dependsOn": [
+        "IDX-00"
+      ],
+      "updated": "2026-09-15",
+      "notes": "Implemented and agent-verified: `node --check`, `go vet`, full `go test`, rebuilt binary serves all six sort buttons + row keys + fresh hashed app.js, comparator simulation passes all 12 column/direction combos on the real 30-row dataset. In user's hands for the browser pass (clicks, indicators, SSE-reload persistence, keyboard)."
+    }
+  ]
+}

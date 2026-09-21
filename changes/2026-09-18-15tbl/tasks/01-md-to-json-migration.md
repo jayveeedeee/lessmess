@@ -1,7 +1,3 @@
----
-id: JSI-01
-title: md→JSON migration
----
 
 # JSI-01: md→JSON migration
 
@@ -30,7 +26,7 @@ JSI-00
 2. Implement the md→JSON collector (including archived changes under `changes/archive/` and legacy numeric IDs).
 3. Implement round-trip verification.
 4. Implement deletion of md ledgers + frontmatter stripping (atomic per file).
-5. Wire the CLI subcommand and the auto-run hook with idempotence guards.
+5. Wire the CLI subcommand (`lessmess migrate [--dry-run]`); the auto-run hook lands with the JSI-02 store cutover, where reading JSON state makes it meaningful.
 6. Build fixtures from a snapshot of this repo's tree plus synthetic edge cases (empty change, empty container, archived, legacy IDs).
 
 ## Verification
@@ -47,4 +43,9 @@ Migration converts representative trees with verified round-trip, refuses unsafe
 
 ## Notes
 
-Deletion is git-recoverable; rollback strategy documented in `plan.md`. Record any discovered schema edge cases (e.g., unparsed-but-tolerated md quirks) here.
+- Implemented in `internal/store/migrate.go` (+ `migrate_test.go`): `MigrateWorkflow(opts)` with strict refusal (JSON already exists), full collection (root/change/container ledgers, frontmatter, decision logs, archived + legacy IDs, worktree resolver), per-level semantic round-trip verification inside `collectChange`, cross-checks in `verifyMigration`, then atomic writes → prose frontmatter stripping → ledger deletion → `.gitignore` patch. CLI: `lessmess migrate [--dry-run] [--dir]` in `cmd/lessmess/main.go`.
+- Sequencing refinement: the serve/validate auto-run hook lands with JSI-02 (the store cutover), where JSON becomes the read path. Recorded in the plan.
+- `.gitignore` patch: `.lessmess/` (or legacy `.tasktracker/`) becomes `.lessmess/*` + `!.lessmess/workflow/` (git cannot re-include under an ignored dir); idempotent, always newline-terminated.
+- Empty-cell mapping: `—` → `""` on the way in. Worktree-backed changes resolve main-tree → archive → resolver; their state file is central, prose stays in the worktree.
+- Crash window: JSON written before md deletion; a crash between leaves both, and re-runs refuse (remove `.lessmess/workflow/` to recover — md tree is still intact until deletion).
+- Verification: `go vet ./... && go test ./...` green; fixtures cover dry-run, refusal, invalid trees (no frontmatter, row without file, stray dir, id mismatch), worktree change, gitignore variants; real-tree dry run on this repo: **41 changes, 197 tasks, 0 containers verified**.

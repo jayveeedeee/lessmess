@@ -1,7 +1,3 @@
----
-id: OCI-02
-title: API/SSE/WS proxy layer
----
 
 # OCI-02: API/SSE/WS proxy layer
 

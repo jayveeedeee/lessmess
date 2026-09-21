@@ -1,0 +1,132 @@
+{
+  "version": 1,
+  "id": "2026-09-11-1",
+  "title": "Web kanban server for the changes/ workflow",
+  "prefix": "KAN",
+  "status": {
+    "value": "Done",
+    "derived": false
+  },
+  "created": "2026-09-11",
+  "updated": "2026-09-11",
+  "tasks": [
+    {
+      "id": "KAN-00",
+      "seq": 0,
+      "title": "Project scaffold and CLI entry",
+      "file": "tasks/00-project-scaffold.md",
+      "status": "Done",
+      "updated": "2026-09-11",
+      "notes": "Verified: go build + vet clean; serve returned HTTP 200 on :18099; validate stub printed message, exit 2."
+    },
+    {
+      "id": "KAN-01",
+      "seq": 1,
+      "title": "Ledger and task-file parsers",
+      "file": "tasks/01-ledger-and-task-parsers.md",
+      "status": "Done",
+      "dependsOn": [
+        "KAN-00"
+      ],
+      "updated": "2026-09-11",
+      "notes": "Verified: go test ./internal/model passes (11 tests incl. malformation classes); test fixture expectations corrected."
+    },
+    {
+      "id": "KAN-02",
+      "seq": 2,
+      "title": "Serializers and atomic writers",
+      "file": "tasks/02-serializers-and-writers.md",
+      "status": "Done",
+      "dependsOn": [
+        "KAN-01"
+      ],
+      "updated": "2026-09-11",
+      "notes": "Verified: go test passes — round-trip, byte-preservation, move semantics, templates, atomic write."
+    },
+    {
+      "id": "KAN-03",
+      "seq": 3,
+      "title": "Store — scan, cache, watch, validate",
+      "file": "tasks/03-store-watch-validate.md",
+      "status": "Done",
+      "dependsOn": [
+        "KAN-02"
+      ],
+      "updated": "2026-09-11",
+      "notes": "Verified: 14 tests pass incl. real fsnotify round trip, external-edit preservation, gap-rule allocation."
+    },
+    {
+      "id": "KAN-04",
+      "seq": 4,
+      "title": "HTTP API and SSE",
+      "file": "tasks/04-http-api-and-sse.md",
+      "status": "Done",
+      "dependsOn": [
+        "KAN-03"
+      ],
+      "updated": "2026-09-11",
+      "notes": "Verified: 11 handler tests pass (routes, error mapping 404/400/422, SSE delivery); smoke run against real repo served index/board/task/validate correctly."
+    },
+    {
+      "id": "KAN-06",
+      "seq": 6,
+      "title": "validate command and UI validation banner",
+      "file": "tasks/06-validate-command.md",
+      "status": "Done",
+      "dependsOn": [
+        "KAN-03"
+      ],
+      "updated": "2026-09-11",
+      "notes": "Verified: validate exits 0/OK on real repo; broken fixture printed per-rule violations, exit 1; serve startup logs violations; banner wired to /api/validate + SSE."
+    },
+    {
+      "id": "KAN-05",
+      "seq": 5,
+      "title": "Board UI",
+      "file": "tasks/05-board-ui.md",
+      "status": "Done",
+      "dependsOn": [
+        "KAN-04"
+      ],
+      "updated": "2026-09-11",
+      "notes": "Verified: render tests, embedded-asset smoke, live move rewrite; user confirmed the interactive click-through (hover, modal, drag region, forms) on 2026-09-11."
+    },
+    {
+      "id": "KAN-07",
+      "seq": 7,
+      "title": "Dogfood, end-to-end verification, README",
+      "file": "tasks/07-dogfood-and-readme.md",
+      "status": "Done",
+      "dependsOn": [
+        "KAN-05",
+        "KAN-06"
+      ],
+      "updated": "2026-09-11",
+      "notes": "All plan acceptance criteria confirmed: 1–8 verified (env evidence + user browser confirmation 2026-09-11); README written; validate clean."
+    },
+    {
+      "id": "KAN-08",
+      "seq": 8,
+      "title": "UI polish — cleaner board and task detail",
+      "file": "tasks/08-ui-polish.md",
+      "status": "Done",
+      "dependsOn": [
+        "KAN-05"
+      ],
+      "updated": "2026-09-11",
+      "notes": "User approved the final design on 2026-09-11 (\"looks good\") after hover-lift fix, square corners, full-height columns, reference-matched palette, slim card font."
+    },
+    {
+      "id": "KAN-09",
+      "seq": 9,
+      "title": "Show plan content in the UI",
+      "file": "tasks/09-show-plan-in-ui.md",
+      "status": "Done",
+      "dependsOn": [
+        "KAN-08"
+      ],
+      "updated": "2026-09-11",
+      "notes": "Verified: route tests (JSON/HTML/404) pass; screenshots confirm Plan buttons on index rows + board header and the plan modal rendering."
+    }
+  ]
+}

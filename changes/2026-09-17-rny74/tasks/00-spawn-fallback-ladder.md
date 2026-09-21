@@ -1,7 +1,3 @@
----
-id: SPF-00
-title: Agent-preserving spawn fallback ladder
----
 
 # SPF-00: Agent-preserving spawn fallback ladder
 

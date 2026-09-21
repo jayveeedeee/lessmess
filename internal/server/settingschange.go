@@ -223,10 +223,10 @@ func (s *Server) settingsChangeReusable(sessionID string) bool {
 	}
 	if changeID, ok := s.sessions.changeOf(sessionID); ok {
 		c, err := s.st.Change(changeID)
-		if err != nil || c.Ledger == nil {
+		if err != nil || c.State == nil {
 			return false
 		}
-		if c.Ledger.Overall == model.OverallDone || c.Ledger.Overall == model.OverallCancelled {
+		if c.Overall() == model.OverallDone || c.Overall() == model.OverallCancelled {
 			return false
 		}
 	}

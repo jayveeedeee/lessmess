@@ -1,7 +1,3 @@
----
-id: PSB-04
-title: changePrompt delegation and bind instructions
----
 
 # PSB-04: changePrompt delegation and bind instructions
 

@@ -1,0 +1,47 @@
+{{define "content"}}
+<section id="opencode-status-page" class="oc-status" aria-labelledby="oc-status-title">
+  <div class="oc-status-head">
+    <div><a class="muted" href="/settings">Back to Settings</a><h1 id="oc-status-title">OpenCode management</h1></div>
+    <button id="oc-rediscover" type="button" class="btn-ghost">Rediscover service</button>
+  </div>
+  <p class="muted">Manage the local OpenCode service attached to this lessmess process. Public hosting is unsupported; provider and model entries are not network health checks.</p>
+  <nav class="oc-management-nav" aria-label="OpenCode management">
+    <a href="#oc-status-section">Status</a><a href="#oc-connections-section">Connections</a><a href="#oc-mcp-section">MCP</a><a href="#oc-permissions-section">Permissions</a>
+  </nav>
+  <div class="oc-return-links"><button id="oc-return-chat" type="button" class="btn-ghost">Return to Chat</button><a class="btn-ghost" href="/settings">Return to Settings</a></div>
+  <p id="oc-status-message" class="settings-error" role="status" aria-live="polite" hidden></p>
+  <section id="oc-status-section" class="oc-section-anchor" aria-labelledby="oc-status-section-title">
+    <h2 id="oc-status-section-title" class="sr-only">Status</h2>
+    <div id="oc-status-summary" class="oc-status-summary" aria-live="polite"><span class="muted">Loading service status...</span></div>
+    <div class="oc-status-grid">
+      <section class="oc-status-card" data-oc-section="service"><h2>Service</h2><div data-oc-body><span class="muted">Loading...</span></div></section>
+      <section class="oc-status-card" data-oc-section="project"><h2>Project location</h2><div data-oc-body><span class="muted">Loading...</span></div></section>
+      <section class="oc-status-card" data-oc-section="providers"><h2>Providers</h2><div data-oc-body><span class="muted">Loading...</span></div></section>
+      <section class="oc-status-card" data-oc-section="models"><h2>Models</h2><div data-oc-body><span class="muted">Loading...</span></div></section>
+      <section class="oc-status-card" data-oc-section="plugins"><h2>Plugins</h2><div data-oc-body><span class="muted">Loading...</span></div></section>
+      <section class="oc-status-card" data-oc-section="capabilities"><h2>Operation capabilities</h2><div data-oc-body><span class="muted">Loading...</span></div></section>
+    </div>
+  </section>
+  <section id="oc-connections-section" class="oc-integrations oc-section-anchor" aria-labelledby="oc-integrations-title">
+    <div class="oc-integrations-head"><div><h2 id="oc-integrations-title">Connections</h2><p class="muted">Connect providers using OpenCode's credential store. This runtime state is separate from layered lessmess settings; lessmess does not save keys or form values.</p></div><button id="oc-integrations-refresh" type="button" class="btn-ghost">Refresh</button></div>
+    <div id="oc-integrations-list"><p class="muted">Loading integrations...</p></div>
+  </section>
+  <section id="oc-mcp-section" class="oc-integrations oc-section-anchor" aria-labelledby="oc-mcp-title">
+    <div class="oc-integrations-head"><div><h2 id="oc-mcp-title">MCP servers</h2><p class="muted">Runtime connection controls only. Configure, add, edit, or remove servers with OpenCode itself.</p></div><button id="oc-mcp-refresh" type="button" class="btn-ghost">Refresh</button></div>
+    <p id="oc-mcp-message" class="settings-error" role="status" aria-live="polite" hidden></p>
+    <div id="oc-mcp-list"><p class="muted">Loading MCP servers...</p></div>
+    <div id="oc-mcp-resources"></div>
+  </section>
+  <section id="oc-permissions-section" class="oc-integrations oc-section-anchor" aria-labelledby="oc-permissions-title">
+    <div class="oc-integrations-head"><div><h2 id="oc-permissions-title">Permissions</h2><p class="muted">Active requests for this repository and project-scoped saved allow rules. New rules are created only by answering a request in Chat.</p></div><button id="oc-permissions-refresh" type="button" class="btn-ghost">Refresh</button></div>
+    <p id="oc-permissions-message" class="settings-error" role="status" aria-live="polite" hidden></p>
+    <div id="oc-active-permissions"></div>
+    <div id="oc-saved-permissions"></div>
+  </section>
+  <dialog id="oc-integration-dialog" class="oc-integration-dialog">
+    <div class="modal-head"><h2 id="oc-integration-title">Integration</h2><button id="oc-integration-close" type="button" class="btn-ghost">Close</button></div>
+    <p id="oc-integration-message" class="settings-error" role="status" aria-live="polite" hidden></p>
+    <div id="oc-integration-detail"></div>
+  </dialog>
+</section>
+{{end}}

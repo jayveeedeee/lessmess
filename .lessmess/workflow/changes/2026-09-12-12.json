@@ -1,0 +1,77 @@
+{
+  "version": 1,
+  "id": "2026-09-12-12",
+  "title": "Top menu and board UI polish",
+  "prefix": "NAV",
+  "status": {
+    "value": "Done",
+    "derived": false
+  },
+  "created": "2026-09-12",
+  "updated": "2026-09-12",
+  "tasks": [
+    {
+      "id": "NAV-00",
+      "seq": 0,
+      "title": "Top menu with active route highlight",
+      "file": "tasks/00-top-menu-active-state.md",
+      "status": "Done",
+      "updated": "2026-09-12",
+      "notes": "Screenshot-verified: Changes active on / and board, Explorer active on /explorer; vet/test/build green; root-ledger status synced."
+    },
+    {
+      "id": "NAV-01",
+      "seq": 1,
+      "title": "Flat SVG bell icon",
+      "file": "tasks/01-flat-bell-icon.md",
+      "status": "Done",
+      "updated": "2026-09-12",
+      "notes": "Stroke-SVG bell + repositioned badge screenshot-verified in dark and light; hidden semantics preserved via `#notif-bell[hidden]`; vet/test green."
+    },
+    {
+      "id": "NAV-02",
+      "seq": 2,
+      "title": "Newest change at top of index",
+      "file": "tasks/02-newest-change-first.md",
+      "status": "Done",
+      "updated": "2026-09-12",
+      "notes": "`changeIDLess` (lexicographic date + numeric counter); test covers same-date 0/2/10; live JSON shows 2026-09-12-13 on top."
+    },
+    {
+      "id": "NAV-03",
+      "seq": 3,
+      "title": "Prominent Continue/Start session button",
+      "file": "tasks/03-continue-session-button.md",
+      "status": "Done",
+      "updated": "2026-09-12",
+      "notes": "Screenshots: Continue on has-session board, Start on no-session board; Node DOM harness: 12/12 assertions (resume last-opened, fallback to newest, create+open)."
+    },
+    {
+      "id": "NAV-05",
+      "seq": 5,
+      "title": "Remove obsolete header crumb",
+      "file": "tasks/05-remove-header-crumb.md",
+      "status": "Done",
+      "dependsOn": [
+        "NAV-00"
+      ],
+      "updated": "2026-09-12",
+      "notes": "Span + CSS rule removed; vet/test/validate green; :9090 rebuilt+restarted; screenshot confirms clean header on board page."
+    },
+    {
+      "id": "NAV-04",
+      "seq": 4,
+      "title": "End-to-end verification and README update",
+      "file": "tasks/04-verify-and-docs.md",
+      "status": "Done",
+      "dependsOn": [
+        "NAV-00",
+        "NAV-01",
+        "NAV-02",
+        "NAV-03"
+      ],
+      "updated": "2026-09-12",
+      "notes": "vet/test/build/validate green; README updated; final live walk + index screenshot confirm all acceptance criteria. Ready for user close."
+    }
+  ]
+}

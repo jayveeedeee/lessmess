@@ -1,7 +1,3 @@
----
-id: PROJ-02
-title: Settings General project-name field
----
 
 # PROJ-02: Settings General project-name field
 

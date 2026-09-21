@@ -1,0 +1,58 @@
+{
+  "version": 1,
+  "id": "2026-09-12-15",
+  "title": "User-gated Test status before Done",
+  "prefix": "TST",
+  "status": {
+    "value": "Done",
+    "derived": false
+  },
+  "created": "2026-09-12",
+  "updated": "2026-09-13",
+  "tasks": [
+    {
+      "id": "TST-00",
+      "seq": 0,
+      "title": "Add Test status to model and ledger template",
+      "file": "tasks/00-model-test-status.md",
+      "status": "Done",
+      "updated": "2026-09-13",
+      "notes": "StatusTest added before Done in TaskStatusOrder; template ledger defines Test row; TestChangeLedgerMoveTaskToTest + template assertion pass; go test ./internal/model green"
+    },
+    {
+      "id": "TST-01",
+      "seq": 1,
+      "title": "Workflow text — Test vocabulary and user-gated Done",
+      "file": "tasks/01-workflow-text-user-gated-done.md",
+      "status": "Done",
+      "updated": "2026-09-13",
+      "notes": "Vocabulary, workflow steps 6–9, and handoff section updated; embedded copy re-synced byte-identical; go test ./internal/docs green (drift test)"
+    },
+    {
+      "id": "TST-02",
+      "seq": 2,
+      "title": "Test pill styling in both themes",
+      "file": "tasks/02-test-column-styling.md",
+      "status": "Done",
+      "dependsOn": [
+        "TST-00"
+      ],
+      "updated": "2026-09-13",
+      "notes": "--st-test-* in both theme blocks + .status-test rule; smoke board rendered status-test pills"
+    },
+    {
+      "id": "TST-03",
+      "seq": 3,
+      "title": "Update tests, README, and run full verification",
+      "file": "tasks/03-verify-tests-readme.md",
+      "status": "Done",
+      "dependsOn": [
+        "TST-00",
+        "TST-01",
+        "TST-02"
+      ],
+      "updated": "2026-09-13",
+      "notes": "go vet + go test green; validate OK; smoke on :9091 showed six columns in order, move endpoint persisted Test and reorder; README updated"
+    }
+  ]
+}

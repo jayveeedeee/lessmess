@@ -1,7 +1,3 @@
----
-id: NTD-00
-title: Extend workflow spec
----
 
 # NTD-00: Extend workflow spec
 

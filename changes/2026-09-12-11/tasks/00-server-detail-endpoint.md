@@ -1,7 +1,3 @@
----
-id: EXD-00
-title: Detail endpoint and route
----
 
 # EXD-00: Detail endpoint and route
 

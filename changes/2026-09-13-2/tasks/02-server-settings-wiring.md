@@ -1,7 +1,3 @@
----
-id: SET-02
-title: Wire settings into server behavior
----
 
 # SET-02: Wire settings into server behavior
 

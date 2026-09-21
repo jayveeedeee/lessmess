@@ -1,7 +1,3 @@
----
-id: WTP-06
-title: Board indicators, cleanup button, reopen reattach
----
 
 # WTP-06: Board indicators, cleanup button, reopen reattach
 

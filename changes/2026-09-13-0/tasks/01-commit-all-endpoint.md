@@ -1,7 +1,3 @@
----
-id: CMT-01
-title: Repo-wide commit endpoint and prompt
----
 
 # CMT-01: Repo-wide commit endpoint and prompt
 

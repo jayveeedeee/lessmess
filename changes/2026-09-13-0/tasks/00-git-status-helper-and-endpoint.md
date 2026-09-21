@@ -1,7 +1,3 @@
----
-id: CMT-00
-title: Read-only git helper and status endpoint
----
 
 # CMT-00: Read-only git helper and status endpoint
 

@@ -1,7 +1,3 @@
----
-id: CID-00
-title: Update the workflow spec text
----
 
 # CID-00: Update the workflow spec text
 

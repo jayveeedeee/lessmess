@@ -1,7 +1,3 @@
----
-id: ONB-04
-title: Server-side docs seed honoring agent/model
----
 
 # ONB-04: Server-side docs seed honoring agent/model
 

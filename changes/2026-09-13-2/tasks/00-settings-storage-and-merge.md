@@ -1,7 +1,3 @@
----
-id: SET-00
-title: Settings storage, layering, and merge
----
 
 # SET-00: Settings storage, layering, and merge
 

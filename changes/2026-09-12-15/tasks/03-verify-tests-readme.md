@@ -1,7 +1,3 @@
----
-id: TST-03
-title: Update tests, README, and run full verification
----
 
 # TST-03: Update tests, README, and run full verification
 

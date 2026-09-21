@@ -1,7 +1,3 @@
----
-id: OCI-03
-title: Session mapping store and endpoints
----
 
 # OCI-03: Session mapping store and endpoints
 

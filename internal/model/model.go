@@ -1,5 +1,6 @@
-// Package model parses and serializes the markdown files of the
-// changes/ workflow defined in AGENTS.md.
+// Package model parses and serializes the workflow data of the changes/
+// tree: the JSON state store (.lessmess/workflow/) and the legacy
+// markdown files defined in AGENTS.md.
 package model
 
 import "fmt"

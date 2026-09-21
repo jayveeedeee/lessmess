@@ -1,7 +1,3 @@
----
-id: JSI-02
-title: Store cutover to JSON state
----
 
 # JSI-02: Store cutover to JSON state
 
@@ -48,4 +44,9 @@ Store operates entirely on JSON state with the existing consumer-facing API shap
 
 ## Notes
 
-This is the cutover point: after it lands, old primes referencing md ledgers are stale until JSI-04 lands — keep the gap short. Record any consumer-shape changes needed by `internal/server` here.
+- Landed 2026-09-18. `internal/store` fully JSON-backed: `Open`/`scan` over `.lessmess/workflow/` (`ErrLegacyMarkdown` vs `ErrNoChanges` sentinels), `Change{State, Roots, Nodes, OrphanFiles, StrayDirs}`, task tree from the flat state array, mutations (`MoveTask`, `CreateTask`, `DecomposeTask`, `CreateChange(At)`, `MintChangeID`, `SetChangeStatus`) writing JSON atomically with fresh-read conflict safety, `Validate` rules 1–6 over JSON+prose, `Watch` covering the workflow subtree plus prose trees (incl. worktrees).
+- Design refinements recorded in the ledger decision log: generated-markdown ledger views (JSI-05 core pulled forward), JSON bootstrap in `docs.Init` (JSI-06 piece pulled forward), unresolved-entry and empty-container semantics, fresh-state-first mutation validation, legacy insertion order preserved.
+- Server/cmd adapted mechanically: `Root()` → `Index()`/`Entry()`, `.Ledger.Overall` → `.Overall()`, cards from `model.TaskState`, `CloseOutReady` store wrapper, `logStoreSummary` via state, prereq probe on the workflow index.
+- `docs/init.go`: `initWorkflow` writes `.lessmess/workflow/index.json`; gitignore block `.lessmess/*` + `!.lessmess/workflow/` (legacy ignores replaced).
+- The dogfood repo intentionally still runs its markdown tree until the new binary serves; `serve`/`validate` auto-migrate via `MigrateIfNeeded` on first boot.
+- Verification: `go vet ./... && go test ./...` green; on a full copy of this repo: `migrate` (41 changes, 197 tasks, 197 prose rewrites, 42 ledgers deleted) then `validate` → zero rule violations (only pre-existing/expected docs warnings); migrated state spot-checked (decision log, prose bodies, gitignore).

@@ -1,7 +1,3 @@
----
-id: CID-03
-title: Learnings upkeep and full verification
----
 
 # CID-03: Learnings upkeep and full verification
 

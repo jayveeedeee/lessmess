@@ -1,7 +1,3 @@
----
-id: PROJ-01
-title: Project name in header, terminal head, and tab title
----
 
 # PROJ-01: Project name in header, terminal head, and tab title
 

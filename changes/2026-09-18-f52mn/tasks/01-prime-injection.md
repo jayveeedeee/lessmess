@@ -1,7 +1,3 @@
----
-id: WCV-01
-title: Prime injection with precedence line
----
 
 # WCV-01: Prime injection with precedence line
 

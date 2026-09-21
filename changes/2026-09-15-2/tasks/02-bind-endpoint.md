@@ -1,7 +1,3 @@
----
-id: PSB-02
-title: Bind endpoint for task sessions
----
 
 # PSB-02: Bind endpoint for task sessions
 

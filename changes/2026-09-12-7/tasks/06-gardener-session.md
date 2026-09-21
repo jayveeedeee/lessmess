@@ -1,7 +1,3 @@
----
-id: DOC-06
-title: Doc gardener session and confinement guard
----
 
 # DOC-06: Doc gardener session and confinement guard
 

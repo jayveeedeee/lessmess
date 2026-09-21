@@ -1,7 +1,3 @@
----
-id: KAN-04
-title: HTTP API and SSE
----
 
 # KAN-04: HTTP API and SSE
 

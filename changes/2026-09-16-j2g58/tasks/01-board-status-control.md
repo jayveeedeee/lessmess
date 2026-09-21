@@ -1,7 +1,3 @@
----
-id: STS-01
-title: Board status control
----
 
 # STS-01: Board status control
 

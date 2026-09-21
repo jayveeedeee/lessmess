@@ -13,7 +13,8 @@ import (
 	"lessmess/internal/model"
 )
 
-// writeFixture builds a minimal valid changes/ tree in dir.
+// writeFixture builds a minimal valid JSON workflow store in dir: one
+// change with two tasks (prose files included).
 func writeFixture(t *testing.T, dir string) {
 	t.Helper()
 	must := func(err error) {
@@ -24,29 +25,31 @@ func writeFixture(t *testing.T, dir string) {
 	}
 	cdir := filepath.Join(dir, "changes", "2026-09-10-0")
 	must(os.MkdirAll(filepath.Join(cdir, "tasks"), 0o755))
-
-	root := `# Changes — Root Ledger
-
-One row per change directory. Task statuses live exclusively in each change's ledger.
-
-| Change | Title | ID prefix | Branch | Status | Created | Last updated |
-| --- | --- | --- | --- | --- | --- | --- |
-| [2026-09-10-0](2026-09-10-0/plan.md) | Fixture change | FIX | — | In progress | 2026-09-10 | 2026-09-10 |
-`
-	must(os.WriteFile(filepath.Join(dir, "changes", "ledger.md"), []byte(root), 0o644))
 	must(os.WriteFile(filepath.Join(cdir, "plan.md"), model.RenderChangePlan("2026-09-10-0", "Fixture change", "2026-09-10"), 0o644))
-
-	ledger := model.RenderChangeLedger("2026-09-10-0", "2026-09-10")
-	l, err := model.ParseChangeLedger("ledger.md", ledger)
-	if err != nil {
-		t.Fatal(err)
-	}
-	l.SetOverall(model.OverallInProgress, "2026-09-10")
-	l.AppendTask(model.TaskRow{ID: "FIX-00", Href: "tasks/00-first.md", Title: "First", Status: model.StatusNotStarted, Updated: "2026-09-10", Notes: model.Empty})
-	l.AppendTask(model.TaskRow{ID: "FIX-01", Href: "tasks/01-second.md", Title: "Second", Status: model.StatusInProgress, Updated: "2026-09-10", Notes: model.Empty})
-	must(os.WriteFile(filepath.Join(cdir, "ledger.md"), l.Content(), 0o644))
 	must(os.WriteFile(filepath.Join(cdir, "tasks", "00-first.md"), model.RenderTaskFile("FIX-00", "First"), 0o644))
 	must(os.WriteFile(filepath.Join(cdir, "tasks", "01-second.md"), model.RenderTaskFile("FIX-01", "Second"), 0o644))
+
+	st := &model.ChangeState{
+		Version: model.StateVersion,
+		ID:      "2026-09-10-0",
+		Title:   "Fixture change",
+		Prefix:  "FIX",
+		Status:  model.ChangeStatus{Value: model.OverallInProgress, Derived: true},
+		Created: "2026-09-10",
+		Updated: "2026-09-10",
+		Tasks: []model.TaskState{
+			{ID: "FIX-00", Seq: 0, Title: "First", File: "tasks/00-first.md", Status: model.StatusNotStarted, Updated: "2026-09-10"},
+			{ID: "FIX-01", Seq: 1, Title: "Second", File: "tasks/01-second.md", Status: model.StatusInProgress, Updated: "2026-09-10"},
+		},
+	}
+	wd := filepath.Join(dir, StateDirName, "workflow")
+	must(os.MkdirAll(filepath.Join(wd, "changes"), 0o755))
+	must(st.Save(filepath.Join(wd, "changes", "2026-09-10-0.json")))
+	idx := &model.WorkflowIndex{
+		Version: model.StateVersion,
+		Changes: []model.IndexEntry{{ID: "2026-09-10-0", Title: "Fixture change", Prefix: "FIX", Created: "2026-09-10"}},
+	}
+	must(idx.Save(filepath.Join(wd, "index.json")))
 }
 
 func openFixture(t *testing.T) (*Store, string) {
@@ -71,11 +74,14 @@ func TestLoadValid(t *testing.T) {
 		t.Fatalf("changes = %+v", changes)
 	}
 	c := changes[0]
-	if len(c.Ledger.Rows) != 2 || c.Ledger.Rows[0].ID != "FIX-00" {
-		t.Fatalf("rows = %+v", c.Ledger.Rows)
+	if len(c.State.Tasks) != 2 || c.State.Tasks[0].ID != "FIX-00" {
+		t.Fatalf("tasks = %+v", c.State.Tasks)
 	}
-	if len(c.Roots) != 2 || c.Roots[0].File.Title != "First" {
+	if len(c.Roots) != 2 || c.Roots[0].Task.Title != "First" {
 		t.Fatalf("roots = %+v", c.Roots)
+	}
+	if c.Overall() != model.OverallInProgress {
+		t.Fatalf("overall = %q", c.Overall())
 	}
 }
 
@@ -88,7 +94,7 @@ func TestValidateBadDirName(t *testing.T) {
 	assertViolation(t, s.Validate(), 1, "bogus-dir")
 }
 
-func TestValidateMissingFile(t *testing.T) {
+func TestValidateMissingPlan(t *testing.T) {
 	s, dir := openFixture(t)
 	if err := os.Remove(filepath.Join(dir, "changes", "2026-09-10-0", "plan.md")); err != nil {
 		t.Fatal(err)
@@ -100,57 +106,42 @@ func TestValidateMissingFile(t *testing.T) {
 func TestValidateOrphanTaskFile(t *testing.T) {
 	s, dir := openFixture(t)
 	p := filepath.Join(dir, "changes", "2026-09-10-0", "tasks", "02-orphan.md")
-	if err := os.WriteFile(p, model.RenderTaskFile("FIX-02", "Orphan"), 0o644); err != nil {
+	if err := os.WriteFile(p, []byte("# orphan\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	s.Reload()
-	assertViolation(t, s.Validate(), 3, "no ledger row")
+	assertViolation(t, s.Validate(), 3, "not referenced")
 }
 
-func TestValidateRowWithoutFile(t *testing.T) {
+func TestValidateMissingProseFile(t *testing.T) {
 	s, dir := openFixture(t)
 	if err := os.Remove(filepath.Join(dir, "changes", "2026-09-10-0", "tasks", "01-second.md")); err != nil {
 		t.Fatal(err)
 	}
 	s.Reload()
-	assertViolation(t, s.Validate(), 3, "no parseable task file")
+	assertViolation(t, s.Validate(), 3, "missing prose file")
 }
 
-func TestValidateIDFilenameMismatch(t *testing.T) {
+func TestValidateDirWithoutIndexEntry(t *testing.T) {
 	s, dir := openFixture(t)
-	p := filepath.Join(dir, "changes", "2026-09-10-0", "tasks", "01-second.md")
-	if err := os.WriteFile(p, model.RenderTaskFile("FIX-09", "Second"), 0o644); err != nil {
+	if err := os.MkdirAll(filepath.Join(dir, "changes", "2026-09-11-abcde", "tasks"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	s.Reload()
-	// Ledger row FIX-01, filename 01, frontmatter FIX-09: the row↔filename
-	// pair agrees; only the frontmatter mismatches.
-	assertViolation(t, s.Validate(), 3, "frontmatter id")
+	assertViolation(t, s.Validate(), 6, "no index entry")
 }
 
-func TestValidateRootStatusMismatch(t *testing.T) {
+func TestValidateBrokenState(t *testing.T) {
 	s, dir := openFixture(t)
-	p := filepath.Join(dir, "changes", "2026-09-10-0", "ledger.md")
-	l, _ := model.ParseChangeLedger("l", mustRead(t, p))
-	l.SetOverall(model.OverallDone, "2026-09-11")
-	if err := os.WriteFile(p, l.Content(), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	s.Reload()
-	assertViolation(t, s.Validate(), 6, "!=")
-}
-
-func TestValidateBrokenSchema(t *testing.T) {
-	s, dir := openFixture(t)
-	p := filepath.Join(dir, "changes", "2026-09-10-0", "ledger.md")
-	if err := os.WriteFile(p, []byte("# garbage\n"), 0o644); err != nil {
+	p := filepath.Join(dir, StateDirName, "workflow", "changes", "2026-09-10-0.json")
+	if err := os.WriteFile(p, []byte("{garbage"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	s.Reload()
 	assertViolation(t, s.Validate(), 5, "")
-	// Writes to the broken ledger are refused.
+	// Writes against the broken state are refused.
 	if err := s.MoveTask("2026-09-10-0", "FIX-00", model.StatusDone, 0); err == nil || !strings.Contains(err.Error(), ErrInvalid.Error()) {
-		t.Fatalf("MoveTask on broken ledger: err = %v", err)
+		t.Fatalf("MoveTask on broken state: err = %v", err)
 	}
 }
 
@@ -173,44 +164,80 @@ func mustRead(t *testing.T, p string) []byte {
 	return b
 }
 
+func loadState(t *testing.T, dir, id string) *model.ChangeState {
+	t.Helper()
+	st, err := model.LoadChangeState(filepath.Join(dir, StateDirName, "workflow", "changes", id+".json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return st
+}
+
 func TestMoveTask(t *testing.T) {
 	s, dir := openFixture(t)
 	if err := s.MoveTask("2026-09-10-0", "FIX-00", model.StatusDone, 0); err != nil {
 		t.Fatalf("MoveTask: %v", err)
 	}
-	l, err := model.ParseChangeLedger("l", mustRead(t, filepath.Join(dir, "changes", "2026-09-10-0", "ledger.md")))
-	if err != nil {
-		t.Fatalf("reparse: %v", err)
+	st := loadState(t, dir, "2026-09-10-0")
+	ts := st.Task("FIX-00")
+	if ts == nil || ts.Status != model.StatusDone || ts.Updated != today() {
+		t.Fatalf("task = %+v", ts)
 	}
-	row := l.Row("FIX-00")
-	if row == nil || row.Status != model.StatusDone || row.Updated != today() {
-		t.Fatalf("row = %+v", row)
+	// Priority order kept the moved task inside its group; a status with
+	// no existing group lands at the end of the level (legacy
+	// insertionPos semantics).
+	if len(st.Tasks) != 2 || st.Tasks[1].ID != "FIX-00" {
+		t.Fatalf("order = %+v", st.Tasks)
 	}
 	// Cache was updated too.
 	c, _ := s.Change("2026-09-10-0")
-	if c.Ledger.Row("FIX-00").Status != model.StatusDone {
+	if c.Node("FIX-00").NodeStatus() != model.StatusDone {
 		t.Fatal("cache not updated")
+	}
+	// Derived overall status converged (a Done task with another In
+	// progress stays In progress).
+	if c.Overall() != model.OverallInProgress {
+		t.Fatalf("overall = %q", c.Overall())
+	}
+}
+
+func TestMoveTaskPositionWithinGroup(t *testing.T) {
+	s, dir := openFixture(t)
+	// Three tasks: FIX-00 Not started, FIX-01 In progress, FIX-02 Not started.
+	if _, err := s.CreateTask("2026-09-10-0", "", "Third"); err != nil {
+		t.Fatal(err)
+	}
+	// Move FIX-02 to Not started index 0: it must land before FIX-00.
+	if err := s.MoveTask("2026-09-10-0", "FIX-02", model.StatusNotStarted, 0); err != nil {
+		t.Fatalf("MoveTask: %v", err)
+	}
+	st := loadState(t, dir, "2026-09-10-0")
+	if st.Tasks[0].ID != "FIX-02" || st.Tasks[1].ID != "FIX-00" {
+		t.Fatalf("order after move = [%s, %s, %s], want FIX-02, FIX-00, FIX-01",
+			st.Tasks[0].ID, st.Tasks[1].ID, st.Tasks[2].ID)
 	}
 }
 
 func TestMoveTaskPreservesExternalEdits(t *testing.T) {
 	s, dir := openFixture(t)
-	// External agent appends a row directly on disk.
-	p := filepath.Join(dir, "changes", "2026-09-10-0", "ledger.md")
-	l, _ := model.ParseChangeLedger("l", mustRead(t, p))
-	l.AppendTask(model.TaskRow{ID: "FIX-05", Href: "tasks/05-ext.md", Title: "External", Status: model.StatusNotStarted, Updated: "2026-09-10", Notes: model.Empty})
-	if err := os.WriteFile(p, l.Content(), 0o644); err != nil {
+	// External agent appends a task directly to the state file on disk.
+	ext := loadState(t, dir, "2026-09-10-0")
+	ext.Tasks = append(ext.Tasks, model.TaskState{ID: "FIX-05", Seq: 5, Title: "External", File: "tasks/05-ext.md", Status: model.StatusNotStarted, Updated: "2026-09-10"})
+	if err := os.WriteFile(filepath.Join(dir, "changes", "2026-09-10-0", "tasks", "05-ext.md"), model.RenderTaskFile("FIX-05", "External"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := ext.Save(filepath.Join(dir, StateDirName, "workflow", "changes", "2026-09-10-0.json")); err != nil {
 		t.Fatal(err)
 	}
 	// A store write applies on top of the fresh content.
 	if err := s.MoveTask("2026-09-10-0", "FIX-00", model.StatusDone, 0); err != nil {
 		t.Fatalf("MoveTask: %v", err)
 	}
-	l2, _ := model.ParseChangeLedger("l", mustRead(t, p))
-	if l2.Row("FIX-05") == nil {
+	st := loadState(t, dir, "2026-09-10-0")
+	if st.Task("FIX-05") == nil {
 		t.Fatal("external edit lost")
 	}
-	if l2.Row("FIX-00").Status != model.StatusDone {
+	if st.Task("FIX-00").Status != model.StatusDone {
 		t.Fatal("move not applied")
 	}
 }
@@ -231,15 +258,19 @@ func TestCreateTask(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
-	if row.ID != "FIX-02" || row.Href != "tasks/02-my-new-task.md" || row.Status != model.StatusNotStarted {
-		t.Fatalf("row = %+v", row)
+	if row.ID != "FIX-02" || row.File != "tasks/02-my-new-task.md" || row.Status != model.StatusNotStarted {
+		t.Fatalf("task = %+v", row)
 	}
-	// File exists and parses.
-	tf, err := model.ParseTaskFile("t", mustRead(t, filepath.Join(dir, "changes", "2026-09-10-0", "tasks", "02-my-new-task.md")))
-	if err != nil || tf.ID != "FIX-02" {
-		t.Fatalf("task file: %v %+v", err, tf)
+	// Prose file exists with the heading carrying the identity.
+	body := string(mustRead(t, filepath.Join(dir, "changes", "2026-09-10-0", "tasks", "02-my-new-task.md")))
+	if !strings.HasPrefix(body, "# FIX-02: My New Task!") {
+		t.Fatalf("prose file = %q", body)
 	}
-	// Ledger row appended and everything still validates.
+	// State has the task and everything still validates.
+	st := loadState(t, dir, "2026-09-10-0")
+	if st.Task("FIX-02") == nil {
+		t.Fatal("task not in state")
+	}
 	if v := s.Validate(); len(v) != 0 {
 		t.Fatalf("violations after create: %v", v)
 	}
@@ -247,11 +278,16 @@ func TestCreateTask(t *testing.T) {
 
 func TestCreateTaskNoReuse(t *testing.T) {
 	s, dir := openFixture(t)
-	// Simulate a removed task: gap between 01 and 05 on disk.
-	p := filepath.Join(dir, "changes", "2026-09-10-0", "tasks", "05-late.md")
-	if err := os.WriteFile(p, model.RenderTaskFile("FIX-05", "Late"), 0o644); err != nil {
+	// Simulate a removed task: a gap in the sequence.
+	st := loadState(t, dir, "2026-09-10-0")
+	st.Tasks = append(st.Tasks, model.TaskState{ID: "FIX-05", Seq: 5, Title: "Late", File: "tasks/05-late.md", Status: model.StatusNotStarted, Updated: "2026-09-10"})
+	if err := os.WriteFile(filepath.Join(dir, "changes", "2026-09-10-0", "tasks", "05-late.md"), model.RenderTaskFile("FIX-05", "Late"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	if err := st.Save(filepath.Join(dir, StateDirName, "workflow", "changes", "2026-09-10-0.json")); err != nil {
+		t.Fatal(err)
+	}
+	s.Reload()
 	row, err := s.CreateTask("2026-09-10-0", "", "Another")
 	if err != nil {
 		t.Fatalf("CreateTask: %v", err)
@@ -270,23 +306,22 @@ func TestCreateChange(t *testing.T) {
 	if !regexp.MustCompile(`^2026-09-12-[a-z0-9]{5}$`).MatchString(id) {
 		t.Fatalf("id = %q, want a 2026-09-12 date prefix with a five-character lowercase alphanumeric suffix", id)
 	}
-	for _, f := range []string{"plan.md", "ledger.md", "tasks"} {
+	for _, f := range []string{"plan.md", "tasks"} {
 		if _, err := os.Stat(filepath.Join(dir, "changes", id, f)); err != nil {
 			t.Fatalf("missing %s: %v", f, err)
 		}
 	}
-	root, err := s.Root()
+	idx, err := s.Index()
 	if err != nil {
 		t.Fatal(err)
 	}
-	var found bool
-	for _, r := range root.Rows {
-		if r.Change == id && r.Prefix == "NEW" && r.Status == model.OverallPlanned && r.Branch == "feat/settings" {
-			found = true
-		}
+	e := idx.Find(id)
+	if e == nil || e.Prefix != "NEW" || e.Branch != "feat/settings" {
+		t.Fatalf("index entry = %+v", e)
 	}
-	if !found {
-		t.Fatal("root row not appended with branch")
+	st := loadState(t, dir, id)
+	if st.Status != (model.ChangeStatus{Value: model.OverallPlanned, Derived: true}) {
+		t.Fatalf("new change status = %+v", st.Status)
 	}
 	if v := s.Validate(); len(v) != 0 {
 		t.Fatalf("violations after create: %v", v)
@@ -294,19 +329,14 @@ func TestCreateChange(t *testing.T) {
 }
 
 func TestCreateChangeEmptyBranch(t *testing.T) {
-	s, _ := openFixture(t)
+	s, dir := openFixture(t)
 	id, err := s.CreateChange("Plain", "PLA", "", "2026-09-12")
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("CreateChange: %v", err)
 	}
-	root, err := s.Root()
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, r := range root.Rows {
-		if r.Change == id && r.Branch != model.Empty {
-			t.Fatalf("branch = %q, want %q", r.Branch, model.Empty)
-		}
+	st := loadState(t, dir, id)
+	if st.Branch != "" {
+		t.Fatalf("branch = %q, want empty", st.Branch)
 	}
 }
 
@@ -314,7 +344,7 @@ func TestCreateChangeSuffixUniqueness(t *testing.T) {
 	s, _ := openFixture(t)
 	seen := map[string]bool{}
 	for i := 0; i < 50; i++ {
-		id, err := s.CreateChange("Objective", "—", "", "2026-09-12")
+		id, err := s.CreateChange("Objective", "", "", "2026-09-12")
 		if err != nil {
 			t.Fatalf("CreateChange %d: %v", i, err)
 		}
@@ -343,7 +373,7 @@ func TestCreateChangeCollisionRegenerates(t *testing.T) {
 		}
 		return next
 	}
-	id, err := s.CreateChange("After collision", "—", "", "2026-09-12")
+	id, err := s.CreateChange("After collision", "", "", "2026-09-12")
 	if err != nil {
 		t.Fatalf("CreateChange: %v", err)
 	}
@@ -361,7 +391,7 @@ func TestCreateChangeSuffixExhausted(t *testing.T) {
 	orig := randSuffix
 	defer func() { randSuffix = orig }()
 	randSuffix = func() string { return "abcde" }
-	if _, err := s.CreateChange("Doomed", "—", "", "2026-09-12"); err == nil {
+	if _, err := s.CreateChange("Doomed", "", "", "2026-09-12"); err == nil {
 		t.Fatal("expected an error when every mint collides")
 	}
 }
@@ -401,23 +431,10 @@ func TestSetChangeStatus(t *testing.T) {
 	if err := s.SetChangeStatus("2026-09-10-0", model.OverallDone); err != nil {
 		t.Fatalf("close: %v", err)
 	}
-	// Per-change ledger updated.
-	l, err := model.ParseChangeLedger("l", mustRead(t, filepath.Join(dir, "changes", "2026-09-10-0", "ledger.md")))
-	if err != nil {
-		t.Fatal(err)
+	st := loadState(t, dir, "2026-09-10-0")
+	if st.Status != (model.ChangeStatus{Value: model.OverallDone, Derived: false}) || st.Updated != today() {
+		t.Fatalf("state after close = %+v", st.Status)
 	}
-	if l.Overall != model.OverallDone || l.LastUpdated != today() {
-		t.Fatalf("ledger overall = %q updated = %q", l.Overall, l.LastUpdated)
-	}
-	// Root ledger row updated.
-	root, err := model.ParseRootLedger("r", mustRead(t, filepath.Join(dir, "changes", "ledger.md")))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if root.Rows[0].Status != model.OverallDone || root.Rows[0].Updated != today() {
-		t.Fatalf("root row = %+v", root.Rows[0])
-	}
-	// Everything still validates.
 	if v := s.Validate(); len(v) != 0 {
 		t.Fatalf("violations after close: %v", v)
 	}
@@ -426,18 +443,52 @@ func TestSetChangeStatus(t *testing.T) {
 	if err := s.SetChangeStatus("2026-09-10-0", model.OverallInProgress); err != nil {
 		t.Fatalf("reopen: %v", err)
 	}
-	l2, _ := model.ParseChangeLedger("l", mustRead(t, filepath.Join(dir, "changes", "2026-09-10-0", "ledger.md")))
-	root2, _ := model.ParseRootLedger("r", mustRead(t, filepath.Join(dir, "changes", "ledger.md")))
-	if l2.Overall != model.OverallInProgress || root2.Rows[0].Status != model.OverallInProgress {
-		t.Fatalf("after reopen: ledger %q root %q", l2.Overall, root2.Rows[0].Status)
-	}
-	if v := s.Validate(); len(v) != 0 {
-		t.Fatalf("violations after reopen: %v", v)
+	st = loadState(t, dir, "2026-09-10-0")
+	if st.Status != (model.ChangeStatus{Value: model.OverallInProgress, Derived: true}) {
+		t.Fatalf("state after reopen = %+v", st.Status)
 	}
 
 	// Unknown change.
 	if err := s.SetChangeStatus("2099-01-01-9", model.OverallDone); err != ErrNotFound {
 		t.Fatalf("unknown: err = %v", err)
+	}
+}
+
+func TestSyncOverallConvergesDrift(t *testing.T) {
+	s, dir := openFixture(t)
+	// All tasks done/test: the tree is complete, so the derived status is
+	// In progress (close is user-gated).
+	if err := s.MoveTask("2026-09-10-0", "FIX-00", model.StatusTest, 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.MoveTask("2026-09-10-0", "FIX-01", model.StatusDone, 0); err != nil {
+		t.Fatal(err)
+	}
+	st := loadState(t, dir, "2026-09-10-0")
+	if st.Status.Value != model.OverallInProgress || !st.Status.Derived {
+		t.Fatalf("status = %+v, want derived In progress", st.Status)
+	}
+	// All tasks Not started again (external edit): the watcher's
+	// SyncOverallStatuses converges back to Planned.
+	st.Tasks[0].Status = model.StatusNotStarted
+	st.Tasks[1].Status = model.StatusNotStarted
+	if err := st.Save(filepath.Join(dir, StateDirName, "workflow", "changes", "2026-09-10-0.json")); err != nil {
+		t.Fatal(err)
+	}
+	s.Reload()
+	s.SyncOverallStatuses()
+	st = loadState(t, dir, "2026-09-10-0")
+	if st.Status.Value != model.OverallPlanned {
+		t.Fatalf("status after converge = %+v", st.Status)
+	}
+	// A user-set Done survives recomputation.
+	if err := s.SetChangeStatus("2026-09-10-0", model.OverallDone); err != nil {
+		t.Fatal(err)
+	}
+	s.SyncOverallStatuses()
+	st = loadState(t, dir, "2026-09-10-0")
+	if st.Status != (model.ChangeStatus{Value: model.OverallDone, Derived: false}) {
+		t.Fatalf("user-set status clobbered: %+v", st.Status)
 	}
 }
 
@@ -449,16 +500,13 @@ func TestWatchEvent(t *testing.T) {
 		t.Fatalf("Watch: %v", err)
 	}
 	ch := s.Subscribe()
-	// External edit.
-	p := filepath.Join(dir, "changes", "2026-09-10-0", "tasks", "00-first.md")
-	f, err := os.OpenFile(p, os.O_APPEND|os.O_WRONLY, 0o644)
-	if err != nil {
+	// External edit to the state file.
+	p := filepath.Join(dir, StateDirName, "workflow", "changes", "2026-09-10-0.json")
+	st := loadState(t, dir, "2026-09-10-0")
+	st.Tasks[0].Notes = "watched"
+	if err := st.Save(p); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.WriteString("\nexternal edit\n"); err != nil {
-		t.Fatal(err)
-	}
-	f.Close()
 	select {
 	case ev := <-ch:
 		if ev.Kind != "fs" {
@@ -529,12 +577,12 @@ func TestOpenNoChangesSentinel(t *testing.T) {
 	if !errors.Is(err, ErrNoChanges) {
 		t.Fatalf("Open err = %v, want errors.Is ErrNoChanges", err)
 	}
-	if !strings.Contains(err.Error(), "changes/ directory not found under") {
+	if !strings.Contains(err.Error(), "workflow state not found under") {
 		t.Fatalf("message changed: %v", err)
 	}
 }
 
-func TestOpenMissingRootLedgerSentinel(t *testing.T) {
+func TestOpenMissingIndexSentinel(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(dir, "changes"), 0o755); err != nil {
 		t.Fatal(err)
@@ -545,19 +593,96 @@ func TestOpenMissingRootLedgerSentinel(t *testing.T) {
 	}
 }
 
-func TestOpenCorruptRootLedgerNotSentinel(t *testing.T) {
+func TestOpenLegacyMarkdownNotSentinel(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(dir, "changes"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "changes", "ledger.md"), []byte("garbage\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "changes", "ledger.md"), []byte("legacy\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := Open(dir)
+	if !errors.Is(err, ErrLegacyMarkdown) {
+		t.Fatalf("legacy Open err = %v, want errors.Is ErrLegacyMarkdown", err)
+	}
+	if errors.Is(err, ErrNoChanges) {
+		t.Fatalf("legacy tree must NOT be ErrNoChanges: %v", err)
+	}
+}
+
+func TestOpenCorruptIndexNotSentinel(t *testing.T) {
+	dir := t.TempDir()
+	wd := filepath.Join(dir, StateDirName, "workflow", "changes")
+	if err := os.MkdirAll(wd, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, StateDirName, "workflow", "index.json"), []byte("garbage\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	_, err := Open(dir)
 	if err == nil {
-		t.Fatal("corrupt ledger must fail")
+		t.Fatal("corrupt index must fail")
 	}
 	if errors.Is(err, ErrNoChanges) {
-		t.Fatalf("corrupt ledger must NOT be ErrNoChanges (stays fatal): %v", err)
+		t.Fatalf("corrupt index must NOT be ErrNoChanges (stays fatal): %v", err)
+	}
+}
+
+func TestTaskAndPlanReaders(t *testing.T) {
+	s, _ := openFixture(t)
+	tf, err := s.TaskFile("2026-09-10-0", "tasks/00-first.md")
+	if err != nil {
+		t.Fatalf("TaskFile: %v", err)
+	}
+	if tf.ID != "FIX-00" || tf.Title != "First" || !strings.Contains(tf.Body, "# FIX-00: First") {
+		t.Fatalf("task file = %+v", tf)
+	}
+	// Identity comes from state: an unreferenced href is not a task.
+	if _, err := s.TaskFile("2026-09-10-0", "tasks/99-ghost.md"); err != ErrNotFound {
+		t.Fatalf("ghost href err = %v, want ErrNotFound", err)
+	}
+	// Path guards.
+	if _, err := s.TaskFile("2026-09-10-0", "../escape.md"); err != ErrNotFound {
+		t.Fatalf("escape err = %v", err)
+	}
+	plan, err := s.PlanFile("2026-09-10-0")
+	if err != nil || !strings.Contains(plan, "Fixture change") {
+		t.Fatalf("PlanFile: %v %q", err, plan)
+	}
+}
+
+func TestLedgerViews(t *testing.T) {
+	s, _ := openFixture(t)
+	view, err := s.LedgerFile("2026-09-10-0")
+	if err != nil {
+		t.Fatalf("LedgerFile: %v", err)
+	}
+	for _, want := range []string{
+		"- Overall status: In progress",
+		"[FIX-00](tasks/00-first.md)",
+		"[FIX-01](tasks/01-second.md)",
+		"| Task | Title | Status | Depends on | Updated | Notes |",
+	} {
+		if !strings.Contains(view, want) {
+			t.Errorf("view missing %q:\n%s", want, view)
+		}
+	}
+	// Container view: decompose and add a child, then fetch the legacy
+	// href shape.
+	if _, err := s.DecomposeTask("2026-09-10-0", "FIX-00"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.CreateTask("2026-09-10-0", "FIX-00", "Child"); err != nil {
+		t.Fatal(err)
+	}
+	cv, err := s.ContainerLedgerFile("2026-09-10-0", "tasks/00-first/ledger.md")
+	if err != nil {
+		t.Fatalf("ContainerLedgerFile: %v", err)
+	}
+	if !strings.Contains(cv, "[FIX-00.00](tasks/00-first/tasks/00-child.md)") {
+		t.Errorf("container view = %s", cv)
+	}
+	if _, err := s.ContainerLedgerFile("2026-09-10-0", "plan.md"); err != ErrNotFound {
+		t.Errorf("non-container href err = %v, want ErrNotFound", err)
 	}
 }

@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "id": "2026-09-14-1",
+  "title": "Discussion sessions open fresh",
+  "prefix": "DSC",
+  "status": {
+    "value": "Done",
+    "derived": false
+  },
+  "created": "2026-09-14",
+  "updated": "2026-09-15",
+  "tasks": [
+    {
+      "id": "DSC-00",
+      "seq": 0,
+      "title": "Add empty-state rule to discussion prompt",
+      "file": "tasks/00-empty-state-prime-rule.md",
+      "status": "Done",
+      "updated": "2026-09-14",
+      "notes": "Prompt matches plan block byte-for-byte; `go vet ./... \u0026\u0026 go test ./...` green incl. extended assertions and settingswiring/settingschange regression guards"
+    },
+    {
+      "id": "DSC-01",
+      "seq": 1,
+      "title": "Rebuild and verify fresh opening live",
+      "file": "tasks/01-rebuild-and-live-verify.md",
+      "status": "Done",
+      "dependsOn": [
+        "DSC-00"
+      ],
+      "updated": "2026-09-14",
+      "notes": "Rebuilt + restarted (PID 74327 owns :9090). Check A: new discussion replied exactly \"What would you like to build?\", 0 tool calls, reasoning cited instruction 0. Check B: fresh settings discussion (reused:false, old one bound to Done change) engaged on session.agent with 5 grounded tool calls, no invite stall. Existing sessions unaffected by construction (primes sent only at creation)"
+    },
+    {
+      "id": "DSC-02",
+      "seq": 2,
+      "title": "Keep the terminal open when a discussion scaffolds",
+      "file": "tasks/02-keep-terminal-on-scaffold.md",
+      "status": "Done",
+      "updated": "2026-09-14",
+      "notes": "app.js: index branch skips reload while terminal open, followSession() navigates to /changes/{id}?session= once bound, closeTerminal() re-arms refresh. node --check ok; rebuilt + restarted (PID 80084). Headless chain verified: unassigned binding {\"change\":\"\"} → scaffold 2026-09-14-2 → binding returns change, board+?session= loads 200; throwaway change cancelled, test session deleted. `go vet ./... \u0026\u0026 go test ./...` green. Browser click-through awaits user acceptance"
+    }
+  ]
+}

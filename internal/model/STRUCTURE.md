@@ -1,7 +1,7 @@
 <!-- tasktracker:begin -->
 # Structure: internal/model
 
-<!-- tasktracker-meta: refreshed=2026-09-16 source=2026-09-16-7ueiv tree=f5f5945f4bd6 -->
+<!-- tasktracker-meta: refreshed=2026-09-18 source=seed tree=677e77cc5402 -->
 
 Parses and serializes the markdown files of the `changes/` workflow defined in AGENTS.md.
 
@@ -18,6 +18,8 @@ Parses and serializes the markdown files of the `changes/` workflow defined in A
 | `model.go` | Package doc, status vocabularies, and parse errors |
 | `serialize.go` | Mutates ledgers and re-renders their tables |
 | `serialize_test.go` | Tests for ledger mutation, templates, and atomic writes |
+| `state.go` | Canonical JSON workflow state: index and per-change types, strict versioned load, atomic save, and schema validation. |
+| `state_test.go` | Tests for the JSON state: load and save round trips, version and unknown-field rejection, and validation issues. |
 | `table.go` | Markdown table parsing, rendering, and link cells |
 | `taskfile.go` | Parses task-file YAML frontmatter |
 | `taskid.go` | Dotted task-ID helpers for nested decomposition: parent, child, last segment, depth, and segment validation. |

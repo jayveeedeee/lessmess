@@ -1,7 +1,3 @@
----
-id: LIF-01
-title: Store status transitions + close/reopen endpoints
----
 
 # LIF-01: Store status transitions + close/reopen endpoints
 

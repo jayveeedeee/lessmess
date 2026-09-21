@@ -1,7 +1,3 @@
----
-id: EXP-01
-title: Explorer page and tree fragment
----
 
 # EXP-01: Explorer page and tree fragment
 

@@ -1,7 +1,3 @@
----
-id: MTOC-01
-title: Two-pane modal layout in templates and CSS
----
 
 # MTOC-01: Two-pane modal layout in templates and CSS
 

@@ -1,7 +1,3 @@
----
-id: JSI-05
-title: Board and detail views from JSON
----
 
 # JSI-05: Board and detail views from JSON
 
@@ -44,4 +40,7 @@ All document views render correctly from JSON + prose with no references to ledg
 
 ## Notes
 
-Pure presentation work on top of JSI-02/03; keep presentation trims out of the store per current convention.
+- The core landed with JSI-02: the ledger detail routes serve deterministic generated-markdown views rendered from the JSON state (`internal/store/view.go`), so the existing modal pipeline, `app.js` link mapping, and detail tests kept working unchanged; task detail composes JSON identity (via `TaskFile`) with the raw prose body.
+- This task closed the remainder: stale template copy (setup wizard's bootstrap list, settings' branch help) updated to the JSON model; view coverage confirmed via the existing golden-ish tests (`TestLedgerDetail`, `TestContainerLedgerEndpoint`, `TestNestedBoardMarkup`, `TestNestedTaskDetail`, `TestReviewDetailModal`).
+- No dead store readers remained: `PlanFile`, `TaskFile`, `LedgerFile`, `ContainerLedgerFile` all serve live consumers.
+- Verification: `go vet ./... && go test ./...` green (2026-09-18).

@@ -1,7 +1,3 @@
----
-id: SET-09
-title: Task panel for change-bound terminals on any page
----
 
 # SET-09: Task panel for change-bound terminals on any page
 

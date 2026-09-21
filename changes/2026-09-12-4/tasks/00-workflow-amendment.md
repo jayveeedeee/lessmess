@@ -1,7 +1,3 @@
----
-id: LIF-00
-title: AGENTS.md user-only close + reopen amendment
----
 
 # LIF-00: AGENTS.md user-only close + reopen amendment
 

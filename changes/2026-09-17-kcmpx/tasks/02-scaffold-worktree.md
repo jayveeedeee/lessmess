@@ -1,7 +1,3 @@
----
-id: WTP-02
-title: Scaffold creates branch, worktree, and worktree-side change docs
----
 
 # WTP-02: Scaffold creates branch, worktree, and worktree-side change docs
 

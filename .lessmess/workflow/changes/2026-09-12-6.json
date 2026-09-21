@@ -1,0 +1,88 @@
+{
+  "version": 1,
+  "id": "2026-09-12-6",
+  "title": "Discussion-first sessions with API-triggered scaffold",
+  "prefix": "SCF",
+  "branch": "main",
+  "status": {
+    "value": "Done",
+    "derived": false
+  },
+  "created": "2026-09-12",
+  "updated": "2026-09-12",
+  "tasks": [
+    {
+      "id": "SCF-00",
+      "seq": 0,
+      "title": "Unassigned bucket in mapping + discussions list endpoint",
+      "file": "tasks/00-unassigned-bucket.md",
+      "status": "Done",
+      "updated": "2026-09-12",
+      "notes": "Verified: bucket add/move/persist/idempotency + enriched list endpoint; tests pass."
+    },
+    {
+      "id": "SCF-01",
+      "seq": 1,
+      "title": "Discussion-session endpoint and prime prompt",
+      "file": "tasks/01-discussion-endpoint.md",
+      "status": "Done",
+      "dependsOn": [
+        "SCF-00"
+      ],
+      "updated": "2026-09-12",
+      "notes": "Verified: endpoint creates unassigned discussion; prompt assertions (discussion-only, injected curl + session ID, AGENTS.md); 503 path."
+    },
+    {
+      "id": "SCF-02",
+      "seq": 2,
+      "title": "Scaffold trigger endpoint",
+      "file": "tasks/02-scaffold-endpoint.md",
+      "status": "Done",
+      "dependsOn": [
+        "SCF-00",
+        "SCF-01"
+      ],
+      "updated": "2026-09-12",
+      "notes": "Verified: full effect (change+root row+rename+mapping move), validation matrix, idempotent direct-link, validate clean post-scaffold."
+    },
+    {
+      "id": "SCF-03",
+      "seq": 3,
+      "title": "Index discussions UI",
+      "file": "tasks/03-discussions-ui.md",
+      "status": "Done",
+      "dependsOn": [
+        "SCF-01"
+      ],
+      "updated": "2026-09-12",
+      "notes": "Verified: Discussions section renders live entries (screenshot), Open/unlink wired, overlay shared from layout, xterm on all pages."
+    },
+    {
+      "id": "SCF-04",
+      "seq": 4,
+      "title": "Remove placeholder machinery, rewrite tests",
+      "file": "tasks/04-cleanup-tests.md",
+      "status": "Done",
+      "dependsOn": [
+        "SCF-01",
+        "SCF-02"
+      ],
+      "updated": "2026-09-12",
+      "notes": "Code deletion absorbed into the SCF-01 rewrite; old-flow tests fully replaced (see SCF-01/02 notes)."
+    },
+    {
+      "id": "SCF-05",
+      "seq": 5,
+      "title": "Dogfood full discussion flow",
+      "file": "tasks/05-dogfood.md",
+      "status": "Done",
+      "dependsOn": [
+        "SCF-02",
+        "SCF-03",
+        "SCF-04"
+      ],
+      "updated": "2026-09-12",
+      "notes": "All five criteria verified live (see task notes); cleanup complete; validate OK."
+    }
+  ]
+}

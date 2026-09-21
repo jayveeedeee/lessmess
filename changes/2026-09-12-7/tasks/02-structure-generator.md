@@ -1,7 +1,3 @@
----
-id: DOC-02
-title: Deterministic STRUCTURE.md generator
----
 
 # DOC-02: Deterministic STRUCTURE.md generator
 

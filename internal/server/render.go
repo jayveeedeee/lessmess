@@ -61,6 +61,7 @@ type renderer struct {
 	partial  *template.Template
 	explorer *template.Template
 	settings *template.Template
+	opencode *template.Template
 	setup    *template.Template
 	assetsV  string
 	// accent resolves the palette entry for the page head; nil until the
@@ -96,6 +97,7 @@ func newRenderer() *renderer {
 		partial:  mustParse("templates/partials.html", "templates/explorer.html"),
 		explorer: mustParse("templates/layout.html", "templates/explorer.html"),
 		settings: mustParse("templates/layout.html", "templates/settings.html"),
+		opencode: mustParse("templates/layout.html", "templates/opencode.html"),
 		setup:    mustParse("templates/layout.html", "templates/setup.html"),
 		assetsV:  assetsVersion(),
 	}
@@ -204,27 +206,18 @@ type crumbView struct {
 	Root  bool // the change itself
 }
 
-// tmplTaskRow is one card: the governing-ledger row when present, else a
-// degraded view of an orphaned task file (validation flags those).
-func tmplTaskRow(n *store.TaskNode) model.TaskRow {
-	if n.Row != nil {
-		return *n.Row
+// tmplTaskRow is one card: the task's authoritative JSON state.
+func tmplTaskRow(n *store.TaskNode) model.TaskState {
+	if n.Task != nil {
+		return *n.Task
 	}
-	title := n.Href
-	if n.File != nil {
-		title = n.File.Title
-	}
-	id := n.ID
-	if id == "" {
-		id = n.Href
-	}
-	return model.TaskRow{ID: id, Href: n.Href, Title: title, Status: model.StatusNotStarted, Notes: model.Empty}
+	return model.TaskState{ID: n.ID, Title: n.Href, Status: model.StatusNotStarted, File: n.Href}
 }
 
-// cardView is one kanban card: the governing-ledger row plus the
-// display-only subtree rollup badge data.
+// cardView is one kanban card: the task state plus the display-only
+// subtree rollup badge data.
 type cardView struct {
-	model.TaskRow
+	model.TaskState
 	Path     string // href minus the leading tasks/ (for the detail route)
 	HasSub   bool
 	SubDone  int
@@ -232,7 +225,7 @@ type cardView struct {
 }
 
 func cardOf(n *store.TaskNode) cardView {
-	c := cardView{TaskRow: tmplTaskRow(n), Path: strings.TrimPrefix(n.Href, "tasks/")}
+	c := cardView{TaskState: tmplTaskRow(n), Path: strings.TrimPrefix(n.Href, "tasks/")}
 	if n.HasContainer() {
 		st := n.SubtreeStats()
 		c.HasSub = true
@@ -242,8 +235,8 @@ func cardOf(n *store.TaskNode) cardView {
 }
 
 // nodeRows renders a level's nodes as display rows.
-func nodeRows(nodes []*store.TaskNode) []model.TaskRow {
-	out := make([]model.TaskRow, 0, len(nodes))
+func nodeRows(nodes []*store.TaskNode) []model.TaskState {
+	out := make([]model.TaskState, 0, len(nodes))
 	for _, n := range nodes {
 		out = append(out, tmplTaskRow(n))
 	}
@@ -252,29 +245,27 @@ func nodeRows(nodes []*store.TaskNode) []model.TaskRow {
 
 func newBoardView(c *store.Change) boardView {
 	v := boardView{ID: c.ID, BoardURL: "/changes/" + c.ID}
-	if c.Err != nil || c.Ledger == nil {
-		v.Error = "Ledger unreadable: " + c.Err.Error()
+	if c.Err != nil || c.State == nil {
+		v.Error = "State unreadable: " + c.Err.Error()
 		return v
 	}
-	v.Overall = string(c.Ledger.Overall)
+	v.Overall = string(c.Overall())
 	v.Columns = columnsFromNodes(c.Roots)
 	return v
 }
 
 // newTaskBoardView builds the drill-down board for one decomposed task:
-// columns from its children's governing rows, an ancestor breadcrumb, and
-// the subtree rollup.
+// columns from its children, an ancestor breadcrumb, and the subtree
+// rollup.
 func newTaskBoardView(c *store.Change, n *store.TaskNode) boardView {
 	v := boardView{
 		ID: c.ID, BoardURL: "/changes/" + c.ID,
 		Task: n.ID, NodeTitle: n.ID,
 	}
-	if n.File != nil && n.File.Title != "" {
-		v.NodeTitle = n.File.Title
+	if n.Task != nil && n.Task.Title != "" {
+		v.NodeTitle = n.Task.Title
 	}
-	if c.Ledger != nil {
-		v.Overall = string(c.Ledger.Overall)
-	}
+	v.Overall = string(c.Overall())
 	v.Columns = columnsFromNodes(n.Children)
 	// Breadcrumb: change root, then every ancestor, then this node.
 	v.Crumbs = append(v.Crumbs, crumbView{ID: c.ID, Title: c.ID, URL: "/changes/" + c.ID, Root: true})
@@ -284,8 +275,8 @@ func newTaskBoardView(c *store.Change, n *store.TaskNode) boardView {
 	}
 	for _, p := range chain {
 		title := p.ID
-		if p.File != nil && p.File.Title != "" {
-			title = p.File.Title
+		if p.Task != nil && p.Task.Title != "" {
+			title = p.Task.Title
 		}
 		v.Crumbs = append(v.Crumbs, crumbView{ID: p.ID, Title: title, URL: "/changes/" + c.ID + "?task=" + p.ID})
 	}

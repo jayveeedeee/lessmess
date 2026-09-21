@@ -1,7 +1,3 @@
----
-id: NAV-00
-title: Top menu with active route highlight
----
 
 # NAV-00: Top menu with active route highlight
 

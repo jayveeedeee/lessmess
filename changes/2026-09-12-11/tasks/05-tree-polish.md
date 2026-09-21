@@ -1,7 +1,3 @@
----
-id: EXD-05
-title: Remove tree chat buttons and square orange selection
----
 
 # EXD-05: Remove tree chat buttons and square orange selection
 

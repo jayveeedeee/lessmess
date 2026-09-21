@@ -1,7 +1,3 @@
----
-id: OCI-05
-title: New change session flow
----
 
 # OCI-05: New change session flow
 

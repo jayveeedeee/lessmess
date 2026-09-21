@@ -1,7 +1,3 @@
----
-id: NTD-04
-title: Server nested routes, expand, drill-down board
----
 
 # NTD-04: Server nested routes, expand, drill-down board
 

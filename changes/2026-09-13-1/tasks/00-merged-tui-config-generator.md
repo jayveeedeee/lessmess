@@ -1,7 +1,3 @@
----
-id: TUI-00
-title: Merged TUI cli.json generator
----
 
 # TUI-00: Merged TUI cli.json generator
 

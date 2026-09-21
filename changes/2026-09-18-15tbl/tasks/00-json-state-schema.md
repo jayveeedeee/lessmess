@@ -1,7 +1,3 @@
----
-id: JSI-00
-title: JSON state schema and model types
----
 
 # JSI-00: JSON state schema and model types
 
@@ -45,4 +41,8 @@ Schema types compile with tests covering round-trip, validation errors, ordering
 
 ## Notes
 
-Decide inline whether the JSON types live in `internal/model` or a new package; keep the decision recorded here when made.
+- Implemented as `internal/model/state.go` (+ `state_test.go`): `WorkflowIndex`/`IndexEntry`, `ChangeState`/`ChangeStatus`/`DecisionEntry`/`TaskState`, strict `Load…`/atomic `Save`, `Validate() []string` on both, `Find`/`Task`/`Children` lookups. Package comment in `model.go` broadened.
+- Decision: index entries carry no status or dates — ChangeState is the single source of truth for those (removes the root-ledger dual-write). Recorded in the ledger decision log and synced into `plan.md`.
+- Decision: empty values (branch, notes, deps) are omitted via `omitempty`; `—` is a rendering concern only. Dates are required `YYYY-MM-DD`; `StateVersion = 1` enforced on load.
+- Validation covers vocabularies, duplicate/empty IDs, seq↔ID-segment↔filename agreement, parent coherence (dotted ID ↔ parent field ↔ existence), dependency existence/self/cycles; file existence on disk is left to the store.
+- Verification: `go vet ./... && go test ./...` green (2026-09-18); round-trip + byte-stability, strict-decode, JSON shape pin, per-rule violation cases, cycle detection, lookup/ordering all covered in `state_test.go`. No consumer changes.

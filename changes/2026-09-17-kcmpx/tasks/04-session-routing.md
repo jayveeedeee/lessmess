@@ -1,7 +1,3 @@
----
-id: WTP-04
-title: Route change sessions, terminal, and commits into the worktree
----
 
 # WTP-04: Route change sessions, terminal, and commits into the worktree
 

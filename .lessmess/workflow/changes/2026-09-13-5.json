@@ -1,0 +1,127 @@
+{
+  "version": 1,
+  "id": "2026-09-13-5",
+  "title": "Learning staleness: ancestor gardening, reference lint, gardener model",
+  "prefix": "LRN",
+  "status": {
+    "value": "Done",
+    "derived": false
+  },
+  "created": "2026-09-13",
+  "updated": "2026-09-14",
+  "tasks": [
+    {
+      "id": "LRN-00",
+      "seq": 0,
+      "title": "Ancestor targets and DocsJob shape",
+      "file": "tasks/00-ancestor-targets.md",
+      "status": "Done",
+      "updated": "2026-09-14",
+      "notes": "Verified: ancestor table tests + queue roundtrip pass; close job carries Ancestors=[\"internal\"]; stale/reconcile paths cover ancestors."
+    },
+    {
+      "id": "LRN-01",
+      "seq": 1,
+      "title": "Two-section gardener prompt with removal accounting",
+      "file": "tasks/01-gardener-prompt-sections.md",
+      "status": "Done",
+      "dependsOn": [
+        "LRN-00"
+      ],
+      "updated": "2026-09-14",
+      "notes": "Verified: prompt table tests (review section, deletion license, accounting, manual unchanged, no-ancestor case) pass."
+    },
+    {
+      "id": "LRN-09",
+      "seq": 9,
+      "title": "README and verification for seed/exclusions",
+      "file": "tasks/09-seed-exclusions-verification.md",
+      "status": "Done",
+      "dependsOn": [
+        "LRN-07",
+        "LRN-08"
+      ],
+      "updated": "2026-09-14",
+      "notes": "Verified: README documents missing-file targeting, force, nested exclusions; live matrix green (partial/missing/force/exclusion + UI hooks)."
+    },
+    {
+      "id": "LRN-05",
+      "seq": 5,
+      "title": "docs.gardenerModel setting",
+      "file": "tasks/05-gardener-model-setting.md",
+      "status": "Done",
+      "updated": "2026-09-14",
+      "notes": "Verified: precedence tests; spawn override + fallback via fake service; PUT 422 names field; clear restores inheritance; Settings row renders."
+    },
+    {
+      "id": "LRN-07",
+      "seq": 7,
+      "title": "Resumable seed on the normal server",
+      "file": "tasks/07-server-seed-endpoint.md",
+      "status": "Done",
+      "updated": "2026-09-14",
+      "notes": "Verified (post-feedback): file-based missing-docs targeting (cursor ignored for missing dirs), force mode redoes all, plain re-run returns the use-force hint; live E2E confirms all three."
+    },
+    {
+      "id": "LRN-08",
+      "seq": 8,
+      "title": "Exclusions editor and bell seed button",
+      "file": "tasks/08-exclusions-editor.md",
+      "status": "Done",
+      "dependsOn": [
+        "LRN-07"
+      ],
+      "updated": "2026-09-14",
+      "notes": "Verified (post-feedback): Settings exclusions widget is the wizard's lazy nested tree (same endpoint/rows); bell shows Run missing docs (N) + Force checkbox with confirm; nested POST prunes subtrees (live)."
+    },
+    {
+      "id": "LRN-06",
+      "seq": 6,
+      "title": "README, package docs, and full verification",
+      "file": "tasks/06-docs-and-verification.md",
+      "status": "Done",
+      "dependsOn": [
+        "LRN-01",
+        "LRN-02",
+        "LRN-04",
+        "LRN-05"
+      ],
+      "updated": "2026-09-14",
+      "notes": "Verified: gates green (vet/test/build, validate exit 0); live E2E on scratch repo — lint flag → refresh job → gardener removed dead ref → finding cleared; override model logged and used."
+    },
+    {
+      "id": "LRN-02",
+      "seq": 2,
+      "title": "Snapshot/verify/restore for ancestor targets",
+      "file": "tasks/02-ancestor-verify-restore.md",
+      "status": "Done",
+      "dependsOn": [
+        "LRN-00",
+        "LRN-01"
+      ],
+      "updated": "2026-09-14",
+      "notes": "Verified: ancestor out-of-marker violation restores + fails job; in-marker learning deletion persists; existing cage tests green."
+    },
+    {
+      "id": "LRN-03",
+      "seq": 3,
+      "title": "Stale-reference lint in internal/docs",
+      "file": "tasks/03-reference-lint.md",
+      "status": "Done",
+      "updated": "2026-09-14",
+      "notes": "Verified (post-feedback): sibling-variant resolution (`truservice.yaml` ↔ `truservice.yaml.template`) + deduplicated findings; truendo2 validate read-only dropped ~67 warnings to the 7 legitimately-stale ones."
+    },
+    {
+      "id": "LRN-04",
+      "seq": 4,
+      "title": "Refresh union and lint context in manual jobs",
+      "file": "tasks/04-refresh-union-lint-context.md",
+      "status": "Done",
+      "dependsOn": [
+        "LRN-03"
+      ],
+      "updated": "2026-09-14",
+      "notes": "Verified (post-feedback): refresh union chunks into ≤10-dir gardener jobs (unit + 13-dir live-shape test); one fragile giant session can no longer flag everything stale."
+    }
+  ]
+}

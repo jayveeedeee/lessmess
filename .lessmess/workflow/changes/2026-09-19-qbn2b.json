@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "id": "2026-09-19-qbn2b",
+  "title": "Chunk and scale docs gardener jobs",
+  "prefix": "DG",
+  "branch": "main",
+  "status": {
+    "value": "Done",
+    "derived": false
+  },
+  "created": "2026-09-19",
+  "updated": "2026-09-19",
+  "tasks": [
+    {
+      "id": "DG-00",
+      "seq": 0,
+      "title": "Chunk close-out jobs at ≤3 dirs with deduped ancestors",
+      "file": "tasks/00-chunk-close-out-jobs-at-3-dirs-with-dedu.md",
+      "status": "Done",
+      "updated": "2026-09-19",
+      "notes": "go vet ./... clean; full go test ./... green (2026-09-19). New TestCloseEnqueuesChunkedJobs: close touching 5 dirs enqueues 2 jobs of \u003c=3 dirs, no dir claimed twice, union of dirs+ancestors equals dirs ∪ coveredAncestors(dirs). TestDocsRefreshChunksLargeUnions retuned: 13-dir union now 5 jobs of \u003c=3. All prior queue tests unchanged-green."
+    },
+    {
+      "id": "DG-01",
+      "seq": 1,
+      "title": "Scale the per-job gardener budget with dir count",
+      "file": "tasks/01-scale-the-per-job-gardener-budget-with-d.md",
+      "status": "Done",
+      "updated": "2026-09-19",
+      "notes": "go vet clean; full go test ./... green (2026-09-19). TestJobTimeoutScalesWithDirs table: base/1-dir/3+2 targets = 15/20/40 min. TestRunUsesScaledJobTimeout: fake runner captures ctx.Deadline(); worker deadline = jobTimeout(job) (2 dirs + 2 ancestors) within pop-latency allowance."
+    },
+    {
+      "id": "DG-02",
+      "seq": 2,
+      "title": "Rebuild, restart, reconcile the live stale backlog",
+      "file": "tasks/02-rebuild-restart-reconcile-the-live-stale.md",
+      "status": "Done",
+      "updated": "2026-09-19",
+      "notes": "Binary rebuilt (CGO_ENABLED=0), server restarted 11:09:15 (validation ok, opencode connected). POST /docs/refresh enqueued 4 manual jobs of \u003c=3 dirs over the 10 stale dirs. All four completed in 31m total (11:14:38, 11:22:53, 11:34:47, 11:40:28) — every job inside its scaled 30-min budget where the pre-fix 10-dir job died at 15:00. docs-queue.json now {pending:[],stale:{}} and persisted (stale-clear fix verified live); all stale warnings gone from lessmess validate. Bonus refresh enqueued 12:0x for two backticked changes/ledger.md lint citations (pre-existing, orthogonal)."
+    }
+  ]
+}

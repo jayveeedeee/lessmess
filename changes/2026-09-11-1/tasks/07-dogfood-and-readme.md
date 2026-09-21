@@ -1,7 +1,3 @@
----
-id: KAN-07
-title: Dogfood, end-to-end verification, README
----
 
 # KAN-07: Dogfood, end-to-end verification, README
 

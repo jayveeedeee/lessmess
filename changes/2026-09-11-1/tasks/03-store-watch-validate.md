@@ -1,7 +1,3 @@
----
-id: KAN-03
-title: Store — scan, cache, watch, validate
----
 
 # KAN-03: Store — scan, cache, watch, validate
 

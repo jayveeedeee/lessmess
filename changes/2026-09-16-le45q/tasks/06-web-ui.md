@@ -1,7 +1,3 @@
----
-id: NTD-06
-title: Web UI badges, drill-down, modal links
----
 
 # NTD-06: Web UI badges, drill-down, modal links
 

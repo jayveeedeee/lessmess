@@ -1,7 +1,3 @@
----
-id: SET-08
-title: Per-setting Change button with session reuse
----
 
 # SET-08: Per-setting Change button with session reuse
 

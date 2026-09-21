@@ -224,7 +224,7 @@ func validateModelChoice(ctx context.Context, oc *opencode.Client, repoDir, mode
 		return nil
 	}
 	for _, m := range models {
-		if m.ProviderID+"/"+m.ID == model {
+		if m.IsEnabled() && m.ProviderID+"/"+m.ID == model {
 			return nil
 		}
 	}
@@ -307,6 +307,9 @@ func settingsOptionsWith(oc *opencode.Client, repoDir string, w http.ResponseWri
 		resp.Agents = append(resp.Agents, settingsAgentOpt{ID: a.ID, Name: a.Name, Description: a.Description})
 	}
 	for _, m := range models {
+		if !m.IsEnabled() {
+			continue
+		}
 		resp.Models = append(resp.Models, settingsModelOpt{
 			ID: m.ID, ProviderID: m.ProviderID, Name: m.Name,
 			Value: m.ProviderID + "/" + m.ID,

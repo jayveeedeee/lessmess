@@ -1,7 +1,3 @@
----
-id: EXP-00
-title: Exported per-dir docs reader
----
 
 # EXP-00: Exported per-dir docs reader
 

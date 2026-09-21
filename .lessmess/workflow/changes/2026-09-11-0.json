@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "id": "2026-09-11-0",
+  "title": "Bootstrap change-management workflow extensions",
+  "prefix": "CHW",
+  "status": {
+    "value": "Done",
+    "derived": false
+  },
+  "created": "2026-09-11",
+  "updated": "2026-09-11",
+  "tasks": [
+    {
+      "id": "CHW-00",
+      "seq": 0,
+      "title": "Update AGENTS.md with workflow extensions",
+      "file": "tasks/00-update-agents-md.md",
+      "status": "Done",
+      "updated": "2026-09-11",
+      "notes": "Verified: grep confirms Root ledger, Archival, Validation, Tooling state sections, both pinned schemas, row-order and single-executor rules present."
+    },
+    {
+      "id": "CHW-01",
+      "seq": 1,
+      "title": "Create changes/ scaffolding and tooling ignore file",
+      "file": "tasks/01-create-scaffolding.md",
+      "status": "Done",
+      "dependsOn": [
+        "CHW-00"
+      ],
+      "updated": "2026-09-11",
+      "notes": "Verified: changes/ledger.md matches pinned root schema with row for this change; .gitignore contains .tasktracker/."
+    }
+  ]
+}

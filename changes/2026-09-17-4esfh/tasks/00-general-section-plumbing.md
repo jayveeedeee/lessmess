@@ -1,7 +1,3 @@
----
-id: PROJ-00
-title: General settings section and project-name plumbing
----
 
 # PROJ-00: General settings section and project-name plumbing
 

@@ -1,7 +1,3 @@
----
-id: LRN-04
-title: Refresh union and lint context in manual jobs
----
 
 # LRN-04: Refresh union and lint context in manual jobs
 

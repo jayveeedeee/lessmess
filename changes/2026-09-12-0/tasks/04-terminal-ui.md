@@ -1,7 +1,3 @@
----
-id: OCI-04
-title: Terminal UI with xterm.js
----
 
 # OCI-04: Terminal UI with xterm.js
 

@@ -139,11 +139,13 @@ func (s *Server) autospawnOne(c *store.Change, n *store.TaskNode) error {
 	if err != nil {
 		return err
 	}
-	if err := s.oc.Prompt(ctx, sess.ID, s.promptWith(s.withWorktreeRule(c.ID, taskPrompt(c.ID, n)), "change")); err != nil {
+	prime, modules := s.taskPrime(c.ID, n, sess.ID)
+	if err := s.oc.Prompt(ctx, sess.ID, s.promptWith(prime, "change")); err != nil {
 		_ = s.oc.DeleteSession(context.Background(), sess.ID)
 		return errors.New("prime task session: " + err.Error())
 	}
-	entry := SessionEntry{Session: sess.ID, Title: title, Created: time.Now().Format(time.RFC3339), Task: n.ID}
+	logPrime(sess.ID, "task", modules)
+	entry := SessionEntry{Session: sess.ID, Title: title, Created: time.Now().Format(time.RFC3339), Task: n.ID, Modules: modules}
 	if err := s.sessions.add(c.ID, entry); err != nil {
 		_ = s.oc.DeleteSession(context.Background(), sess.ID)
 		return errors.New("persist mapping: " + err.Error())
@@ -160,8 +162,8 @@ func (s *Server) autospawnOne(c *store.Change, n *store.TaskNode) error {
 // prefix makes delegation-style reconciliation recognize it too.
 func taskSessionTitle(n *store.TaskNode) string {
 	title := n.ID
-	if n.File != nil && n.File.Title != "" {
-		title = n.File.Title
+	if n.Task != nil && n.Task.Title != "" {
+		title = n.Task.Title
 	}
 	return n.ID + ": " + title
 }

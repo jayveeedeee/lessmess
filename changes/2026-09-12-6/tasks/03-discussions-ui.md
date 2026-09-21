@@ -1,7 +1,3 @@
----
-id: SCF-03
-title: Index discussions UI
----
 
 # SCF-03: Index discussions UI
 

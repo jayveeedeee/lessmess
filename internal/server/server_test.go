@@ -15,7 +15,8 @@ import (
 	"lessmess/internal/store"
 )
 
-// fixtureStore opens a store on a tempdir fixture repo.
+// fixtureStore opens a store on a tempdir fixture repo: one change with
+// two Test tasks (close-ready), JSON state + prose files.
 func fixtureStore(t *testing.T) (*store.Store, string) {
 	t.Helper()
 	dir := t.TempDir()
@@ -23,36 +24,91 @@ func fixtureStore(t *testing.T) (*store.Store, string) {
 	if err := os.MkdirAll(filepath.Join(cdir, "tasks"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	root := `# Changes — Root Ledger
-
-Task statuses live exclusively in each change's ledger.
-
-| Change | Title | ID prefix | Branch | Status | Created | Last updated |
-| --- | --- | --- | --- | --- | --- | --- |
-| [2026-09-10-0](2026-09-10-0/plan.md) | Fixture change | FIX | — | In progress | 2026-09-10 | 2026-09-10 |
-`
-	if err := os.WriteFile(filepath.Join(dir, "changes", "ledger.md"), []byte(root), 0o644); err != nil {
-		t.Fatal(err)
-	}
 	if err := os.WriteFile(filepath.Join(cdir, "plan.md"), model.RenderChangePlan("2026-09-10-0", "Fixture change", "2026-09-10"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	l, _ := model.ParseChangeLedger("l", model.RenderChangeLedger("2026-09-10-0", "2026-09-10"))
-	l.SetOverall(model.OverallInProgress, "2026-09-10")
-	l.AppendTask(model.TaskRow{ID: "FIX-00", Href: "tasks/00-first.md", Title: "First", Status: model.StatusTest, Updated: "2026-09-10", Notes: model.Empty})
-	l.AppendTask(model.TaskRow{ID: "FIX-01", Href: "tasks/01-second.md", Title: "Second", Status: model.StatusTest, Updated: "2026-09-10", Notes: model.Empty})
-	if err := os.WriteFile(filepath.Join(cdir, "ledger.md"), l.Content(), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	os.WriteFile(filepath.Join(cdir, "tasks", "00-first.md"), model.RenderTaskFile("FIX-00", "First"), 0o644)
 	os.WriteFile(filepath.Join(cdir, "tasks", "01-second.md"), model.RenderTaskFile("FIX-01", "Second"), 0o644)
 
-	st, err := store.Open(dir)
+	wd := filepath.Join(dir, store.StateDirName, "workflow")
+	if err := os.MkdirAll(filepath.Join(wd, "changes"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	st := &model.ChangeState{
+		Version: model.StateVersion,
+		ID:      "2026-09-10-0",
+		Title:   "Fixture change",
+		Prefix:  "FIX",
+		Status:  model.ChangeStatus{Value: model.OverallInProgress, Derived: true},
+		Created: "2026-09-10",
+		Updated: "2026-09-10",
+		Tasks: []model.TaskState{
+			{ID: "FIX-00", Seq: 0, Title: "First", File: "tasks/00-first.md", Status: model.StatusTest, Updated: "2026-09-10"},
+			{ID: "FIX-01", Seq: 1, Title: "Second", File: "tasks/01-second.md", Status: model.StatusTest, Updated: "2026-09-10"},
+		},
+	}
+	if err := st.Save(filepath.Join(wd, "changes", "2026-09-10-0.json")); err != nil {
+		t.Fatal(err)
+	}
+	idx := &model.WorkflowIndex{
+		Version: model.StateVersion,
+		Changes: []model.IndexEntry{{ID: "2026-09-10-0", Title: "Fixture change", Prefix: "FIX", Created: "2026-09-10"}},
+	}
+	if err := idx.Save(filepath.Join(wd, "index.json")); err != nil {
+		t.Fatal(err)
+	}
+
+	sto, err := store.Open(dir)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	t.Cleanup(st.Close)
-	return st, dir
+	t.Cleanup(sto.Close)
+	return sto, dir
+}
+
+// addFixtureChange registers another change in the fixture repo: prose
+// directory, empty state, and index entry.
+func addFixtureChange(t *testing.T, dir, id, title string) {
+	t.Helper()
+	date := id[:strings.LastIndex(id, "-")]
+	cdir := filepath.Join(dir, "changes", id)
+	if err := os.MkdirAll(filepath.Join(cdir, "tasks"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cdir, "plan.md"), model.RenderChangePlan(id, title, date), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	wd := filepath.Join(dir, store.StateDirName, "workflow")
+	st := &model.ChangeState{
+		Version: model.StateVersion, ID: id, Title: title, Prefix: "NEW",
+		Status:  model.ChangeStatus{Value: model.OverallInProgress, Derived: true},
+		Created: date, Updated: date,
+	}
+	if err := st.Save(filepath.Join(wd, "changes", id+".json")); err != nil {
+		t.Fatal(err)
+	}
+	idx, err := model.LoadWorkflowIndex(filepath.Join(wd, "index.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	idx.Changes = append(idx.Changes, model.IndexEntry{ID: id, Title: title, Prefix: "NEW", Created: date})
+	if err := idx.Save(filepath.Join(wd, "index.json")); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// fixtureState rewrites the fixture change's state file.
+func fixtureState(t *testing.T, dir string, f func(*model.ChangeState)) {
+	t.Helper()
+	p := filepath.Join(dir, store.StateDirName, "workflow", "changes", "2026-09-10-0.json")
+	st, err := model.LoadChangeState(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f(st)
+	if err := st.Save(p); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func do(t *testing.T, h http.Handler, method, path, body string) *httptest.ResponseRecorder {
@@ -89,26 +145,7 @@ func TestIndex(t *testing.T) {
 
 func TestIndexNewestFirst(t *testing.T) {
 	st, dir := fixtureStore(t)
-	addChange := func(id, title string) {
-		date := id[:strings.LastIndex(id, "-")]
-		cdir := filepath.Join(dir, "changes", id)
-		if err := os.MkdirAll(filepath.Join(cdir, "tasks"), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(cdir, "plan.md"), model.RenderChangePlan(id, title, date), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		l, _ := model.ParseChangeLedger("l", model.RenderChangeLedger(id, date))
-		l.SetOverall(model.OverallInProgress, date)
-		if err := os.WriteFile(filepath.Join(cdir, "ledger.md"), l.Content(), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		root := mustRead(t, filepath.Join(dir, "changes", "ledger.md"))
-		row := "| [" + id + "](" + id + "/plan.md) | " + title + " | NEW | — | In progress | " + date + " | " + date + " |\n"
-		if err := os.WriteFile(filepath.Join(dir, "changes", "ledger.md"), append(root, []byte(row)...), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
+	addChange := func(id, title string) { addFixtureChange(t, dir, id, title) }
 	addChange("2026-09-11-k3x9q", "Random A")
 	addChange("2026-09-11-0", "Legacy numeric")
 	addChange("2026-09-11-mz7t2", "Random B") // appended last → newest of the date
@@ -212,24 +249,25 @@ func TestLedgerDetail(t *testing.T) {
 func TestMoveTaskRoute(t *testing.T) {
 	st, dir := fixtureStore(t)
 	h := New(st).Handler()
-	w := do(t, h, "POST", "/changes/2026-09-10-0/move", `{"task":"FIX-00","status":"Done","index":0}`)
+	w := doUI(t, h, "POST", "/changes/2026-09-10-0/move", `{"task":"FIX-00","status":"Done","index":0}`)
 	if w.Code != 200 {
 		t.Fatalf("code = %d body = %s", w.Code, w.Body)
 	}
 	// Verify on disk.
-	l, err := model.ParseChangeLedger("l", mustRead(t, filepath.Join(dir, "changes", "2026-09-10-0", "ledger.md")))
+	p := filepath.Join(dir, store.StateDirName, "workflow", "changes", "2026-09-10-0.json")
+	stt, err := model.LoadChangeState(p)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if l.Row("FIX-00").Status != model.StatusDone {
-		t.Fatal("ledger not updated")
+	if ts := stt.Task("FIX-00"); ts == nil || ts.Status != model.StatusDone {
+		t.Fatal("state not updated")
 	}
 }
 
 func TestMoveTaskErrors(t *testing.T) {
 	st, _ := fixtureStore(t)
 	h := New(st).Handler()
-	if w := do(t, h, "POST", "/changes/2026-09-10-0/move", `{"task":"FIX-99","status":"Done","index":0}`); w.Code != 404 {
+	if w := do(t, h, "POST", "/changes/2026-09-10-0/move", `{"task":"FIX-99","status":"Blocked","index":0}`); w.Code != 404 {
 		t.Fatalf("unknown task: code = %d", w.Code)
 	}
 	if w := do(t, h, "POST", "/changes/2026-09-10-0/move", `{"task":"FIX-00","status":"Doing","index":0}`); w.Code != 400 {
@@ -242,12 +280,12 @@ func TestMoveTaskErrors(t *testing.T) {
 
 func TestMoveTaskBrokenLedger(t *testing.T) {
 	st, dir := fixtureStore(t)
-	p := filepath.Join(dir, "changes", "2026-09-10-0", "ledger.md")
-	if err := os.WriteFile(p, []byte("# broken\n"), 0o644); err != nil {
+	p := filepath.Join(dir, store.StateDirName, "workflow", "changes", "2026-09-10-0.json")
+	if err := os.WriteFile(p, []byte("{broken"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	st.Reload()
-	w := do(t, New(st).Handler(), "POST", "/changes/2026-09-10-0/move", `{"task":"FIX-00","status":"Done","index":0}`)
+	w := do(t, New(st).Handler(), "POST", "/changes/2026-09-10-0/move", `{"task":"FIX-00","status":"Blocked","index":0}`)
 	if w.Code != 422 {
 		t.Fatalf("code = %d, want 422", w.Code)
 	}
@@ -260,12 +298,12 @@ func TestCreateTaskRoute(t *testing.T) {
 	if w.Code != 201 {
 		t.Fatalf("code = %d body = %s", w.Code, w.Body)
 	}
-	var row model.TaskRow
-	if err := json.Unmarshal(w.Body.Bytes(), &row); err != nil {
+	var task model.TaskState
+	if err := json.Unmarshal(w.Body.Bytes(), &task); err != nil {
 		t.Fatal(err)
 	}
-	if row.ID != "FIX-02" || row.Href != "tasks/02-third-task.md" {
-		t.Fatalf("row = %+v", row)
+	if task.ID != "FIX-02" || task.File != "tasks/02-third-task.md" {
+		t.Fatalf("task = %+v", task)
 	}
 	if w := do(t, h, "POST", "/changes/2026-09-10-0/tasks", `{"title":""}`); w.Code != 422 {
 		t.Fatalf("empty title: code = %d", w.Code)

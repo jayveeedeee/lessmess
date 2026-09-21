@@ -1,7 +1,3 @@
----
-id: ACC-03
-title: Accent swatch picker in the Settings UI
----
 
 # ACC-03: Accent swatch picker in the Settings UI
 

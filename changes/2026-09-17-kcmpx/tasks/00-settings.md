@@ -1,7 +1,3 @@
----
-id: WTP-00
-title: Git settings — worktrees switch, base branch, reviewer model
----
 
 # WTP-00: Git settings — worktrees switch, base branch, reviewer model
 

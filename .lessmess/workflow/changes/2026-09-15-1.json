@@ -1,0 +1,61 @@
+{
+  "version": 1,
+  "id": "2026-09-15-1",
+  "title": "Random change-ID suffixes",
+  "prefix": "CID",
+  "status": {
+    "value": "Done",
+    "derived": false
+  },
+  "created": "2026-09-15",
+  "updated": "2026-09-15",
+  "tasks": [
+    {
+      "id": "CID-00",
+      "seq": 0,
+      "title": "Update the workflow spec text",
+      "file": "tasks/00-workflow-text.md",
+      "status": "Done",
+      "updated": "2026-09-15",
+      "notes": "Naming rules, structure tree, validation item rewritten; asset regenerated; `go test ./internal/docs/...` ok, leftover-grep clean"
+    },
+    {
+      "id": "CID-02",
+      "seq": 2,
+      "title": "Server newest-first by ledger position",
+      "file": "tasks/02-index-ordering.md",
+      "status": "Done",
+      "dependsOn": [
+        "CID-01"
+      ],
+      "updated": "2026-09-15",
+      "notes": "Index sorts date desc then ledger position desc; `go test ./internal/server/...` ok incl. reworked `TestIndexNewestFirst`"
+    },
+    {
+      "id": "CID-01",
+      "seq": 1,
+      "title": "Store mint random suffixes and accept both formats",
+      "file": "tasks/01-store-random-suffix.md",
+      "status": "Done",
+      "dependsOn": [
+        "CID-00"
+      ],
+      "updated": "2026-09-15",
+      "notes": "Union regex, randSuffix seam, bounded mint retry; full `go test ./...` ok; rebuilt binary validated a scratch repo with a random-ID change (OK) plus this mixed-format repo"
+    },
+    {
+      "id": "CID-03",
+      "seq": 3,
+      "title": "Learnings upkeep and full verification",
+      "file": "tasks/03-learnings-and-verification.md",
+      "status": "Done",
+      "dependsOn": [
+        "CID-00",
+        "CID-01",
+        "CID-02"
+      ],
+      "updated": "2026-09-15",
+      "notes": "Store/server learnings updated citing 2026-09-15-1; `go vet` clean; `go test ./...` all ok; rebuilt binary; `./lessmess validate` OK; README needs no change (no naming mentions)"
+    }
+  ]
+}

@@ -1,7 +1,3 @@
----
-id: NTD-03
-title: Store recursive validation and close-out readiness
----
 
 # NTD-03: Store recursive validation and close-out readiness
 

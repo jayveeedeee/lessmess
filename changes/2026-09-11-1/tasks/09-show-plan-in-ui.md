@@ -1,7 +1,3 @@
----
-id: KAN-09
-title: Show plan content in the UI
----
 
 # KAN-09: Show plan content in the UI
 

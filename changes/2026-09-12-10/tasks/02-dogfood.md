@@ -1,7 +1,3 @@
----
-id: BSB-02
-title: Live dogfood of session binding
----
 
 # BSB-02: Live dogfood of session binding
 

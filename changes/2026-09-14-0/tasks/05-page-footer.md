@@ -1,7 +1,3 @@
----
-id: SPS-05
-title: Page-wide settings footer for layer explanation
----
 
 # SPS-05: Page-wide settings footer for layer explanation
 

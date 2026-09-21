@@ -1,7 +1,3 @@
----
-id: CMT-04
-title: End-to-end verification and docs updates
----
 
 # CMT-04: End-to-end verification and docs updates
 

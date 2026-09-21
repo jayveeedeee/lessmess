@@ -1,0 +1,132 @@
+{
+  "version": 1,
+  "id": "2026-09-13-2",
+  "title": "Settings page with session defaults and prompt addenda",
+  "prefix": "SET",
+  "status": {
+    "value": "Done",
+    "derived": false
+  },
+  "created": "2026-09-13",
+  "updated": "2026-09-13",
+  "tasks": [
+    {
+      "id": "SET-00",
+      "seq": 0,
+      "title": "Settings storage, layering, and merge",
+      "file": "tasks/00-settings-storage-and-merge.md",
+      "status": "Done",
+      "updated": "2026-09-13",
+      "notes": "Settings tests + go vet + full suite pass"
+    },
+    {
+      "id": "SET-09",
+      "seq": 9,
+      "title": "Task panel for change-bound terminals on any page",
+      "file": "tasks/09-task-panel-for-bound-terminals.md",
+      "status": "Done",
+      "dependsOn": [
+        "SET-08"
+      ],
+      "updated": "2026-09-13",
+      "notes": "Binding endpoint live; fragment serves cards; suite green"
+    },
+    {
+      "id": "SET-08",
+      "seq": 8,
+      "title": "Per-setting Change button with session reuse",
+      "file": "tasks/08-per-setting-change-button.md",
+      "status": "Done",
+      "dependsOn": [
+        "SET-04",
+        "SET-06"
+      ],
+      "updated": "2026-09-13",
+      "notes": "Fresh/reuse verified live; suite green"
+    },
+    {
+      "id": "SET-07",
+      "seq": 7,
+      "title": "Settings nav in explorer selection style",
+      "file": "tasks/07-settings-nav-explorer-style.md",
+      "status": "Done",
+      "dependsOn": [
+        "SET-06"
+      ],
+      "updated": "2026-09-13",
+      "notes": "Explorer idiom applied; live on :9090"
+    },
+    {
+      "id": "SET-06",
+      "seq": 6,
+      "title": "Settings page grouped left navigation",
+      "file": "tasks/06-settings-page-grouped-nav.md",
+      "status": "Done",
+      "dependsOn": [
+        "SET-04"
+      ],
+      "updated": "2026-09-13",
+      "notes": "Nav live on :9090; render test + suite green"
+    },
+    {
+      "id": "SET-05",
+      "seq": 5,
+      "title": "End-to-end verification and docs",
+      "file": "tasks/05-end-to-end-verification.md",
+      "status": "Done",
+      "dependsOn": [
+        "SET-04"
+      ],
+      "updated": "2026-09-13",
+      "notes": "Live smoke passed; save-time validation added after service finding"
+    },
+    {
+      "id": "SET-04",
+      "seq": 4,
+      "title": "Settings page UI and client wiring",
+      "file": "tasks/04-settings-page-ui.md",
+      "status": "Done",
+      "dependsOn": [
+        "SET-02",
+        "SET-03"
+      ],
+      "updated": "2026-09-13",
+      "notes": "Live smoke on throwaway repo passed; README added"
+    },
+    {
+      "id": "SET-03",
+      "seq": 3,
+      "title": "Settings HTTP API",
+      "file": "tasks/03-settings-http-api.md",
+      "status": "Done",
+      "dependsOn": [
+        "SET-00",
+        "SET-01"
+      ],
+      "updated": "2026-09-13",
+      "notes": "Handler tests pass; full suite green"
+    },
+    {
+      "id": "SET-02",
+      "seq": 2,
+      "title": "Wire settings into server behavior",
+      "file": "tasks/02-server-settings-wiring.md",
+      "status": "Done",
+      "dependsOn": [
+        "SET-00",
+        "SET-01"
+      ],
+      "updated": "2026-09-13",
+      "notes": "All wiring tests pass; full suite green"
+    },
+    {
+      "id": "SET-01",
+      "seq": 1,
+      "title": "opencode client session defaults support",
+      "file": "tasks/01-opencode-session-defaults.md",
+      "status": "Done",
+      "updated": "2026-09-13",
+      "notes": "Client tests pass; fallback retry moved to server helper (SET-02)"
+    }
+  ]
+}

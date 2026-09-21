@@ -1,0 +1,107 @@
+{
+  "version": 1,
+  "id": "2026-09-12-0",
+  "title": "opencode session integration",
+  "prefix": "OCI",
+  "branch": "main",
+  "status": {
+    "value": "Done",
+    "derived": false
+  },
+  "created": "2026-09-12",
+  "updated": "2026-09-12",
+  "tasks": [
+    {
+      "id": "OCI-00",
+      "seq": 0,
+      "title": "Verify opencode API contracts",
+      "file": "tasks/00-verify-api-contracts.md",
+      "status": "Done",
+      "updated": "2026-09-12",
+      "notes": "Contracts recorded in task notes. Key finding: service PTY connect-token is 403-gated (even via CLI) → terminal pivots to in-process PTY."
+    },
+    {
+      "id": "OCI-01",
+      "seq": 1,
+      "title": "opencode client package",
+      "file": "tasks/01-opencode-client.md",
+      "status": "Done",
+      "dependsOn": [
+        "OCI-00"
+      ],
+      "updated": "2026-09-12",
+      "notes": "Verified: 9 fixture tests pass; live smoke (discover/create/rename/delete) passes against real service."
+    },
+    {
+      "id": "OCI-02",
+      "seq": 2,
+      "title": "API/SSE/WS proxy layer",
+      "file": "tasks/02-proxy-layer.md",
+      "status": "Done",
+      "dependsOn": [
+        "OCI-01"
+      ],
+      "updated": "2026-09-12",
+      "notes": "Verified: WS bridge echo, resize, bad-session 400, origin-rejection 403 tests pass; deps creack/pty v1.1.24 + coder/websocket v1.8.15 added."
+    },
+    {
+      "id": "OCI-03",
+      "seq": 3,
+      "title": "Session mapping store and endpoints",
+      "file": "tasks/03-session-mapping.md",
+      "status": "Done",
+      "dependsOn": [
+        "OCI-01"
+      ],
+      "updated": "2026-09-12",
+      "notes": "Verified: CRUD+persistence, corrupt-file handling, endpoints (list/create/unlink), enrichment fallback, .tasktracker path — all tests pass."
+    },
+    {
+      "id": "OCI-04",
+      "seq": 4,
+      "title": "Terminal UI with xterm.js",
+      "file": "tasks/04-terminal-ui.md",
+      "status": "Done",
+      "dependsOn": [
+        "OCI-02",
+        "OCI-03"
+      ],
+      "updated": "2026-09-12",
+      "notes": "Verified: xterm vendored+pinned; render test covers markup; live probe — session created via endpoint, WS bridge streamed ~393KB of real TUI output; probe artifacts cleaned up."
+    },
+    {
+      "id": "OCI-05",
+      "seq": 5,
+      "title": "New change session flow",
+      "file": "tasks/05-new-change-session.md",
+      "status": "Done",
+      "dependsOn": [
+        "OCI-04"
+      ],
+      "updated": "2026-09-12",
+      "notes": "Verified: flow tests pass (orchestration, prompt content, HX-Redirect, 503 no-service, 502-keeps-change, 422 no-title); e2e lands in OCI-07."
+    },
+    {
+      "id": "OCI-06",
+      "seq": 6,
+      "title": "Permissions config and docs",
+      "file": "tasks/06-permissions-config.md",
+      "status": "Done",
+      "updated": "2026-09-12",
+      "notes": "Verified: opencode.json committed; live run without --auto executed shell+file ops with no prompt; README security section written."
+    },
+    {
+      "id": "OCI-07",
+      "seq": 7,
+      "title": "Dogfood and acceptance verification",
+      "file": "tasks/07-dogfood.md",
+      "status": "Done",
+      "dependsOn": [
+        "OCI-05",
+        "OCI-06"
+      ],
+      "updated": "2026-09-12",
+      "notes": "All six acceptance criteria verified with evidence (see task notes); cleanup done; validate OK."
+    }
+  ]
+}

@@ -1,0 +1,57 @@
+{
+  "version": 1,
+  "id": "2026-09-16-7ueiv",
+  "title": "Accent color palette",
+  "prefix": "ACC",
+  "status": {
+    "value": "Done",
+    "derived": false
+  },
+  "created": "2026-09-16",
+  "updated": "2026-09-17",
+  "tasks": [
+    {
+      "id": "ACC-00",
+      "seq": 0,
+      "title": "Accent palette, ui.accent setting, roll-once",
+      "file": "tasks/00-accent-palette-and-settings.md",
+      "status": "Done",
+      "updated": "2026-09-16",
+      "notes": "Palette+schema+roll-once+validation landed. Evidence: `go vet ./...` + full `go test ./...` green; accent_test.go covers roll-once persistence, layer precedence, fail-open on unknown ids, personal-UI preservation, 422 on unknown accent (offline incl. setup shell), options payload, allowlist. API-drivable end to end."
+    },
+    {
+      "id": "ACC-02",
+      "seq": 2,
+      "title": "Replace hardcoded accent derivatives",
+      "file": "tasks/02-accent-css-cleanup.md",
+      "status": "Done",
+      "updated": "2026-09-16",
+      "notes": "Pills (both themes) + card-expand now color-mix from --accent; xterm cursor reads computed style with legacy fallback. Evidence: grep sweep returns only theme definitions + JS fallback + static fallback SVG; served app.css confirmed after rebuild/restart. Palette-wide legibility = user visual pass."
+    },
+    {
+      "id": "ACC-01",
+      "seq": 1,
+      "title": "Dynamic brand assets and head accent",
+      "file": "tasks/01-dynamic-brand-assets.md",
+      "status": "Done",
+      "dependsOn": [
+        "ACC-00"
+      ],
+      "updated": "2026-09-16",
+      "notes": "brandassets.go (SVG/ICO/PNG gen) + routes + pageData accent style + setup-mux (no-roll). Evidence: unit tests green; live server rebuilt+restarted (PID 62522): /icon.svg serves rolled fuchsia #d946ef, /favicon.ico ICO magic + /apple-touch-icon.png 180×180 verified, ETag 304 flow works, PUT teal → icon+head style flip to #14b8a6 instantly, unknown accent 422, layout links dynamic routes."
+    },
+    {
+      "id": "ACC-03",
+      "seq": 3,
+      "title": "Accent swatch picker in Settings",
+      "file": "tasks/03-accent-settings-ui.md",
+      "status": "Done",
+      "dependsOn": [
+        "ACC-00",
+        "ACC-01"
+      ],
+      "updated": "2026-09-17",
+      "notes": "Second acceptance finding: no PUT ever fired (picker looked instant-apply) and the default Project scope is shadowed by the rolled personal value. Fixes: live preview (chip click rewrites #accent-style; reverts on scope switch/save via effective), shadowing notice pointing at the Personal scope, help text + options payload now carry all four colors per entry. Full suite green; rebuilt + restarted by port (PID via lsof); served HTML/JS/options verified. Browser re-test = user acceptance."
+    }
+  ]
+}

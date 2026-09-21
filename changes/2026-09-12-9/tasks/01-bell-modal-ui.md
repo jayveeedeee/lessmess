@@ -1,7 +1,3 @@
----
-id: REF-01
-title: Notification bell, modal, banner re-scope
----
 
 # REF-01: Notification bell, modal, banner re-scope
 

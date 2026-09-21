@@ -1,7 +1,3 @@
----
-id: DOC-01
-title: Coverage configuration (agentsdocs.json)
----
 
 # DOC-01: Coverage configuration (agentsdocs.json)
 

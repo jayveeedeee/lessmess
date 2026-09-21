@@ -1,7 +1,3 @@
----
-id: MTOC-00
-title: Heading anchors and ledger detail endpoint
----
 
 # MTOC-00: Heading anchors and ledger detail endpoint
 

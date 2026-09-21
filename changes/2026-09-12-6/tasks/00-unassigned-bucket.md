@@ -1,7 +1,3 @@
----
-id: SCF-00
-title: Unassigned bucket in mapping + discussions list endpoint
----
 
 # SCF-00: Unassigned bucket in mapping + discussions list endpoint
 

@@ -1,7 +1,3 @@
----
-id: STS-03
-title: Replace manual status control with automatic derivation
----
 
 # STS-03: Replace manual status control with automatic derivation
 

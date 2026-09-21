@@ -19,6 +19,7 @@ import (
 
 	"lessmess/internal/docs"
 	"lessmess/internal/opencode"
+	"lessmess/internal/store"
 )
 
 // prereqCheck is one probe result. Status is "ok", "warn", or "fail";
@@ -163,20 +164,20 @@ func (env *setupEnv) runPrereqs(ctx context.Context) prereqsResponse {
 		add(prereqCheck{ID: "repo-writable", Name: "repository writable", Status: "ok", Detail: env.dir + " is writable"})
 	}
 
-	// 5. changes/ tree present (informational: drives where the wizard resumes).
-	// A present-but-incomplete tree (no root ledger) is bootstrappable, just
-	// like a missing one — only a corrupt ledger is fatal, and serve reports
-	// that before the wizard starts.
+	// 5. workflow state present (informational: drives where the wizard
+	// resumes). A present-but-incomplete state (changes/ without the
+	// workflow index) is bootstrappable, just like a missing one — only a
+	// corrupt index is fatal, and serve reports that before the wizard
+	// starts.
 	changesDir := filepath.Join(env.dir, "changes")
-	if st, err := os.Stat(changesDir); err == nil && st.IsDir() {
-		if _, err := os.Stat(filepath.Join(changesDir, "ledger.md")); err == nil {
-			add(prereqCheck{ID: "changes-present", Name: "changes/ tree", Status: "ok", Detail: "changes/ exists"})
-		} else {
-			add(prereqCheck{ID: "changes-present", Name: "changes/ tree", Status: "warn",
-				Detail: "changes/ exists but has no root ledger; the bootstrap step creates it"})
-		}
+	indexFile := filepath.Join(env.dir, store.StateDirName, "workflow", "index.json")
+	if _, err := os.Stat(indexFile); err == nil {
+		add(prereqCheck{ID: "changes-present", Name: "workflow state", Status: "ok", Detail: "workflow index exists"})
+	} else if st, err := os.Stat(changesDir); err == nil && st.IsDir() {
+		add(prereqCheck{ID: "changes-present", Name: "workflow state", Status: "warn",
+			Detail: "changes/ exists but has no workflow index; the bootstrap step creates it"})
 	} else {
-		add(prereqCheck{ID: "changes-present", Name: "changes/ tree", Status: "warn",
+		add(prereqCheck{ID: "changes-present", Name: "workflow state", Status: "warn",
 			Detail: "changes/ does not exist yet; the bootstrap step creates it"})
 	}
 

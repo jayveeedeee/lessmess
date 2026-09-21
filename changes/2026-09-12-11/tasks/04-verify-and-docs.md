@@ -1,7 +1,3 @@
----
-id: EXD-04
-title: Verification, tests, and README
----
 
 # EXD-04: Verification, tests, and README
 

@@ -1,7 +1,3 @@
----
-id: WCV-00
-title: "Canon as single source: stamp, print command, init stops writing"
----
 
 # WCV-00: Canon as single source: stamp, print command, init stops writing
 

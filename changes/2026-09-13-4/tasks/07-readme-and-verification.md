@@ -1,7 +1,3 @@
----
-id: ONB-07
-title: README and full verification
----
 
 # ONB-07: README and full verification
 

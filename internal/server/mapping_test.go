@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -203,17 +204,18 @@ func TestCreateSessionEndpoint(t *testing.T) {
 	}
 	// Primed with the change-scoped prompt.
 	for _, want := range []string{
-		"bound to change 2026-09-10-0",
+		"permanently bound to change 2026-09-10-0",
 		"changes/2026-09-10-0/plan.md",
-		"changes/2026-09-10-0/ledger.md",
-		"existing task-ID prefix",
+		"Current state (tool-injected; authoritative)",
+		"NEVER edit .lessmess/workflow/ files by hand",
+		"tasks/<task-id>/status",
 		"NEVER create a new change directory",
 		"/changes/scaffold",
-		"offer a handoff (rule 4)",
+		"offer a handoff",
 		"only with the user's explicit approval",
 		"changes/2026-09-10-0/spawn-change",
 		`"session":"ses_new"`,
-		"Delegation is optional",
+		"Delegation:",
 		"prefix the task tool's description with the task's real ID",
 		"becomes the subagent session's title verbatim",
 	} {
@@ -490,5 +492,91 @@ func TestReconcileFailOpen(t *testing.T) {
 	}
 	if got := s.sessions.list("2026-09-10-0"); len(got) != 1 {
 		t.Fatalf("mapping changed on failed reconcile: %+v", got)
+	}
+}
+
+func TestReconcileDeepPaginatedDescendantsDefensively(t *testing.T) {
+	rootPages := 0
+	s := mappingServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/session" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		parent, cursor := r.URL.Query().Get("parentID"), r.URL.Query().Get("cursor")
+		var sessions []map[string]any
+		next := ""
+		switch parent {
+		case "ses_root":
+			rootPages++
+			start, end := 0, 50
+			if cursor == "page-2" {
+				start, end = 50, 51
+			} else {
+				next = "page-2"
+			}
+			for i := start; i < end; i++ {
+				title := "hostile FIX-00: not a prefix"
+				if i == 0 {
+					title = "FIX-00: title must not replace binding"
+				}
+				sessions = append(sessions, map[string]any{"id": fmt.Sprintf("ses_child_%02d", i), "title": title, "parentID": parent, "time": map[string]int64{"created": int64(i + 1)}})
+			}
+			if cursor == "page-2" {
+				sessions = append(sessions,
+					map[string]any{"id": "ses_foreign", "title": "FIX-00: foreign", "parentID": parent},
+					map[string]any{"id": "ses_hostile", "title": "FIX-00: wrong edge", "parentID": "ses_elsewhere"})
+			}
+		case "ses_child_01":
+			sessions = append(sessions, map[string]any{"id": "ses_grand", "title": "FIX-01: deep", "parentID": parent, "time": map[string]int64{"created": 60}})
+		case "ses_grand":
+			// A hostile cycle back to an already visited root must terminate.
+			sessions = append(sessions, map[string]any{"id": "ses_root", "title": "root", "parentID": parent})
+		case "ses_foreign":
+			sessions = append(sessions, map[string]any{"id": "ses_foreign_desc", "title": "FIX-00: do not claim", "parentID": parent})
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": sessions, "cursor": map[string]string{"next": next}})
+	})
+	for change, entry := range map[string]SessionEntry{
+		"2026-09-10-0": {Session: "ses_root", Title: "root", Created: "x"},
+		"other-change": {Session: "ses_foreign", Title: "foreign", Created: "x"},
+	} {
+		if err := s.sessions.add(change, entry); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.sessions.add("2026-09-10-0", SessionEntry{Session: "ses_child_00", Title: "old", Created: "x", Task: "FIX-01", Parent: "ses_root"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.sessions.add("2026-09-10-0", SessionEntry{Session: "ses_dead", Title: "dead", Created: "x", Task: "FIX-00", Parent: "ses_root"}); err != nil {
+		t.Fatal(err)
+	}
+
+	for range 2 {
+		w := do(t, s.Handler(), "GET", "/changes/2026-09-10-0/sessions", "")
+		if w.Code != http.StatusOK {
+			t.Fatalf("reconcile = %d %s", w.Code, w.Body.String())
+		}
+	}
+	entries := s.sessions.list("2026-09-10-0")
+	byID := map[string]SessionEntry{}
+	for _, entry := range entries {
+		byID[entry.Session] = entry
+	}
+	if len(entries) != 54 || rootPages < 4 {
+		t.Fatalf("entries=%d root pages=%d", len(entries), rootPages)
+	}
+	if got := byID["ses_child_00"].Task; got != "FIX-01" {
+		t.Fatalf("existing task binding replaced: %q", got)
+	}
+	if got := byID["ses_grand"]; got.Parent != "ses_child_01" || got.Task != "FIX-01" {
+		t.Fatalf("deep child = %#v", got)
+	}
+	if _, ok := byID["ses_dead"]; !ok {
+		t.Fatal("dead mapping was removed")
+	}
+	for _, id := range []string{"ses_foreign", "ses_foreign_desc", "ses_hostile"} {
+		if _, ok := byID[id]; ok {
+			t.Fatalf("unsafe session %s was claimed", id)
+		}
 	}
 }

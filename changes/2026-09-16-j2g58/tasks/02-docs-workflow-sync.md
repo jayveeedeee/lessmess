@@ -1,7 +1,3 @@
----
-id: STS-02
-title: Workflow wording, embedded asset, and README
----
 
 # STS-02: Workflow wording, embedded asset, and README
 

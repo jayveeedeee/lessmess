@@ -10,7 +10,9 @@ import (
 	"testing"
 	"time"
 
+	"lessmess/internal/model"
 	"lessmess/internal/opencode"
+	"lessmess/internal/store"
 )
 
 // ocCapture is a fake opencode service recording create bodies and prompt
@@ -164,7 +166,7 @@ func TestPromptAddendaAppended(t *testing.T) {
 	if len(cap.prompts) != 2 {
 		t.Fatalf("prompts = %d", len(cap.prompts))
 	}
-	if !strings.Contains(cap.prompts[0], "planning assistant") || !strings.HasSuffix(cap.prompts[0], "\n\nDISCUSSION-ADDENDUM") {
+	if !strings.Contains(cap.prompts[0], "planning and execution assistant") || !strings.HasSuffix(cap.prompts[0], "\n\nDISCUSSION-ADDENDUM") {
 		t.Errorf("discussion prompt missing base or addendum: %q…", cap.prompts[0][:80])
 	}
 	if !strings.Contains(cap.prompts[1], "change execution assistant") || !strings.HasSuffix(cap.prompts[1], "\n\nCHANGE-ADDENDUM") {
@@ -179,7 +181,8 @@ func TestPromptByteIdenticalWithoutSettings(t *testing.T) {
 	if w := do(t, s.Handler(), "POST", "/changes/2026-09-10-0/sessions", `{}`); w.Code != 201 {
 		t.Fatalf("code = %d body = %s", w.Code, w.Body)
 	}
-	if len(cap.prompts) != 1 || cap.prompts[0] != changePrompt(s.apiBase(), "2026-09-10-0", "ses_cap") {
+	want, _ := s.changePrime("2026-09-10-0", "ses_cap")
+	if len(cap.prompts) != 1 || cap.prompts[0] != want {
 		t.Error("prompt must be byte-identical to the base builder without settings")
 	}
 }
@@ -194,21 +197,21 @@ func TestDefaultBranchRecorded(t *testing.T) {
 	if w.Code != 201 {
 		t.Fatalf("create: %d %s", w.Code, w.Body)
 	}
-	root, err := s.st.Root()
+	idx, err := s.st.Index()
 	if err != nil {
 		t.Fatal(err)
 	}
 	var found bool
-	for _, r := range root.Rows {
-		if r.Title == "Branched" {
+	for _, e := range idx.Changes {
+		if e.Title == "Branched" {
 			found = true
-			if r.Branch != "main" {
-				t.Errorf("branch = %q, want main", r.Branch)
+			if e.Branch != "main" {
+				t.Errorf("branch = %q, want main", e.Branch)
 			}
 		}
 	}
 	if !found {
-		t.Fatal("created change missing from root ledger")
+		t.Fatal("created change missing from index")
 	}
 
 	// Scaffold route shares the same settings path.
@@ -219,10 +222,10 @@ func TestDefaultBranchRecorded(t *testing.T) {
 	if w.Code != 201 {
 		t.Fatalf("scaffold: %d %s", w.Code, w.Body)
 	}
-	root, _ = s.st.Root()
-	for _, r := range root.Rows {
-		if r.Title == "Scaffolded" && r.Branch != "main" {
-			t.Errorf("scaffold branch = %q, want main", r.Branch)
+	idx, _ = s.st.Index()
+	for _, e := range idx.Changes {
+		if e.Title == "Scaffolded" && e.Branch != "main" {
+			t.Errorf("scaffold branch = %q, want main", e.Branch)
 		}
 	}
 }
@@ -259,14 +262,28 @@ func TestGardenerGateOnClose(t *testing.T) {
 
 func TestIndexArchivedFilter(t *testing.T) {
 	s := mappingServer(t, nil)
-	// Add an archived row to the root ledger and reload.
-	rootPath := filepath.Join(s.st.Dir, "changes", "ledger.md")
-	data, err := os.ReadFile(rootPath)
+	// Register an archived change (index entry + archive prose dir) and reload.
+	archDir := filepath.Join(s.st.Dir, "changes", "archive", "2026-09-08-0")
+	if err := os.MkdirAll(filepath.Join(archDir, "tasks"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(archDir, "plan.md"), model.RenderChangePlan("2026-09-08-0", "Old archived", "2026-09-08"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	wd := filepath.Join(s.st.Dir, store.StateDirName, "workflow")
+	archState := &model.ChangeState{
+		Version: model.StateVersion, ID: "2026-09-08-0", Title: "Old archived", Prefix: "OLD",
+		Status: model.ChangeStatus{Value: model.OverallDone}, Created: "2026-09-08", Updated: "2026-09-08",
+	}
+	if err := archState.Save(filepath.Join(wd, "changes", "2026-09-08-0.json")); err != nil {
+		t.Fatal(err)
+	}
+	idx, err := model.LoadWorkflowIndex(filepath.Join(wd, "index.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	row := "| [2026-09-08-0](archive/2026-09-08-0/plan.md) | Old archived | OLD | — | Done | 2026-09-08 | 2026-09-08 |\n"
-	if err := os.WriteFile(rootPath, append(data, []byte(row)...), 0o644); err != nil {
+	idx.Changes = append(idx.Changes, model.IndexEntry{ID: "2026-09-08-0", Title: "Old archived", Prefix: "OLD", Created: "2026-09-08", Archived: true})
+	if err := idx.Save(filepath.Join(wd, "index.json")); err != nil {
 		t.Fatal(err)
 	}
 	s.st.Reload()

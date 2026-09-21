@@ -1,0 +1,56 @@
+{
+  "version": 1,
+  "id": "2026-09-16-j2g58",
+  "title": "Deterministic change status endpoint",
+  "prefix": "STS",
+  "status": {
+    "value": "Done",
+    "derived": false
+  },
+  "created": "2026-09-16",
+  "updated": "2026-09-17",
+  "tasks": [
+    {
+      "id": "STS-00",
+      "seq": 0,
+      "title": "Status endpoint and handler tests",
+      "file": "tasks/00-status-endpoint.md",
+      "status": "Done",
+      "updated": "2026-09-16",
+      "notes": "`TestStatusEndpoint` covers all three allowed transitions with both-file agreement, 409 Done→/close, 422 Cancelled/unknown/missing, 400 malformed, 404 unknown change. `go vet ./...` + full `go test ./...` green."
+    },
+    {
+      "id": "STS-01",
+      "seq": 1,
+      "title": "Board status control",
+      "file": "tasks/01-board-status-control.md",
+      "status": "Done",
+      "dependsOn": [
+        "STS-00"
+      ],
+      "updated": "2026-09-16",
+      "notes": "Status select on the board head (rendered only for Planned/In progress/Blocked, current preselected) posting to the endpoint; failure repaints from server state. `TestBoardLifecycleButtons` extended (select present + preselected for In progress, absent for Done); suite green. Browser interaction = user visual pass."
+    },
+    {
+      "id": "STS-03",
+      "seq": 3,
+      "title": "Replace manual status control with automatic derivation",
+      "file": "tasks/03-auto-derive.md",
+      "status": "Done",
+      "updated": "2026-09-17",
+      "notes": "User-directed reversal of STS-00/01. Select+endpoint+CSS removed; `internal/store/overall.go` derives Planned/Blocked/In-progress from the task tree and syncs both ledgers after moves/creates and on watcher rescans (Done preserved while complete, implicit reopen on new work); derivation + convergence tests, render tests updated, AGENTS.md rule 3 reworded + embed regen (drift green), README synced; full suite green"
+    },
+    {
+      "id": "STS-02",
+      "seq": 2,
+      "title": "Workflow wording, embedded asset, and README",
+      "file": "tasks/02-docs-workflow-sync.md",
+      "status": "Done",
+      "dependsOn": [
+        "STS-00"
+      ],
+      "updated": "2026-09-16",
+      "notes": "AGENTS.md rule 3 now mandates the deterministic path (endpoint/board; Done stays user-gated; Cancelled hand-edited with reason). Embedded asset regenerated via the awk recipe — docs tests green (drift test). README board section documents the status select + endpoint."
+    }
+  ]
+}

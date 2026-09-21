@@ -1,7 +1,3 @@
----
-id: REF-02
-title: Dogfood and README touch-up
----
 
 # REF-02: Dogfood and README touch-up
 

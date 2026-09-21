@@ -1,7 +1,3 @@
----
-id: PSB-01
-title: Mapping schema — task and parent fields
----
 
 # PSB-01: Mapping schema — task and parent fields
 

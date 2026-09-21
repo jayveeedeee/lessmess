@@ -1,7 +1,3 @@
----
-id: TUI-03
-title: Task panel layout and styling
----
 
 # TUI-03: Task panel layout and styling
 

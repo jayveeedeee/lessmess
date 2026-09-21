@@ -1,7 +1,3 @@
----
-id: DOC-03
-title: tasktracker init command
----
 
 # DOC-03: tasktracker init command
 

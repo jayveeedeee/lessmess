@@ -1,7 +1,3 @@
----
-id: LRN-01
-title: Two-section gardener prompt with removal accounting
----
 
 # LRN-01: Two-section gardener prompt with removal accounting
 

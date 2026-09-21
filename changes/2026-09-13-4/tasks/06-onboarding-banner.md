@@ -1,7 +1,3 @@
----
-id: ONB-06
-title: Index banner and Settings re-entry
----
 
 # ONB-06: Index banner and Settings re-entry
 

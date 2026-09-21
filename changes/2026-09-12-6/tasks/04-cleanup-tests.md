@@ -1,7 +1,3 @@
----
-id: SCF-04
-title: Remove placeholder machinery, rewrite tests
----
 
 # SCF-04: Remove placeholder machinery, rewrite tests
 

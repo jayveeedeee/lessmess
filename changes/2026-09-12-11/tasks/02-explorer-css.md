@@ -1,7 +1,3 @@
----
-id: EXD-02
-title: Explorer CSS — two-pane layout, guide lines, selection
----
 
 # EXD-02: Explorer CSS — two-pane layout, guide lines, selection
 

@@ -1,7 +1,3 @@
----
-id: SET-05
-title: End-to-end verification and docs
----
 
 # SET-05: End-to-end verification and docs
 

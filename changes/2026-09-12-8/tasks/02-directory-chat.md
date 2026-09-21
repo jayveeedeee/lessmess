@@ -1,7 +1,3 @@
----
-id: EXP-02
-title: Directory chat sessions
----
 
 # EXP-02: Directory chat sessions
 

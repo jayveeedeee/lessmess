@@ -1,7 +1,3 @@
----
-id: WTP-05
-title: Gated close — clean check, push, PR, agent review
----
 
 # WTP-05: Gated close — clean check, push, PR, agent review
 

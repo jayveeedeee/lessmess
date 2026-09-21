@@ -1,7 +1,3 @@
----
-id: CID-01
-title: Store mint random suffixes and accept both formats
----
 
 # CID-01: Store mint random suffixes and accept both formats
 

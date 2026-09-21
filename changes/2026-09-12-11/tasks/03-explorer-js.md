@@ -1,7 +1,3 @@
----
-id: EXD-03
-title: Explorer JS — selection state and refresh restore
----
 
 # EXD-03: Explorer JS — selection state and refresh restore
 

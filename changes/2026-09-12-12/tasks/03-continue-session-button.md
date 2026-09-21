@@ -1,7 +1,3 @@
----
-id: NAV-03
-title: Prominent Continue/Start session button
----
 
 # NAV-03: Prominent Continue/Start session button
 

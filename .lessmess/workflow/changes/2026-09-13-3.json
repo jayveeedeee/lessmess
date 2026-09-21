@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "id": "2026-09-13-3",
+  "title": "Discussion prompt question policy",
+  "prefix": "DQP",
+  "status": {
+    "value": "Done",
+    "derived": false
+  },
+  "created": "2026-09-13",
+  "updated": "2026-09-13",
+  "tasks": [
+    {
+      "id": "DQP-00",
+      "seq": 0,
+      "title": "Write discussion question policy to project settings",
+      "file": "tasks/00-write-project-addendum.md",
+      "status": "Done",
+      "updated": "2026-09-13",
+      "notes": "Verified: PUT 200, read-back byte-identical, source=project, lessmess.json correct, vet/test clean."
+    }
+  ]
+}

@@ -1,7 +1,3 @@
----
-id: KAN-01
-title: Ledger and task-file parsers
----
 
 # KAN-01: Ledger and task-file parsers
 

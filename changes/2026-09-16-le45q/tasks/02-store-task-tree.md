@@ -1,7 +1,3 @@
----
-id: NTD-02
-title: Store recursive task tree and operations
----
 
 # NTD-02: Store recursive task tree and operations
 

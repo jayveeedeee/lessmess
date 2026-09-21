@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "id": "2026-09-12-13",
+  "title": "Fix gitignore swallowing cmd/tasktracker source",
+  "prefix": "IGN",
+  "branch": "main",
+  "status": {
+    "value": "Done",
+    "derived": false
+  },
+  "created": "2026-09-12",
+  "updated": "2026-09-12",
+  "tasks": [
+    {
+      "id": "IGN-00",
+      "seq": 0,
+      "title": "Anchor artifact pattern and restore main.go tracking",
+      "file": "tasks/00-fix-gitignore.md",
+      "status": "Done",
+      "updated": "2026-09-12",
+      "notes": "Verified: check-ignore correct both ways; main.go + docs files staged; validate OK."
+    }
+  ]
+}

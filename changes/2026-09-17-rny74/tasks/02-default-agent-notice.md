@@ -1,7 +1,3 @@
----
-id: SPF-02
-title: default_agent divergence notice on the Settings page
----
 
 # SPF-02: default_agent divergence notice on the Settings page
 

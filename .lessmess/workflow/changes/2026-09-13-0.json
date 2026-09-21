@@ -1,0 +1,87 @@
+{
+  "version": 1,
+  "id": "2026-09-13-0",
+  "title": "Commit-all button on changes page",
+  "prefix": "CMT",
+  "status": {
+    "value": "Done",
+    "derived": false
+  },
+  "created": "2026-09-13",
+  "updated": "2026-09-13",
+  "tasks": [
+    {
+      "id": "CMT-00",
+      "seq": 0,
+      "title": "Read-only git helper and status endpoint",
+      "file": "tasks/00-git-status-helper-and-endpoint.md",
+      "status": "Done",
+      "updated": "2026-09-13",
+      "notes": "`gitStatus` + `GET /api/git/status`; helper/endpoint tests pass (non-repo, dirty, clean)"
+    },
+    {
+      "id": "CMT-01",
+      "seq": 1,
+      "title": "Repo-wide commit endpoint and prompt",
+      "file": "tasks/01-commit-all-endpoint.md",
+      "status": "Done",
+      "dependsOn": [
+        "CMT-00"
+      ],
+      "updated": "2026-09-13",
+      "notes": "`POST /api/git/commit` + reused `commitStatus` route; tests: 201 mapped session, 422 clean, 422 non-repo, 503 no oc"
+    },
+    {
+      "id": "CMT-02",
+      "seq": 2,
+      "title": "Index page Commit all button",
+      "file": "tasks/02-index-button.md",
+      "status": "Done",
+      "dependsOn": [
+        "CMT-00"
+      ],
+      "updated": "2026-09-13",
+      "notes": "Button renders enabled/disabled/hidden per repo state; TestIndexCommitAllButton passes"
+    },
+    {
+      "id": "CMT-05",
+      "seq": 5,
+      "title": "Fix watcher CHMOD loop triggered by git scans",
+      "file": "tasks/05-watcher-chmod-loop.md",
+      "status": "Done",
+      "dependsOn": [
+        "CMT-02"
+      ],
+      "updated": "2026-09-13",
+      "notes": "Watchers now ignore attribute-only CHMOD events; loop dead (0 events per cycle), real writes still notify; TestWatchIgnoresChmod passes"
+    },
+    {
+      "id": "CMT-03",
+      "seq": 3,
+      "title": "Commit modal markup, CSS, and JS flow",
+      "file": "tasks/03-commit-modal.md",
+      "status": "Done",
+      "dependsOn": [
+        "CMT-01",
+        "CMT-02"
+      ],
+      "updated": "2026-09-13",
+      "notes": "Live smoke test on :9099: button enabled (repo dirty), modal markup served, /api/git/status returns real porcelain list, commit-status 400 on bad id; node --check app.js OK"
+    },
+    {
+      "id": "CMT-04",
+      "seq": 4,
+      "title": "End-to-end verification and docs updates",
+      "file": "tasks/04-verify-and-docs.md",
+      "status": "Done",
+      "dependsOn": [
+        "CMT-00",
+        "CMT-01",
+        "CMT-02",
+        "CMT-03"
+      ],
+      "updated": "2026-09-13",
+      "notes": "vet+tests+build pass; validate exit 0 (only gardener-owned staleness warnings); README documents the feature"
+    }
+  ]
+}

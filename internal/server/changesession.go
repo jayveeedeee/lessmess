@@ -19,56 +19,44 @@ import (
 
 var prefixRe = regexp.MustCompile(`^[A-Z0-9]{2,4}$`)
 
-// discussionPrompt builds the message for a pre-scaffold discussion session.
-// The agent discusses the objective and, only with the user's explicit
-// approval, fires the deterministic scaffold trigger with the agreed
-// title/prefix. Step 0 covers the empty state: a bare prime (nothing
-// appended below it) must not investigate the repository; it invites the
-// request in one line and waits. The API base URL and the session's own ID
-// are injected.
+// discussionPrompt builds the prime for a pre-scaffold discussion
+// session: pure module composition (no state to inject). Step 0 covers
+// the empty state; the scaffold trigger carries the API base and the
+// session's own ID.
 func discussionPrompt(apiBase, sessionID string) string {
-	return fmt.Sprintf(`You are a planning assistant for a repository that uses the change-management workflow defined in AGENTS.md. This session exists to plan a NEW change from the user's own request.
-
-0. Empty state: this prime message may arrive before the user has typed anything. If no user request accompanies this message (nothing below it), do NOT investigate the repository — do not read changes/, any ledger, or open changes — and do not summarize anything. Reply with a single short line inviting the request (for example: "What would you like to build?") and stop. Every other instruction in this message — above, below, or in an appended addendum — applies only from the user's first message onward.
-1. Discuss with the user what they want to build: objective, context, scope, and design options. Ask questions; help them decide.
-2. DO NOT modify the repository in any way — no change directories, no edits, no scaffolds. Discussion only.
-3. When the user EXPLICITLY agrees to start the work, choose a concise change title and a 2–4 letter uppercase task-ID prefix, then scaffold the change by running exactly this (replacing <title> and <prefix>):
-
-curl -s -X POST %[1]s/changes/scaffold -H 'Content-Type: application/json' -d '{"title":"<title>","prefix":"<prefix>","session":"%[2]s"}'
-
-This call creates the change directory, registers your title and prefix, renames this session, and links it to the new change. Report the returned change ID to the user.
-4. Then refine changes/<id>/plan.md and break the work into verifiable tasks per AGENTS.md (task files plus matching ledger rows), keeping the user in the loop before any implementation. When the scaffold response includes "branch" and "worktree", this change is worktree-backed: its files — including changes/<id>/ — live at that worktree path, so read and write them there by absolute path (your own working directory remains the main tree). If the response includes "warning", relay it to the user: it lists uncommitted main-tree files that the new worktree will not contain.`, apiBase, sessionID)
+	text, _ := renderPrime("discussion", primeContext{APIBase: apiBase, SessionID: sessionID})
+	return text
 }
 
-// changePrompt builds the prime message for a session bound to an existing
-// change: everything requested in the conversation is work on that change,
-// and scaffolding a new change from it is forbidden — the handoff endpoint
-// (rule 4) is the one carve-out, and it needs the API base and the
-// session's own ID injected so the agent can call it.
-func changePrompt(apiBase, changeID, sessionID string) string {
-	return fmt.Sprintf(`You are a change execution assistant for a repository that uses the change-management workflow defined in AGENTS.md. This session is permanently bound to change %[2]s.
-
-1. Read changes/%[2]s/plan.md and changes/%[2]s/ledger.md first — they hold the authoritative scope, design, and task status for this change.
-2. Everything the user asks for in this conversation is work on THIS change: refine changes/%[2]s/plan.md, add or update task files and ledger rows under its existing task-ID prefix — always in the same pass, one governing-ledger row per task file, never one without the other (AGENTS.md rule 3) — and keep ledger statuses current per AGENTS.md.
-3. NEVER create a new change directory by any other means and NEVER call the /changes/scaffold endpoint. If the user asks for genuinely unrelated work, explain that it belongs in a separate change and offer a handoff (rule 4).
-4. Handoff is the one way this session may spawn a new change, and only with the user's explicit approval. Write the full context to changes/%[2]s/handoff-<topic>.md, then create the new change by running exactly this (replacing <title>, <prefix>, and <topic>):
-   curl -s -X POST %[1]s/changes/%[2]s/spawn-change -H 'Content-Type: application/json' -d '{"title":"<title>","prefix":"<prefix>","artifact":"handoff-<topic>.md","session":"%[3]s"}'
-   The new change gets its own fresh session seeded from the artifact; this session stays bound to change %[2]s.
-5. Delegation is optional — do small tasks inline. When you delegate a task to a subagent, prefix the task tool's description with the task's real ID from the ledger — for example "TSK-01: implement the bind endpoint", where TSK is this change's actual prefix: that description becomes the subagent session's title verbatim, and the board uses it to attach the session to the task. Prefer a subagent with write access over a read-only explorer when the user may want to continue that session directly afterwards.
-6. Tasks may be decomposed into nested sub plans per AGENTS.md. Decomposition is user-instructed only: when work on a task reveals it needs detailed breakdown, PROPOSE the decomposition (name the subtasks you would create) and wait for the user's explicit go-ahead — never create a container directory unprompted. When the user instructs it, create the task's container, ledger.md, and tasks/ with dotted child IDs following AGENTS.md; every subtask starts Not started, the decomposed task's own status is never changed by planning, and no subtask work begins until the user explicitly instructs it.`, apiBase, changeID, sessionID)
+// changePrime builds the prime for a session bound to a change: the
+// change-session modules (the worktree module only when worktree-backed),
+// then the injected authoritative state snapshot. Returns the text and
+// the selected module IDs for audit logging.
+func (s *Server) changePrime(changeID, sessionID string) (string, []string) {
+	pc := primeContext{APIBase: s.apiBase(), ChangeID: changeID, SessionID: sessionID}
+	if e, ok := s.worktreeEntry(changeID); ok {
+		pc.Worktree, pc.WorktreeBranch = e.Path, e.Branch
+	}
+	if view, err := s.st.LedgerFile(changeID); err == nil {
+		pc.Snapshot = view
+	}
+	return renderPrime("change", pc)
 }
 
-// taskPrompt builds the prime message for a session bound to one task of
-// a change (top-level or nested): the scope is that task and its subtree.
-func taskPrompt(changeID string, n *store.TaskNode) string {
-	return fmt.Sprintf(`You are a task planning and execution assistant for a repository that uses the change-management workflow defined in AGENTS.md. This session is permanently bound to task %[2]s of change %[1]s.
-
-0. On arrival (this prime with nothing appended below it): PLAN ONLY. Read the task's context first, then draft the sub plan — if the container has no subtasks yet, create the child task files and ledger rows with dotted IDs (%[2]s.00, %[2]s.01, …) per AGENTS.md; every subtask starts `+"`Not started`"+`. Planning never changes any status: your own task stays exactly in the state it was in when the plan was built, and no subtask is started. Do not begin implementing anything. When the plan is drafted, reply with a one-line summary of the subtasks and wait for the user.
-1. Read changes/%[1]s/plan.md, changes/%[1]s/%[3]s, and the ledger that governs %[2]s (per AGENTS.md: the change ledger for top-level tasks, the parent container's ledger below that) first — they hold the authoritative context and status.
-2. Everything the user asks for in this conversation is work on THIS task and its subtree. Execution of any subtask begins only when the user explicitly says so. Keep the governing ledger rows current per AGENTS.md, and stop at Test — NEVER set your task or its subtasks to Done; that is the user's call.
-3. When you delegate a subtask to a subagent, prefix the task tool's description with the subtask's real dotted ID — for example "%[2]s.00: implement the parser": the description becomes the subagent session's title verbatim, and the board uses it to attach the session to that subtask. Prefer a subagent with write access when the user may want to continue that session directly.
-4. NEVER create a new change directory and NEVER call the /changes/scaffold endpoint.
-5. Further decomposition of your subtasks is user-instructed only: PROPOSE it when work reveals complexity and wait for the user's explicit go-ahead; never create container directories unprompted.`, changeID, n.ID, n.Href)
+// taskPrime builds the prime for a session bound to one task (top-level
+// or nested): the task-session modules plus the state snapshot.
+func (s *Server) taskPrime(changeID string, n *store.TaskNode, sessionID string) (string, []string) {
+	pc := primeContext{
+		APIBase: s.apiBase(), ChangeID: changeID, SessionID: sessionID,
+		TaskID: n.ID, TaskHref: n.Href,
+	}
+	if e, ok := s.worktreeEntry(changeID); ok {
+		pc.Worktree, pc.WorktreeBranch = e.Path, e.Branch
+	}
+	if view, err := s.st.LedgerFile(changeID); err == nil {
+		pc.Snapshot = view
+	}
+	return renderPrime("task", pc)
 }
 
 // apiBase returns the lessmess base URL used in agent-facing prompts.
@@ -276,8 +264,16 @@ func (s *Server) scaffoldChange(w http.ResponseWriter, r *http.Request) {
 	// Rename the session server-side (best effort) and move the mapping.
 	if s.oc != nil {
 		ctx2, cancel2 := context.WithTimeout(r.Context(), 10*time.Second)
-		if err := s.oc.RenameSession(ctx2, req.Session, id+" — "+req.Title); err != nil {
-			slog.Warn("session rename failed", "session", req.Session, "err", err)
+		cap, capErr := s.oc.LifecycleCapabilities(ctx2)
+		var renameErr error
+		if capErr == nil {
+			renameErr = s.oc.RenameSessionCompatible(ctx2, cap, req.Session, id+" — "+req.Title)
+		} else {
+			// If OpenAPI cannot be read, use the current published contract.
+			renameErr = s.oc.RenameSession(ctx2, req.Session, id+" — "+req.Title)
+		}
+		if renameErr != nil {
+			slog.Warn("session rename failed", "session", req.Session, "err", renameErr)
 		}
 		cancel2()
 	}
@@ -429,13 +425,15 @@ func (s *Server) spawnChange(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"change": spawned, "error": "create opencode session: " + err.Error()})
 		return
 	}
-	prime := s.promptWith(s.withWorktreeRule(spawned, changePrompt(s.apiBase(), spawned, sess.ID)+"\n\n"+handoffAddendum(id, req.Artifact)), "change")
+	base, modules := s.changePrime(spawned, sess.ID)
+	prime := s.promptWith(base+"\n\n"+handoffAddendum(id, req.Artifact), "change")
 	if err := s.oc.Prompt(ctx, sess.ID, prime); err != nil {
 		_ = s.oc.DeleteSession(context.Background(), sess.ID)
 		writeJSON(w, http.StatusBadGateway, map[string]string{"change": spawned, "error": "prime handoff session: " + err.Error()})
 		return
 	}
-	if err := s.sessions.add(spawned, SessionEntry{Session: sess.ID, Title: title, Created: time.Now().Format(time.RFC3339), SpawnedFrom: id}); err != nil {
+	logPrime(sess.ID, "change", modules)
+	if err := s.sessions.add(spawned, SessionEntry{Session: sess.ID, Title: title, Created: time.Now().Format(time.RFC3339), SpawnedFrom: id, Modules: modules}); err != nil {
 		slog.Error("mapping add", "err", err)
 		_ = s.oc.DeleteSession(context.Background(), sess.ID) // don't leak an unmapped session
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"change": spawned, "error": "persist mapping: " + err.Error()})

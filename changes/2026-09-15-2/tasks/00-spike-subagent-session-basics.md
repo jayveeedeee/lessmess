@@ -1,7 +1,3 @@
----
-id: PSB-00
-title: Spike — subagent child promptability and ID visibility
----
 
 # PSB-00: Spike — subagent child promptability and ID visibility
 

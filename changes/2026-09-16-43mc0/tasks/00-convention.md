@@ -1,7 +1,3 @@
----
-id: LRN-00
-title: Curated-learnings convention in workflow text, prompts, and README
----
 
 # LRN-00: Curated-learnings convention in workflow text, prompts, and README
 

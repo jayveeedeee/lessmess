@@ -1,7 +1,3 @@
----
-id: LIF-05
-title: Content-hashed asset versioning (fix stale JS)
----
 
 # LIF-05: Content-hashed asset versioning (fix stale JS)
 

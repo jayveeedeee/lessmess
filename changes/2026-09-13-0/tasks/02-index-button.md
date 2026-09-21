@@ -1,7 +1,3 @@
----
-id: CMT-02
-title: Index page Commit all button
----
 
 # CMT-02: Index page Commit all button
 

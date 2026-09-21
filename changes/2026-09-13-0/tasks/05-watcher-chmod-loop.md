@@ -1,7 +1,3 @@
----
-id: CMT-05
-title: Fix watcher CHMOD loop triggered by git scans
----
 
 # CMT-05: Fix watcher CHMOD loop triggered by git scans
 

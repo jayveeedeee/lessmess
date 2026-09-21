@@ -1,0 +1,80 @@
+{
+  "version": 1,
+  "id": "2026-09-13-1",
+  "title": "Embedded terminal improvements",
+  "prefix": "TUI",
+  "status": {
+    "value": "Done",
+    "derived": false
+  },
+  "created": "2026-09-13",
+  "updated": "2026-09-13",
+  "tasks": [
+    {
+      "id": "TUI-00",
+      "seq": 0,
+      "title": "Merged TUI cli.json generator",
+      "file": "tasks/00-merged-tui-config-generator.md",
+      "status": "Done",
+      "updated": "2026-09-13",
+      "notes": "Accepted by user 2026-09-13; `go vet` + full suite green, 7 tests cover merge/precedence/JSONC/fallback/untouched-user-file"
+    },
+    {
+      "id": "TUI-01",
+      "seq": 1,
+      "title": "Spawn env injection and terminalWS wiring",
+      "file": "tasks/01-spawn-env-injection-and-wiring.md",
+      "status": "Done",
+      "dependsOn": [
+        "TUI-00"
+      ],
+      "updated": "2026-09-13",
+      "notes": "Accepted by user 2026-09-13; WS tests prove injected XDG + fail-open fallback; `debug config` byte-identical with/without override"
+    },
+    {
+      "id": "TUI-02",
+      "seq": 2,
+      "title": "Docs and manual verification",
+      "file": "tasks/02-docs-and-manual-verification.md",
+      "status": "Done",
+      "dependsOn": [
+        "TUI-01"
+      ],
+      "updated": "2026-09-13",
+      "notes": "Accepted by user 2026-09-13 after browser pass (no tabs/sidebar, theme intact, standalone unaffected); live probe evidence + README bullet recorded in task notes"
+    },
+    {
+      "id": "TUI-03",
+      "seq": 3,
+      "title": "Task panel layout and styling",
+      "file": "tasks/03-task-panel-layout-and-styling.md",
+      "status": "Done",
+      "updated": "2026-09-13",
+      "notes": "Accepted by user 2026-09-13 after three styling iterations (full-bleed status bands, pointer cursor, fixed Plan footer)"
+    },
+    {
+      "id": "TUI-04",
+      "seq": 4,
+      "title": "Task panel client mirror and sync",
+      "file": "tasks/04-task-panel-client-mirror.md",
+      "status": "Done",
+      "dependsOn": [
+        "TUI-03"
+      ],
+      "updated": "2026-09-13",
+      "notes": "Accepted by user 2026-09-13; mirror rides SSE board swaps, click-to-detail and Plan anchor verified live, Escape closes top-most layer"
+    },
+    {
+      "id": "TUI-05",
+      "seq": 5,
+      "title": "Panel docs and manual verification",
+      "file": "tasks/05-panel-docs-and-manual-verification.md",
+      "status": "Done",
+      "dependsOn": [
+        "TUI-04"
+      ],
+      "updated": "2026-09-13",
+      "notes": "Accepted by user 2026-09-13 (\"I have tested\"); README \"Task panel\" bullet added; suite + validate green"
+    }
+  ]
+}

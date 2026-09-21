@@ -1,7 +1,3 @@
----
-id: HOF-00
-title: spawn-change endpoint, changePrompt session ID + handoff step, SpawnedFrom field
----
 
 # HOF-00: spawn-change endpoint, changePrompt session ID + handoff step, SpawnedFrom field
 

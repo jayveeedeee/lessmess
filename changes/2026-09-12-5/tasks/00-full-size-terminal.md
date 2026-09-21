@@ -1,7 +1,3 @@
----
-id: TRM-00
-title: Full-size terminal CSS
----
 
 # TRM-00: Full-size terminal CSS
 

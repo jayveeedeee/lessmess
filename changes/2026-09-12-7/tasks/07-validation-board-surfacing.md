@@ -1,7 +1,3 @@
----
-id: DOC-07
-title: Validation and board staleness surfacing
----
 
 # DOC-07: Validation and board staleness surfacing
 

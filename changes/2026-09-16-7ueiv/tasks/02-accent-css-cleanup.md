@@ -1,7 +1,3 @@
----
-id: ACC-02
-title: Replace hardcoded accent derivatives in CSS and JS
----
 
 # ACC-02: Replace hardcoded accent derivatives in CSS and JS
 

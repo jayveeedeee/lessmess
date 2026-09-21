@@ -1,7 +1,3 @@
----
-id: CMT-03
-title: Commit modal markup, CSS, and JS flow
----
 
 # CMT-03: Commit modal markup, CSS, and JS flow
 

@@ -1,7 +1,3 @@
----
-id: DOC-05
-title: Close-out hook and serialized refresh queue
----
 
 # DOC-05: Close-out hook and serialized refresh queue
 

@@ -1,0 +1,114 @@
+{
+  "version": 1,
+  "id": "2026-09-16-le45q",
+  "title": "Nested task decomposition",
+  "prefix": "NTD",
+  "status": {
+    "value": "Done",
+    "derived": false
+  },
+  "created": "2026-09-16",
+  "updated": "2026-09-21",
+  "tasks": [
+    {
+      "id": "NTD-00",
+      "seq": 0,
+      "title": "Extend workflow spec",
+      "file": "tasks/00-workflow-spec.md",
+      "status": "Done",
+      "updated": "2026-09-16",
+      "notes": "Drift test green; full suite green; validate clean after rebuild"
+    },
+    {
+      "id": "NTD-05",
+      "seq": 5,
+      "title": "Sessions dotted binding, task prompt, auto-spawn",
+      "file": "tasks/05-sessions-autospawn.md",
+      "status": "Done",
+      "dependsOn": [
+        "NTD-04"
+      ],
+      "updated": "2026-09-21",
+      "notes": "Reopened+done: task sessions now PLAN ONLY on arrival (subtasks Not started, own status untouched, execution only on explicit instruction); changePrompt + AGENTS.md rule 7 match; prompt test pins the new rules; suite green, rebuilt+restarted"
+    },
+    {
+      "id": "NTD-04",
+      "seq": 4,
+      "title": "Server nested routes, expand, drill-down board",
+      "file": "tasks/04-server-board-api.md",
+      "status": "Done",
+      "dependsOn": [
+        "NTD-03"
+      ],
+      "updated": "2026-09-21",
+      "notes": "Reopened+fixed: AllTaskStats now counts all nodes (roots included) so the header pill and index x/y work on flat changes; pill hidden at zero tasks; suite green, live board verified (7/8, 6/6)"
+    },
+    {
+      "id": "NTD-07",
+      "seq": 7,
+      "title": "README and end-to-end verification",
+      "file": "tasks/07-readme-verification.md",
+      "status": "Done",
+      "dependsOn": [
+        "NTD-00",
+        "NTD-01",
+        "NTD-02",
+        "NTD-03",
+        "NTD-04",
+        "NTD-05",
+        "NTD-06"
+      ],
+      "updated": "2026-09-16",
+      "notes": "README updated; full suite + drift + validate green; live-binary smoke: expand→subtasks→drill-down→move→422/200 close gate"
+    },
+    {
+      "id": "NTD-06",
+      "seq": 6,
+      "title": "Web UI badges, drill-down, modal links",
+      "file": "tasks/06-web-ui.md",
+      "status": "Done",
+      "dependsOn": [
+        "NTD-04",
+        "NTD-05"
+      ],
+      "updated": "2026-09-16",
+      "notes": "Badges/crumbs/expand/parent form/data-doc modal links/markup tests green; user browser pass pending in Test"
+    },
+    {
+      "id": "NTD-03",
+      "seq": 3,
+      "title": "Store recursive validation and close-out readiness",
+      "file": "tasks/03-store-validation.md",
+      "status": "Done",
+      "dependsOn": [
+        "NTD-02"
+      ],
+      "updated": "2026-09-16",
+      "notes": "Tree-walk rule 2/3/5, stray-dir + depth + dotted checks, CloseOutReady; nested violation tests green; validate clean"
+    },
+    {
+      "id": "NTD-02",
+      "seq": 2,
+      "title": "Store recursive task tree and operations",
+      "file": "tasks/02-store-task-tree.md",
+      "status": "Done",
+      "dependsOn": [
+        "NTD-01"
+      ],
+      "updated": "2026-09-16",
+      "notes": "Tree scan, Decompose/CreateTask(parent)/MoveTask, SubtreeStats, watcher recursion — all tested; full suite green"
+    },
+    {
+      "id": "NTD-01",
+      "seq": 1,
+      "title": "Model container ledgers and dotted IDs",
+      "file": "tasks/01-model-container-ledgers.md",
+      "status": "Done",
+      "dependsOn": [
+        "NTD-00"
+      ],
+      "updated": "2026-09-16",
+      "notes": "Shared taskTable core; ParseTaskLedger/RenderTaskLedger; taskid.go helpers; all model + full suite green"
+    }
+  ]
+}

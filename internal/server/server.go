@@ -39,9 +39,9 @@ type Server struct {
 	oc       *opencode.Client // nil disables the opencode integration
 	sessions *mapping
 	mapErr   error
-	autos    *autosession // once-only markers for auto-spawned task sessions
-	docsQ    *docsQueue   // nil disables the docs system (no agentsdocs.json)
-	docsW    *docsWatcher // nil when docs are disabled or the watcher failed
+	autos    *autosession   // once-only markers for auto-spawned task sessions
+	docsQ    *docsQueue     // nil disables the docs system (no agentsdocs.json)
+	docsW    *docsWatcher   // nil when docs are disabled or the watcher failed
 	git      *gitops.Client // nil in setup mode; worktree mechanics + state
 }
 
@@ -80,6 +80,10 @@ func New(st *store.Store) *Server {
 	mux.HandleFunc("GET /changes/{id}/ledger", s.ledgerDetail)
 	mux.HandleFunc("GET /changes/{id}/tasks/{file...}", s.taskDetail)
 	mux.HandleFunc("POST /changes/{id}/tasks", s.createTask)
+	mux.HandleFunc("POST /changes/{id}/tasks/{task}/status", s.setTaskStatus)
+	mux.HandleFunc("POST /changes/{id}/tasks/{task}/update", s.updateTask)
+	mux.HandleFunc("POST /changes/{id}/tasks/reorder", s.reorderTasks)
+	mux.HandleFunc("POST /changes/{id}/decisions", s.appendDecision)
 	mux.HandleFunc("POST /changes/{id}/expand", s.expandTask)
 	mux.HandleFunc("POST /changes/{id}/move", s.moveTask)
 	mux.HandleFunc("POST /changes/{id}/close", s.closeChange)
@@ -94,7 +98,43 @@ func New(st *store.Store) *Server {
 	mux.HandleFunc("GET /changes/{id}/handoffs", s.listHandoffs)
 	mux.HandleFunc("GET /events", s.events)
 	mux.HandleFunc("GET /api/validate", s.validate)
+	mux.HandleFunc("GET /workflow/instructions", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusOK, instructionManifest())
+	})
 	mux.HandleFunc("GET /terminal/ws", s.terminalWS)
+	mux.HandleFunc("GET /api/sessions/{sessionID}/chat", s.chatSnapshot)
+	mux.HandleFunc("GET /api/sessions/{sessionID}/chat/references", s.chatReferences)
+	mux.HandleFunc("GET /api/sessions/{sessionID}/chat/controls", s.chatControls)
+	mux.HandleFunc("GET /api/sessions/{sessionID}/chat/usage", s.chatUsageEndpoint)
+	mux.HandleFunc("GET /api/sessions/{sessionID}/chat/messages/{messageID}/tools/{toolID}", s.chatToolDetail)
+	mux.HandleFunc("GET /api/sessions/{sessionID}/chat/diff", s.chatDiff)
+	mux.HandleFunc("POST /api/sessions/{sessionID}/chat/prompt", s.chatPrompt)
+	mux.HandleFunc("GET /api/sessions/{sessionID}/chat/messages/{messageID}/files/{fileIndex}", s.chatAttachment)
+	mux.HandleFunc("POST /api/sessions/{sessionID}/chat/interrupt", s.chatInterrupt)
+	mux.HandleFunc("POST /api/sessions/{sessionID}/chat/agent", s.chatSwitchAgent)
+	mux.HandleFunc("POST /api/sessions/{sessionID}/chat/model", s.chatSwitchModel)
+	mux.HandleFunc("POST /api/sessions/{sessionID}/chat/command", s.chatCommand)
+	mux.HandleFunc("POST /api/sessions/{sessionID}/chat/skill", s.chatActivateSkill)
+	mux.HandleFunc("POST /api/sessions/{sessionID}/chat/permissions/{requestID}/reply", s.chatPermissionReply)
+	mux.HandleFunc("POST /api/sessions/{sessionID}/chat/forms/{formID}/reply", s.chatFormReply)
+	mux.HandleFunc("GET /api/sessions/{sessionID}/lifecycle", s.sessionLifecycleInfo)
+	mux.HandleFunc("GET /api/sessions/{sessionID}/navigation", s.sessionNavigation)
+	mux.HandleFunc("POST /api/sessions/{sessionID}/fork", s.sessionFork)
+	mux.HandleFunc("GET /api/sessions/{sessionID}/revert/preview", s.sessionRevertPreview)
+	mux.HandleFunc("POST /api/sessions/{sessionID}/revert/stage", s.sessionRevertStage)
+	mux.HandleFunc("POST /api/sessions/{sessionID}/revert/commit", s.sessionRevertCommit)
+	mux.HandleFunc("POST /api/sessions/{sessionID}/revert/clear", s.sessionRevertClear)
+	mux.HandleFunc("POST /api/sessions/{sessionID}/compact", s.sessionCompact)
+	mux.HandleFunc("POST /api/sessions/{sessionID}/deliver", s.sessionDeliver)
+	mux.HandleFunc("GET /api/sessions/{sessionID}/inbox", s.sessionInbox)
+	mux.HandleFunc("PATCH /api/sessions/{sessionID}/inbox/{inboxID}", s.sessionInboxDelivery)
+	mux.HandleFunc("DELETE /api/sessions/{sessionID}/inbox/{inboxID}", s.sessionInboxCancel)
+	mux.HandleFunc("GET /api/sessions/{sessionID}/children", s.sessionChildren)
+	mux.HandleFunc("PATCH /api/sessions/{sessionID}", s.sessionRename)
+	mux.HandleFunc("GET /api/sessions/{sessionID}/export", s.sessionExport)
+	mux.HandleFunc("GET /api/sessions/{sessionID}/delete-preview", s.sessionDeletePreview)
+	mux.HandleFunc("DELETE /api/sessions/{sessionID}", s.sessionDelete)
+	mux.HandleFunc("DELETE /api/sessions/{sessionID}/mapping", s.sessionUnlink)
 	mux.HandleFunc("GET /changes/{id}/sessions", s.listChangeSessions)
 	mux.HandleFunc("POST /changes/{id}/sessions", s.createChangeSession)
 	mux.HandleFunc("POST /changes/{id}/task-sessions", s.bindTaskSession)
@@ -114,12 +154,32 @@ func New(st *store.Store) *Server {
 	mux.HandleFunc("PUT /api/settings", s.putSettings)
 	mux.HandleFunc("GET /api/settings/options", s.settingsOptions)
 	mux.HandleFunc("GET /settings", s.settingsPage)
+	mux.HandleFunc("GET /settings/opencode", s.opencodeStatusPage)
+	mux.HandleFunc("GET /api/opencode/status", s.opencodeStatusAPI)
+	mux.HandleFunc("POST /api/opencode/rediscover", s.opencodeRediscover)
+	mux.HandleFunc("GET /api/opencode/integrations", s.integrationsList)
+	mux.HandleFunc("GET /api/opencode/integrations/{integrationID}", s.integrationDetail)
+	mux.HandleFunc("POST /api/opencode/integrations/{integrationID}/connect/key", s.integrationConnectKey)
+	mux.HandleFunc("POST /api/opencode/integrations/{integrationID}/connect/oauth", s.integrationStartAttempt("oauth"))
+	mux.HandleFunc("POST /api/opencode/integrations/{integrationID}/connect/command", s.integrationStartAttempt("command"))
+	mux.HandleFunc("GET /api/opencode/integrations/{integrationID}/attempts/{kind}/{attemptID}", s.integrationAttemptStatus)
+	mux.HandleFunc("POST /api/opencode/integrations/{integrationID}/attempts/{kind}/{attemptID}/cancel", s.integrationCancelAttempt)
+	mux.HandleFunc("POST /api/opencode/integrations/{integrationID}/attempts/oauth/{attemptID}/complete", s.integrationCompleteOAuth)
+	mux.HandleFunc("PATCH /api/opencode/integrations/{integrationID}/credentials/{credentialID}", s.integrationCredentialAction("label"))
+	mux.HandleFunc("POST /api/opencode/integrations/{integrationID}/credentials/{credentialID}/activate", s.integrationCredentialAction("activate"))
+	mux.HandleFunc("DELETE /api/opencode/integrations/{integrationID}/credentials/{credentialID}", s.integrationCredentialAction("delete"))
+	mux.HandleFunc("GET /api/opencode/mcp", s.mcpOverview)
+	mux.HandleFunc("POST /api/opencode/mcp/{server}/connect", s.mcpConnectionAction(true))
+	mux.HandleFunc("POST /api/opencode/mcp/{server}/disconnect", s.mcpConnectionAction(false))
+	mux.HandleFunc("GET /api/opencode/permissions", s.permissionOverview)
+	mux.HandleFunc("DELETE /api/opencode/permissions/saved/{ruleID}", s.savedPermissionRemove)
 	mux.HandleFunc("POST /api/settings/change", s.settingsChange)
 	mux.HandleFunc("POST /api/settings/opencode-default-agent", s.alignOpencodeDefault)
 	mux.HandleFunc("GET /explorer", s.explorer)
 	mux.HandleFunc("GET /explorer/tree", s.explorerTree)
 	mux.HandleFunc("GET /explorer/detail", s.explorerDetail)
 	mux.HandleFunc("POST /explorer/chat", s.explorerChat)
+	mux.HandleFunc("POST /chat/session", s.chatSession)
 	// Dynamic brand assets: the effective accent injected into the icon
 	// SVG, the favicon rasters, and the apple-touch tile.
 	s.rend.accent = func() AccentColor { return ResolveAccent(s.st.Dir) }
@@ -169,7 +229,14 @@ func (s *Server) Close() {
 }
 
 // Handler returns the root http.Handler.
-func (s *Server) Handler() http.Handler { return s.mux }
+func (s *Server) Handler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/settings/opencode" || strings.HasPrefix(r.URL.Path, "/api/opencode/") {
+			managementHeaders(w)
+		}
+		s.mux.ServeHTTP(w, r)
+	})
+}
 
 // --- helpers ---
 
@@ -210,35 +277,41 @@ func writeErr(w http.ResponseWriter, err error) {
 // --- read endpoints ---
 
 type changeSummary struct {
-	ID      string `json:"id"`
-	Title   string `json:"title"`
-	Prefix  string `json:"prefix"`
-	Status  string `json:"status"`
-	Updated string `json:"updated"`
+	ID       string `json:"id"`
+	Title    string `json:"title"`
+	Prefix   string `json:"prefix"`
+	Status   string `json:"status"`
+	Updated  string `json:"updated"`
 	Tasks    int    `json:"tasks"`
 	Complete int    `json:"complete"` // Test + Done descendants
 	Open     int    `json:"open"`     // non-cancelled descendants not yet complete
 }
 
 func (s *Server) index(w http.ResponseWriter, r *http.Request) {
-	root, err := s.st.Root()
+	idx, err := s.st.Index()
 	if err != nil {
 		writeErr(w, fmt.Errorf("%w: %v", store.ErrInvalid, err))
 		return
 	}
 	showArchived := s.effectiveSettings().UI.ShowArchived
-	rows := make([]changeSummary, 0, len(root.Rows))
-	pos := make([]int, 0, len(root.Rows))
+	rows := make([]changeSummary, 0, len(idx.Changes))
+	pos := make([]int, 0, len(idx.Changes))
 	byID := map[string]*store.Change{}
 	for _, c := range s.st.Changes() {
 		byID[c.ID] = c
 	}
-	for i, rr := range root.Rows {
-		if !showArchived && strings.HasPrefix(rr.Href, "archive/") {
+	archived := map[string]bool{}
+	for _, a := range s.st.Archived() {
+		archived[a.ID] = true
+	}
+	for i, e := range idx.Changes {
+		if !showArchived && (e.Archived || archived[e.ID]) {
 			continue
 		}
-		sum := changeSummary{ID: rr.Change, Title: rr.Title, Prefix: rr.Prefix, Status: string(rr.Status), Updated: rr.Updated}
-		if c, ok := byID[rr.Change]; ok && c.Ledger != nil {
+		sum := changeSummary{ID: e.ID, Title: e.Title, Prefix: e.Prefix, Status: string(model.OverallPlanned), Updated: e.Created}
+		if c, ok := byID[e.ID]; ok && c.State != nil {
+			sum.Status = string(c.Overall())
+			sum.Updated = c.State.Updated
 			// Recursive: every task in the tree, at any depth.
 			c.WalkTasks(func(n *store.TaskNode) bool {
 				sum.Tasks++
@@ -252,7 +325,7 @@ func (s *Server) index(w http.ResponseWriter, r *http.Request) {
 		pos = append(pos, i)
 	}
 	// Newest change first: the date prefix dominates, and within a date the
-	// root-ledger row position decides (rows are append-mostly, so a later
+	// index position decides (entries are append-mostly, so a later
 	// position is newer). Change IDs end in a random five-character suffix
 	// with no inherent order, and legacy numeric suffixes are no longer
 	// allocation-ordered either, so the position is the only chronological
@@ -289,13 +362,13 @@ func datePrefixOf(id string) string {
 }
 
 type boardResponse struct {
-	ID      string          `json:"id"`
-	Task    string          `json:"task,omitempty"` // drill-down task ID
-	Overall string          `json:"overall"`
-	Columns []columnView    `json:"columns"`
-	Tasks   []model.TaskRow `json:"tasks"`
-	Error   string          `json:"error,omitempty"`
-	Worktree *worktreeView  `json:"worktree,omitempty"`
+	ID       string            `json:"id"`
+	Task     string            `json:"task,omitempty"` // drill-down task ID
+	Overall  string            `json:"overall"`
+	Columns  []columnView      `json:"columns"`
+	Tasks    []model.TaskState `json:"tasks"`
+	Error    string            `json:"error,omitempty"`
+	Worktree *worktreeView     `json:"worktree,omitempty"`
 }
 
 type columnView struct {
@@ -341,12 +414,12 @@ func (s *Server) board(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	resp := boardResponse{ID: id, Task: view.Task}
-	if c.Err != nil || c.Ledger == nil {
-		resp.Error = fmt.Sprintf("ledger unreadable: %v", c.Err)
+	if c.Err != nil || c.State == nil {
+		resp.Error = fmt.Sprintf("state unreadable: %v", c.Err)
 		writeJSON(w, http.StatusUnprocessableEntity, resp)
 		return
 	}
-	resp.Overall = string(c.Ledger.Overall)
+	resp.Overall = string(c.Overall())
 	resp.Tasks = nodeRows(c.Roots)
 	for _, col := range view.Columns {
 		resp.Columns = append(resp.Columns, columnView{Status: col.Status, Count: len(col.Tasks)})
@@ -403,14 +476,10 @@ func (s *Server) taskDetail(w http.ResponseWriter, r *http.Request) {
 	if wantsHTML(r) || isHX(r) {
 		view := taskView{Task: tf, Body: dropLeadingH1(tf.Body, tf.ID), Doc: "tasks/" + file}
 		if c, err := s.st.Change(id); err == nil {
-			// Status lives in the governing ledger: the tree node knows
-			// its row wherever the task nests.
-			if n := c.Node(tf.ID); n != nil && n.Row != nil {
-				view.Status = string(n.Row.Status)
-			} else if c.Ledger != nil {
-				if row := c.Ledger.Row(tf.ID); row != nil {
-					view.Status = string(row.Status)
-				}
+			// Status lives in the JSON state: the tree node knows it
+			// wherever the task nests.
+			if n := c.Node(tf.ID); n != nil {
+				view.Status = string(n.NodeStatus())
 			}
 		}
 		s.rend.render(w, s.rend.partial, "taskDetail", view)
@@ -519,6 +588,14 @@ func (s *Server) moveTask(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Task == "" || !model.TaskStatus(req.Status).Valid() {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "task and a valid status are required"})
+		return
+	}
+	// Done is user-gated on the drag endpoint too: only the board (the
+	// user's hands) may set it. Agents stop at Test.
+	if model.TaskStatus(req.Status) == model.StatusDone && !uiClient(r) {
+		writeJSON(w, http.StatusForbidden, map[string]string{
+			"error": "Done is user-gated: set Test with verification evidence instead; the user accepts Done on the board",
+		})
 		return
 	}
 	if err := s.st.MoveTask(id, req.Task, model.TaskStatus(req.Status), req.Index); err != nil {

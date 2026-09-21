@@ -1,7 +1,3 @@
----
-id: REN-05
-title: App icon and favicon
----
 
 # REN-05: App icon and favicon
 

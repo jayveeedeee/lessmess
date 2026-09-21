@@ -1,7 +1,3 @@
----
-id: CID-02
-title: Server newest-first by ledger position
----
 
 # CID-02: Server newest-first by ledger position
 

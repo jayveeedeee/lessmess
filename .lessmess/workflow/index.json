@@ -1,0 +1,288 @@
+{
+  "version": 1,
+  "changes": [
+    {
+      "id": "2026-09-11-0",
+      "title": "Bootstrap change-management workflow extensions",
+      "prefix": "CHW",
+      "created": "2026-09-11"
+    },
+    {
+      "id": "2026-09-11-1",
+      "title": "Web kanban server for the changes/ workflow",
+      "prefix": "KAN",
+      "created": "2026-09-11"
+    },
+    {
+      "id": "2026-09-12-0",
+      "title": "opencode session integration",
+      "prefix": "OCI",
+      "branch": "main",
+      "created": "2026-09-12"
+    },
+    {
+      "id": "2026-09-12-2",
+      "title": "Remove plain new-change form from index",
+      "prefix": "UIX",
+      "branch": "main",
+      "created": "2026-09-12"
+    },
+    {
+      "id": "2026-09-12-3",
+      "title": "Agent-driven change titling",
+      "prefix": "GEN",
+      "branch": "main",
+      "created": "2026-09-12"
+    },
+    {
+      "id": "2026-09-12-4",
+      "title": "Explicit change lifecycle — close, reopen, commit",
+      "prefix": "LIF",
+      "branch": "main",
+      "created": "2026-09-12"
+    },
+    {
+      "id": "2026-09-12-5",
+      "title": "Full-size terminal window",
+      "prefix": "TRM",
+      "branch": "main",
+      "created": "2026-09-12"
+    },
+    {
+      "id": "2026-09-12-6",
+      "title": "Discussion-first sessions with API-triggered scaffold",
+      "prefix": "SCF",
+      "branch": "main",
+      "created": "2026-09-12"
+    },
+    {
+      "id": "2026-09-12-7",
+      "title": "Repo docs management",
+      "prefix": "DOC",
+      "created": "2026-09-12"
+    },
+    {
+      "id": "2026-09-12-8",
+      "title": "Project explorer with directory chat",
+      "prefix": "EXP",
+      "created": "2026-09-12"
+    },
+    {
+      "id": "2026-09-12-9",
+      "title": "UI docs refresh button",
+      "prefix": "REF",
+      "created": "2026-09-12"
+    },
+    {
+      "id": "2026-09-12-10",
+      "title": "Bind change sessions to their change",
+      "prefix": "BSB",
+      "created": "2026-09-12"
+    },
+    {
+      "id": "2026-09-12-11",
+      "title": "Explorer master-detail redesign",
+      "prefix": "EXD",
+      "created": "2026-09-12"
+    },
+    {
+      "id": "2026-09-12-12",
+      "title": "Top menu and board UI polish",
+      "prefix": "NAV",
+      "created": "2026-09-12"
+    },
+    {
+      "id": "2026-09-12-13",
+      "title": "Fix gitignore swallowing cmd/tasktracker source",
+      "prefix": "IGN",
+      "branch": "main",
+      "created": "2026-09-12"
+    },
+    {
+      "id": "2026-09-12-14",
+      "title": "Rename app to lessmess",
+      "prefix": "REN",
+      "created": "2026-09-12"
+    },
+    {
+      "id": "2026-09-12-15",
+      "title": "User-gated Test status before Done",
+      "prefix": "TST",
+      "created": "2026-09-12"
+    },
+    {
+      "id": "2026-09-13-0",
+      "title": "Commit-all button on changes page",
+      "prefix": "CMT",
+      "created": "2026-09-13"
+    },
+    {
+      "id": "2026-09-13-1",
+      "title": "Embedded terminal improvements",
+      "prefix": "TUI",
+      "created": "2026-09-13"
+    },
+    {
+      "id": "2026-09-13-2",
+      "title": "Settings page with session defaults and prompt addenda",
+      "prefix": "SET",
+      "created": "2026-09-13"
+    },
+    {
+      "id": "2026-09-13-3",
+      "title": "Discussion prompt question policy",
+      "prefix": "DQP",
+      "created": "2026-09-13"
+    },
+    {
+      "id": "2026-09-13-4",
+      "title": "Onboarding wizard",
+      "prefix": "ONB",
+      "created": "2026-09-13"
+    },
+    {
+      "id": "2026-09-13-5",
+      "title": "Learning staleness: ancestor gardening, reference lint, gardener model",
+      "prefix": "LRN",
+      "created": "2026-09-13"
+    },
+    {
+      "id": "2026-09-14-0",
+      "title": "Settings split-shell layout and sticky header",
+      "prefix": "SPS",
+      "created": "2026-09-14"
+    },
+    {
+      "id": "2026-09-14-1",
+      "title": "Discussion sessions open fresh",
+      "prefix": "DSC",
+      "created": "2026-09-14"
+    },
+    {
+      "id": "2026-09-14-2",
+      "title": "Terminal persistence verification",
+      "prefix": "TPV",
+      "created": "2026-09-14"
+    },
+    {
+      "id": "2026-09-15-0",
+      "title": "Modal TOC and in-modal navigation",
+      "prefix": "MTOC",
+      "created": "2026-09-15"
+    },
+    {
+      "id": "2026-09-15-1",
+      "title": "Random change-ID suffixes",
+      "prefix": "CID",
+      "created": "2026-09-15"
+    },
+    {
+      "id": "2026-09-15-2",
+      "title": "Per-task subagent sessions",
+      "prefix": "PSB",
+      "created": "2026-09-15"
+    },
+    {
+      "id": "2026-09-15-lk9or",
+      "title": "Sortable change index columns",
+      "prefix": "IDX",
+      "created": "2026-09-15"
+    },
+    {
+      "id": "2026-09-16-le45q",
+      "title": "Nested task decomposition",
+      "prefix": "NTD",
+      "created": "2026-09-16"
+    },
+    {
+      "id": "2026-09-16-7ueiv",
+      "title": "Accent color palette",
+      "prefix": "ACC",
+      "created": "2026-09-16"
+    },
+    {
+      "id": "2026-09-16-j2g58",
+      "title": "Deterministic change status endpoint",
+      "prefix": "STS",
+      "created": "2026-09-16"
+    },
+    {
+      "id": "2026-09-16-43mc0",
+      "title": "Curated doc learnings",
+      "prefix": "LRN",
+      "created": "2026-09-16"
+    },
+    {
+      "id": "2026-09-17-4esfh",
+      "title": "Project name branding",
+      "prefix": "PROJ",
+      "created": "2026-09-17"
+    },
+    {
+      "id": "2026-09-17-39avm",
+      "title": "Change handoff",
+      "prefix": "HOF",
+      "created": "2026-09-17"
+    },
+    {
+      "id": "2026-09-17-rny74",
+      "title": "Spawn fallback hardening and default_agent alignment",
+      "prefix": "SPF",
+      "created": "2026-09-17"
+    },
+    {
+      "id": "2026-09-17-d2x3h",
+      "title": "Remove board add-task form",
+      "prefix": "FORM",
+      "created": "2026-09-17"
+    },
+    {
+      "id": "2026-09-17-kcmpx",
+      "title": "Worktree-per-change with gated PR and agent review",
+      "prefix": "WTP",
+      "created": "2026-09-17"
+    },
+    {
+      "id": "2026-09-18-f52mn",
+      "title": "Workflow canon versioning and sync",
+      "prefix": "WCV",
+      "branch": "main",
+      "created": "2026-09-18"
+    },
+    {
+      "id": "2026-09-18-15tbl",
+      "title": "JSON workflow state and instruction injection",
+      "prefix": "JSI",
+      "branch": "main",
+      "created": "2026-09-18"
+    },
+    {
+      "id": "2026-09-19-qbn2b",
+      "title": "Chunk and scale docs gardener jobs",
+      "prefix": "DG",
+      "branch": "main",
+      "created": "2026-09-19"
+    },
+    {
+      "id": "2026-09-20-ve0wu",
+      "title": "General codebase chat",
+      "prefix": "CHAT",
+      "branch": "main",
+      "created": "2026-09-20"
+    },
+    {
+      "id": "2026-09-21-aw36x",
+      "title": "Mobile API Chat",
+      "prefix": "MAC",
+      "branch": "main",
+      "created": "2026-09-21"
+    },
+    {
+      "id": "2026-09-21-8235b",
+      "title": "Mobile Chat Layout Hierarchy",
+      "prefix": "MCL",
+      "branch": "main",
+      "created": "2026-09-21"
+    }
+  ]
+}

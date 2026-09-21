@@ -1,7 +1,3 @@
----
-id: LIF-06
-title: Background commit with button spinner
----
 
 # LIF-06: Background commit with button spinner
 

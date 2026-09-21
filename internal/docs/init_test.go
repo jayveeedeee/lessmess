@@ -25,7 +25,7 @@ func TestInitEmptyDir(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := actionsByPath(actions)
-	for _, p := range []string{"AGENTS.md", "changes/ledger.md", ".gitignore", "opencode.json", "agentsdocs.json"} {
+	for _, p := range []string{"AGENTS.md", ".lessmess/workflow/index.json", ".gitignore", "opencode.json", "agentsdocs.json"} {
 		if got[p] != "created" {
 			t.Errorf("%s: action %q, want created", p, got[p])
 		}
@@ -104,7 +104,8 @@ func TestInitUpgradesMarkerlessRootAgents(t *testing.T) {
 	}
 }
 
-func TestInitExistingAgentsMergedNotClobbered(t *testing.T) {	root := t.TempDir()
+func TestInitExistingAgentsMergedNotClobbered(t *testing.T) {
+	root := t.TempDir()
 	human := "# My Project\n\nHuman notes about this codebase.\n"
 	if err := os.WriteFile(filepath.Join(root, "AGENTS.md"), []byte(human), 0o644); err != nil {
 		t.Fatal(err)
@@ -151,13 +152,30 @@ func TestInitGitignoreVariants(t *testing.T) {
 			t.Fatalf("action %q, want merged", got)
 		}
 		data, _ := os.ReadFile(filepath.Join(root, ".gitignore"))
-		if string(data) != "node_modules/\n.lessmess/\n" {
+		if string(data) != "node_modules/\n.lessmess/*\n!.lessmess/workflow/\n" {
 			t.Errorf("unexpected .gitignore: %q", data)
 		}
 	})
-	t.Run("existing with entry", func(t *testing.T) {
+	t.Run("existing with legacy entry", func(t *testing.T) {
 		root := t.TempDir()
 		if err := os.WriteFile(filepath.Join(root, ".gitignore"), []byte(".lessmess/\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		actions, err := docs.Init(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := actionsByPath(actions)[".gitignore"]; got != "merged" {
+			t.Fatalf("action %q, want merged (legacy ignore replaced)", got)
+		}
+		data, _ := os.ReadFile(filepath.Join(root, ".gitignore"))
+		if string(data) != ".lessmess/*\n!.lessmess/workflow/\n" {
+			t.Errorf("unexpected .gitignore: %q", data)
+		}
+	})
+	t.Run("existing with block", func(t *testing.T) {
+		root := t.TempDir()
+		if err := os.WriteFile(filepath.Join(root, ".gitignore"), []byte(".lessmess/*\n!.lessmess/workflow/\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 		actions, err := docs.Init(root)
@@ -230,7 +248,7 @@ func TestInitWithOptionsSkipsConfig(t *testing.T) {
 	if _, ok := got["agentsdocs.json"]; ok {
 		t.Errorf("skip-config run reported an agentsdocs.json action: %v", got)
 	}
-	for _, p := range []string{"AGENTS.md", "changes/ledger.md", ".gitignore", "opencode.json"} {
+	for _, p := range []string{"AGENTS.md", ".lessmess/workflow/index.json", ".gitignore", "opencode.json"} {
 		if got[p] != "created" {
 			t.Errorf("%s: action %q, want created", p, got[p])
 		}

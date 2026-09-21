@@ -1,0 +1,141 @@
+{
+  "version": 1,
+  "id": "2026-09-18-15tbl",
+  "title": "JSON workflow state and instruction injection",
+  "prefix": "JSI",
+  "branch": "main",
+  "status": {
+    "value": "Done",
+    "derived": false
+  },
+  "created": "2026-09-18",
+  "updated": "2026-09-19",
+  "decisionLog": [
+    {
+      "date": "2026-09-18",
+      "decision": "Tracking state moves to committed `.lessmess/workflow/` JSON (gitignore negation); rest of `.lessmess/` stays personal. User-confirmed baseline."
+    },
+    {
+      "date": "2026-09-18",
+      "decision": "Plan/task prose stays markdown under `changes/\u003cid\u003e/`, referenced from JSON; task frontmatter dropped (identity is JSON-only)."
+    },
+    {
+      "date": "2026-09-18",
+      "decision": "Workflow instructions become binary-embedded JSON modules injected at spawn, deterministic selection f(session kind, change/task state); static selection v1; no per-repo overrides."
+    },
+    {
+      "date": "2026-09-18",
+      "decision": "Docs system (STRUCTURE.md/AGENTS.md learnings pairs) out of scope except the workflow_agents.md asset swap and natural gardening."
+    },
+    {
+      "date": "2026-09-18",
+      "decision": "JSI-00: index.json is a pure registry (no status/dates) — overall status and update dates are authoritative only in each ChangeState, removing today's root-ledger dual-write. Empty values are omitted (`omitempty`), not stored as `—`."
+    },
+    {
+      "date": "2026-09-18",
+      "decision": "JSI-02: `Open` distinguishes `ErrLegacyMarkdown` (md ledgers without JSON state → run migrate) from `ErrNoChanges` (fresh → setup mode); serve/validate auto-migrate via `store.MigrateIfNeeded` before opening."
+    },
+    {
+      "date": "2026-09-18",
+      "decision": "JSI-02: the ledger detail surfaces (`LedgerFile`, `ContainerLedgerFile`) became deterministic generated-markdown views over the JSON state (classic pinned tables), so existing modal/`app.js` link shapes keep working; JSI-05 shrinks to view polish and sweeps. `docs.Init` bootstrap moved to the JSON index (pulled forward from JSI-06)."
+    },
+    {
+      "date": "2026-09-18",
+      "decision": "JSI-02: unresolved index entries are validation violations, not changes (`Change()` → `ErrNotFound`); empty containers are tracked by their real prose dir (`HasContainer` = children OR existing container); `MoveTask` validates against fresh state first (corrupt state → `ErrInvalid`, not `ErrNotFound`) and preserves legacy group-append insertion semantics."
+    },
+    {
+      "date": "2026-09-18",
+      "decision": "JSI-04: instruction modules live in `internal/server/instructions.json` (embedded, `go:embed`) covering the agent-facing session primes (discussion, change.session, change.handoff, worktree, closeout, task.session); gardener/explorer/commit/repoCommit prompts remain Go-composed — already binary-versioned and never resident in AGENTS.md, so the injection goal holds for them by construction. Primes inject the generated state view; spawns log + record module IDs; `GET /workflow/instructions` serves the manifest."
+    },
+    {
+      "date": "2026-09-18",
+      "decision": "JSI-06: root AGENTS.md is a 30-line pointer above the untouched learnings (stale learnings left to close-time gardening per plan); the drift-pin test is kept, now pinning the pointer text."
+    }
+  ],
+  "tasks": [
+    {
+      "id": "JSI-00",
+      "seq": 0,
+      "title": "JSON state schema and model types",
+      "file": "tasks/00-json-state-schema.md",
+      "status": "Done",
+      "updated": "2026-09-19",
+      "notes": "Verified: vet+tests green; schema refined (index = pure registry)"
+    },
+    {
+      "id": "JSI-01",
+      "seq": 1,
+      "title": "md→JSON migration",
+      "file": "tasks/01-md-to-json-migration.md",
+      "status": "Done",
+      "dependsOn": [
+        "JSI-00"
+      ],
+      "updated": "2026-09-19",
+      "notes": "CLI `lessmess migrate`; auto-hook moved to JSI-02; real-tree dry run verified (41 changes, 197 tasks)"
+    },
+    {
+      "id": "JSI-06",
+      "seq": 6,
+      "title": "AGENTS.md shrink, init rework, docs",
+      "file": "tasks/06-agents-shrink-init-docs.md",
+      "status": "Done",
+      "dependsOn": [
+        "JSI-02",
+        "JSI-03",
+        "JSI-04"
+      ],
+      "updated": "2026-09-19",
+      "notes": "30-line pointer + drift-pinned asset; README rewritten; scratch init verified"
+    },
+    {
+      "id": "JSI-02",
+      "seq": 2,
+      "title": "Store cutover to JSON state",
+      "file": "tasks/02-store-cutover.md",
+      "status": "Done",
+      "dependsOn": [
+        "JSI-01"
+      ],
+      "updated": "2026-09-19",
+      "notes": "Verified: vet+tests green; real-tree copy migrated (41 changes, 197 tasks) and validates clean"
+    },
+    {
+      "id": "JSI-05",
+      "seq": 5,
+      "title": "Board and detail views from JSON",
+      "file": "tasks/05-board-views-from-json.md",
+      "status": "Done",
+      "dependsOn": [
+        "JSI-02",
+        "JSI-03"
+      ],
+      "updated": "2026-09-19",
+      "notes": "Core landed with JSI-02; template copy swept; no dead readers"
+    },
+    {
+      "id": "JSI-04",
+      "seq": 4,
+      "title": "Instruction modules and injection engine",
+      "file": "tasks/04-instruction-injection.md",
+      "status": "Done",
+      "dependsOn": [
+        "JSI-02"
+      ],
+      "updated": "2026-09-19",
+      "notes": "Verified: selection pinned per audience; snapshot injected; audit logged; manifest endpoint live"
+    },
+    {
+      "id": "JSI-03",
+      "seq": 3,
+      "title": "Deterministic task-state API",
+      "file": "tasks/03-task-state-api.md",
+      "status": "Done",
+      "dependsOn": [
+        "JSI-02"
+      ],
+      "updated": "2026-09-19",
+      "notes": "Verified: endpoints + gates covered; Done user-gated via UI header; Test requires evidence"
+    }
+  ]
+}

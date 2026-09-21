@@ -1,7 +1,3 @@
----
-id: WCV-03
-title: Root-row reconciliation in status sync
----
 
 # WCV-03: Root-row reconciliation in status sync
 

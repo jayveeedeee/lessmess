@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "id": "2026-09-12-3",
+  "title": "Agent-driven change titling",
+  "prefix": "GEN",
+  "branch": "main",
+  "status": {
+    "value": "Done",
+    "derived": false
+  },
+  "created": "2026-09-12",
+  "updated": "2026-09-12",
+  "tasks": [
+    {
+      "id": "GEN-00",
+      "seq": 0,
+      "title": "Placeholder titling flow and button-only UI",
+      "file": "tasks/00-placeholder-titling.md",
+      "status": "Done",
+      "updated": "2026-09-12",
+      "notes": "Verified: zero inputs + one button (curl + screenshot); placeholder + explicit-title + prompt-content tests pass; validate OK."
+    }
+  ]
+}

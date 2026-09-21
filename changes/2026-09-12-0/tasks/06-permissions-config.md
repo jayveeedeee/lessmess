@@ -1,7 +1,3 @@
----
-id: OCI-06
-title: Permissions config and docs
----
 
 # OCI-06: Permissions config and docs
 

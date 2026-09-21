@@ -1,7 +1,3 @@
----
-id: FORM-00
-title: Remove board add-task form from UI
----
 
 # FORM-00: Remove board add-task form from UI
 

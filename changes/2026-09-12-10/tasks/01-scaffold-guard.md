@@ -1,7 +1,3 @@
----
-id: BSB-01
-title: Scaffold guard for bound sessions
----
 
 # BSB-01: Scaffold guard for bound sessions
 

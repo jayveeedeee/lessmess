@@ -1,0 +1,95 @@
+{
+  "version": 1,
+  "id": "2026-09-14-0",
+  "title": "Settings split-shell layout and sticky header",
+  "prefix": "SPS",
+  "status": {
+    "value": "Done",
+    "derived": false
+  },
+  "created": "2026-09-14",
+  "updated": "2026-09-14",
+  "tasks": [
+    {
+      "id": "SPS-00",
+      "seq": 0,
+      "title": "Sticky top menu bar",
+      "file": "tasks/00-sticky-header.md",
+      "status": "Done",
+      "updated": "2026-09-14",
+      "notes": "Build+vet+test pass; rebuilt binary serves sticky header rule (app.css served line 86); overlay/detail z-order unchanged by inspection; full visual pass in SPS-03"
+    },
+    {
+      "id": "SPS-02",
+      "seq": 2,
+      "title": "Settings split-shell layout and content de-clutter",
+      "file": "tasks/02-split-shell.md",
+      "status": "Done",
+      "dependsOn": [
+        "SPS-01"
+      ],
+      "updated": "2026-09-14",
+      "notes": "Split shell served; h1/nav/footer in sidebar, error+hint atop content, all five sections unchanged; every render-test string present in served HTML; full go test green; zero app.js edits"
+    },
+    {
+      "id": "SPS-01",
+      "seq": 1,
+      "title": "Settings scope strip with segmented control",
+      "file": "tasks/01-scope-strip.md",
+      "status": "Done",
+      "dependsOn": [
+        "SPS-00"
+      ],
+      "updated": "2026-09-14",
+      "notes": "Strip served with radios/values/checked intact; server tests green (zero test edits); page-width caps removed early because the flush strip needs full width (was SPS-02 scope)"
+    },
+    {
+      "id": "SPS-04",
+      "seq": 4,
+      "title": "General settings group for wizard re-entry",
+      "file": "tasks/04-general-section.md",
+      "status": "Done",
+      "dependsOn": [
+        "SPS-02"
+      ],
+      "updated": "2026-09-14",
+      "notes": "General nav item + section live, wizard ghost-button moved from footer (footer keeps layer explanation); server tests + validate green; 9090 restarted with new build"
+    },
+    {
+      "id": "SPS-06",
+      "seq": 6,
+      "title": "Pinned footer and flat full-width side-menu selections",
+      "file": "tasks/06-pinned-footer-flat-nav.md",
+      "status": "Done",
+      "dependsOn": [
+        "SPS-05"
+      ],
+      "updated": "2026-09-14",
+      "notes": "Full-height app layout (board pattern), footer pinned flush bottom, nav hover+active full-width square (name-pill idiom dropped), mobile fallback restores page scroll; CSS-only, tests + validate green, 9090 restarted"
+    },
+    {
+      "id": "SPS-03",
+      "seq": 3,
+      "title": "End-to-end verification and docs update",
+      "file": "tasks/03-verification.md",
+      "status": "Done",
+      "dependsOn": [
+        "SPS-02"
+      ],
+      "updated": "2026-09-14",
+      "notes": "Full suite green (`-count=1`), validate exit 0 after root-ledger sync, dead-CSS sweep done, layering audit ok, zero test edits; user visual pass pending (needs server restart)"
+    },
+    {
+      "id": "SPS-05",
+      "seq": 5,
+      "title": "Page-wide settings footer for layer explanation",
+      "file": "tasks/05-page-footer.md",
+      "status": "Done",
+      "dependsOn": [
+        "SPS-02"
+      ],
+      "updated": "2026-09-14",
+      "notes": "Footer spans page width under the split; sidebar footer removed (sidebar = title + nav); test strings intact; tests + validate green; 9090 restarted"
+    }
+  ]
+}

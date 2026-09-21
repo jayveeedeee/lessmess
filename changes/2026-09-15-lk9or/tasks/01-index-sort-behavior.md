@@ -1,7 +1,3 @@
----
-id: IDX-01
-title: Client-side sorting, indicators, and persistence
----
 
 # IDX-01: Client-side sorting, indicators, and persistence
 

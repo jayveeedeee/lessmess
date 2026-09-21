@@ -1,7 +1,3 @@
----
-id: DOC-04
-title: tasktracker docs seed command
----
 
 # DOC-04: tasktracker docs seed command
 

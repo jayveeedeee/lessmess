@@ -1,7 +1,3 @@
----
-id: LRN-03
-title: Stale-reference lint in internal/docs
----
 
 # LRN-03: Stale-reference lint in internal/docs
 

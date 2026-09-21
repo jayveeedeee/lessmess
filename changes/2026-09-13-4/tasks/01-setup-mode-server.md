@@ -1,7 +1,3 @@
----
-id: ONB-01
-title: Setup-mode server shell with hot-open
----
 
 # ONB-01: Setup-mode server shell with hot-open
 

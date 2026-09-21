@@ -1,7 +1,3 @@
----
-id: LRN-06
-title: README, package docs, and full verification
----
 
 # LRN-06: README, package docs, and full verification
 

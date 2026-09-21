@@ -9,11 +9,13 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
 
 	"lessmess/internal/model"
+	"lessmess/internal/opencode"
 	"lessmess/internal/store"
 )
 
@@ -23,12 +25,13 @@ import (
 // SpawnedFrom names a source change when the session was created by a
 // handoff (POST /changes/{source}/spawn-change).
 type SessionEntry struct {
-	Session     string `json:"session"`
-	Title       string `json:"title"`
-	Created     string `json:"created"`
-	Task        string `json:"task,omitempty"`
-	Parent      string `json:"parent,omitempty"`
-	SpawnedFrom string `json:"spawnedFrom,omitempty"`
+	Session     string   `json:"session"`
+	Title       string   `json:"title"`
+	Created     string   `json:"created"`
+	Task        string   `json:"task,omitempty"`
+	Parent      string   `json:"parent,omitempty"`
+	SpawnedFrom string   `json:"spawnedFrom,omitempty"`
+	Modules     []string `json:"modules,omitempty"` // instruction modules injected at spawn (audit)
 }
 
 // mapping is the .lessmess/sessions.json file (tooling state, gitignored).
@@ -97,14 +100,16 @@ func (m *mapping) add(change string, e SessionEntry) error {
 }
 
 // addAll appends entries under one change, skipping sessions already mapped
-// there (a concurrent reconcile or bind may have won the race). It reports
+// anywhere (a concurrent reconcile or bind may have won the race). It reports
 // how many entries were actually added and saves at most once.
 func (m *mapping) addAll(change string, entries []SessionEntry) (int, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	existing := make(map[string]bool, len(m.data[change]))
-	for _, e := range m.data[change] {
-		existing[e.Session] = true
+	existing := make(map[string]bool)
+	for _, mapped := range m.data {
+		for _, e := range mapped {
+			existing[e.Session] = true
+		}
 	}
 	var add []SessionEntry
 	for _, e := range entries {
@@ -141,14 +146,143 @@ func (m *mapping) remove(change, session string) (bool, error) {
 	entries := m.data[change]
 	for i, e := range entries {
 		if e.Session == session {
+			original := append([]SessionEntry(nil), entries...)
 			m.data[change] = append(entries[:i], entries[i+1:]...)
 			if len(m.data[change]) == 0 {
 				delete(m.data, change)
 			}
-			return true, m.save()
+			if err := m.save(); err != nil {
+				m.data[change] = original
+				return false, err
+			}
+			return true, nil
 		}
 	}
 	return false, nil
+}
+
+// updateTitle keeps the persisted fallback title aligned with OpenCode. The
+// update is all-or-nothing in memory and on disk so a failed save can be
+// retried without losing the prior mapping state.
+func (m *mapping) updateTitle(session, title string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for change, entries := range m.data {
+		for i := range entries {
+			if entries[i].Session != session {
+				continue
+			}
+			old := entries[i].Title
+			m.data[change][i].Title = title
+			if err := m.save(); err != nil {
+				m.data[change][i].Title = old
+				return err
+			}
+			return nil
+		}
+	}
+	return nil
+}
+
+// removeEverywhere removes a set of deleted OpenCode sessions from every
+// mapping bucket in one atomic save.
+func (m *mapping) removeEverywhere(sessions map[string]bool) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	original := make(map[string][]SessionEntry, len(m.data))
+	for change, entries := range m.data {
+		original[change] = append([]SessionEntry(nil), entries...)
+	}
+	changed := false
+	for change, entries := range m.data {
+		kept := entries[:0]
+		for _, entry := range entries {
+			if sessions[entry.Session] {
+				changed = true
+				continue
+			}
+			kept = append(kept, entry)
+		}
+		if len(kept) == 0 {
+			delete(m.data, change)
+		} else {
+			m.data[change] = kept
+		}
+	}
+	if !changed {
+		return nil
+	}
+	if err := m.save(); err != nil {
+		m.data = original
+		return err
+	}
+	return nil
+}
+
+// mappingClosure returns the root and all mapped descendants linked through
+// persisted Parent annotations. It is used only to reconcile a retry after
+// OpenCode has already deleted the authoritative tree.
+func (m *mapping) mappingClosure(root string) map[string]bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	ids := map[string]bool{root: true}
+	for changed := true; changed; {
+		changed = false
+		for _, entries := range m.data {
+			for _, entry := range entries {
+				if ids[entry.Parent] && !ids[entry.Session] {
+					ids[entry.Session] = true
+					changed = true
+				}
+			}
+		}
+	}
+	return ids
+}
+
+type mappedSessionOwner struct {
+	Session string `json:"session"`
+	Change  string `json:"change,omitempty"`
+	Task    string `json:"task,omitempty"`
+	Title   string `json:"title"`
+}
+
+func (m *mapping) owners(sessions map[string]bool) []mappedSessionOwner {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var owners []mappedSessionOwner
+	for change, entries := range m.data {
+		for _, entry := range entries {
+			if !sessions[entry.Session] {
+				continue
+			}
+			owner := mappedSessionOwner{Session: entry.Session, Task: entry.Task, Title: entry.Title}
+			if change != unassignedKey {
+				owner.Change = change
+			}
+			owners = append(owners, owner)
+		}
+	}
+	sort.Slice(owners, func(i, j int) bool {
+		if owners[i].Session == owners[j].Session {
+			return owners[i].Change < owners[j].Change
+		}
+		return owners[i].Session < owners[j].Session
+	})
+	return owners
+}
+
+func (m *mapping) entry(session string) (string, SessionEntry, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for change, entries := range m.data {
+		for _, entry := range entries {
+			if entry.Session == session {
+				return change, entry, true
+			}
+		}
+	}
+	return "", SessionEntry{}, false
 }
 
 // unassignedKey is the reserved mapping key for pre-scaffold discussion sessions.
@@ -239,11 +373,64 @@ func (s *Server) enrich(r *http.Request, entries []SessionEntry) []sessionRespon
 // Dotted segments extend it to decomposed tasks ("FIX-00.01: …").
 var taskTitleRe = regexp.MustCompile(`^([A-Z][A-Z0-9]{1,3}-\d+(?:\.\d+)*):`)
 
-// reconcileTaskSessions maps subagent children that were spawned by one of
-// the change's sessions but never mapped: one ListSessions call finds
-// sessions whose parentID points at a bound session, and the task comes
-// from the title prefix above (unknown prefixes map taskless). Purely
-// additive and fail-open: a service error leaves the stored list untouched.
+type sessionDescendant struct {
+	Session opencode.Session
+	Depth   int
+}
+
+// sessionDescendants walks every direct-child page and then each child. The
+// service's parentID is checked again because it is the only authoritative
+// hierarchy signal. Repeated cursors, duplicate sessions, and hostile cycles
+// terminate locally instead of poisoning the rest of the traversal.
+func (s *Server) sessionDescendants(ctx context.Context, roots []string) []sessionDescendant {
+	type pending struct {
+		id    string
+		depth int
+	}
+	queue := make([]pending, 0, len(roots))
+	seen := make(map[string]bool, len(roots))
+	for _, id := range roots {
+		if id != "" && !seen[id] {
+			seen[id] = true
+			queue = append(queue, pending{id: id})
+		}
+	}
+	var out []sessionDescendant
+	for len(queue) > 0 && ctx.Err() == nil {
+		parent := queue[0]
+		queue = queue[1:]
+		cursor := ""
+		cursors := map[string]bool{}
+		for {
+			page, err := s.oc.ListChildrenPage(ctx, parent.id, 50, cursor)
+			if err != nil {
+				slog.Debug("session child traversal skipped", "parent", parent.id, "err", err)
+				break
+			}
+			for _, child := range page.Sessions {
+				if child.ID == "" || child.ParentID != parent.id || seen[child.ID] {
+					continue
+				}
+				seen[child.ID] = true
+				out = append(out, sessionDescendant{Session: child, Depth: parent.depth + 1})
+				queue = append(queue, pending{id: child.ID, depth: parent.depth + 1})
+			}
+			next := page.Cursor.Next
+			if next == "" || next == cursor || cursors[next] {
+				break
+			}
+			cursors[next] = true
+			cursor = next
+		}
+	}
+	return out
+}
+
+// reconcileTaskSessions maps all unmapped descendants of this change's live
+// sessions. Hierarchy always comes from parentID; title parsing is retained
+// only as the documented fallback for assigning a newly discovered task.
+// Sessions already owned by another change are never moved, and their branch
+// is not used to claim otherwise-unmapped descendants.
 func (s *Server) reconcileTaskSessions(r *http.Request, c *store.Change) {
 	if s.oc == nil || s.mapErr != nil {
 		return
@@ -252,17 +439,15 @@ func (s *Server) reconcileTaskSessions(r *http.Request, c *store.Change) {
 	if len(bound) == 0 {
 		return
 	}
-	parents := make(map[string]bool, len(bound))
+	roots := make([]string, 0, len(bound))
+	owned := make(map[string]bool, len(bound))
 	for _, e := range bound {
-		parents[e.Session] = true
+		roots = append(roots, e.Session)
+		owned[e.Session] = true
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
-	all, err := s.oc.ListSessions(ctx)
-	if err != nil {
-		slog.Debug("task session reconcile skipped", "change", c.ID, "err", err)
-		return
-	}
+	descendants := s.sessionDescendants(ctx, roots)
 	knownTasks := map[string]bool{}
 	c.WalkTasks(func(n *store.TaskNode) bool {
 		if n.ID != "" {
@@ -271,8 +456,15 @@ func (s *Server) reconcileTaskSessions(r *http.Request, c *store.Change) {
 		return true
 	})
 	var fresh []SessionEntry
-	for _, sess := range all {
-		if sess.ParentID == "" || !parents[sess.ParentID] || s.sessions.knows(sess.ID) {
+	for _, descendant := range descendants {
+		sess := descendant.Session
+		if !owned[sess.ParentID] {
+			continue
+		}
+		if change, _, mapped := s.sessions.entry(sess.ID); mapped {
+			if change == c.ID {
+				owned[sess.ID] = true
+			}
 			continue
 		}
 		task := ""
@@ -286,6 +478,7 @@ func (s *Server) reconcileTaskSessions(r *http.Request, c *store.Change) {
 			Task:    task,
 			Parent:  sess.ParentID,
 		})
+		owned[sess.ID] = true
 	}
 	added, err := s.sessions.addAll(c.ID, fresh)
 	if err != nil {
@@ -405,14 +598,20 @@ func (s *Server) createChangeSession(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "create opencode session: " + err.Error()})
 		return
 	}
-	// The prime is built after the spawn: change primes carry the session's
-	// own ID so the agent can identify itself to session-taking endpoints.
-	// Worktree-backed changes get the worktree stanza appended.
+	// The prime is built after the spawn: primes carry the session's own
+	// ID so the agent can identify itself to session-taking endpoints.
+	// The engine selects the modules (worktree only when backed) and
+	// injects the authoritative state snapshot.
 	var prime string
+	var modules []string
 	if taskNode != nil {
-		prime = s.promptWith(s.withWorktreeRule(id, taskPrompt(id, taskNode)), "change")
+		var text string
+		text, modules = s.taskPrime(id, taskNode, sess.ID)
+		prime = s.promptWith(text, "change")
 	} else {
-		prime = s.promptWith(s.withWorktreeRule(id, changePrompt(s.apiBase(), id, sess.ID)), "change")
+		var text string
+		text, modules = s.changePrime(id, sess.ID)
+		prime = s.promptWith(text, "change")
 	}
 	if err := s.oc.Prompt(ctx, sess.ID, prime); err != nil {
 		// Don't leak an unbound session: the binding is the whole point.
@@ -420,7 +619,8 @@ func (s *Server) createChangeSession(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "prime change session: " + err.Error()})
 		return
 	}
-	entry := SessionEntry{Session: sess.ID, Title: title, Created: time.Now().Format(time.RFC3339)}
+	logPrime(sess.ID, "task", modules)
+	entry := SessionEntry{Session: sess.ID, Title: title, Created: time.Now().Format(time.RFC3339), Modules: modules}
 	if taskNode != nil {
 		entry.Task = taskNode.ID
 		// A manually created task session satisfies the auto-spawn marker.
@@ -459,14 +659,10 @@ func (s *Server) unlinkChangeSession(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"ok": "true"})
 }
 
-// changeTitle looks up a change's title from the root ledger.
+// changeTitle looks up a change's title from the workflow index.
 func changeTitle(st *store.Store, id string) string {
-	if root, err := st.Root(); err == nil && root != nil {
-		for _, r := range root.Rows {
-			if r.Change == id {
-				return id + " — " + r.Title
-			}
-		}
+	if e := st.Entry(id); e != nil {
+		return id + " — " + e.Title
 	}
 	return id
 }

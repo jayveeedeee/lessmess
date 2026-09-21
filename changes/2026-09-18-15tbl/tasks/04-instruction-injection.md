@@ -1,7 +1,3 @@
----
-id: JSI-04
-title: Instruction modules and injection engine
----
 
 # JSI-04: Instruction modules and injection engine
 

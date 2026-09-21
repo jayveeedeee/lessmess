@@ -1,0 +1,91 @@
+{
+  "version": 1,
+  "id": "2026-09-12-4",
+  "title": "Explicit change lifecycle — close, reopen, commit",
+  "prefix": "LIF",
+  "branch": "main",
+  "status": {
+    "value": "Done",
+    "derived": false
+  },
+  "created": "2026-09-12",
+  "updated": "2026-09-12",
+  "tasks": [
+    {
+      "id": "LIF-00",
+      "seq": 0,
+      "title": "AGENTS.md user-only close + reopen amendment",
+      "file": "tasks/00-workflow-amendment.md",
+      "status": "Done",
+      "updated": "2026-09-12",
+      "notes": "Verified: rule 8 replaced (user-only close), rule 9 added (reopen), handoff aligned; validate OK."
+    },
+    {
+      "id": "LIF-01",
+      "seq": 1,
+      "title": "Store status transitions + close/reopen endpoints",
+      "file": "tasks/01-status-endpoints.md",
+      "status": "Done",
+      "dependsOn": [
+        "LIF-00"
+      ],
+      "updated": "2026-09-12",
+      "notes": "Verified: SetChangeStatus writes both ledgers, revalidates clean, reopen round trip, 404 unknown; endpoint tests pass."
+    },
+    {
+      "id": "LIF-02",
+      "seq": 2,
+      "title": "Commit-session endpoint",
+      "file": "tasks/02-commit-endpoint.md",
+      "status": "Done",
+      "dependsOn": [
+        "LIF-00"
+      ],
+      "updated": "2026-09-12",
+      "notes": "Verified: endpoint creates+primes+maps commit session (prompt content asserted), 503 without service; tests pass."
+    },
+    {
+      "id": "LIF-03",
+      "seq": 3,
+      "title": "Board lifecycle buttons",
+      "file": "tasks/03-lifecycle-buttons.md",
+      "status": "Done",
+      "dependsOn": [
+        "LIF-01",
+        "LIF-02"
+      ],
+      "updated": "2026-09-12",
+      "notes": "Verified: render tests for both button states; screenshots show Close change (In progress) and Reopen (Done); app.js handlers wired."
+    },
+    {
+      "id": "LIF-04",
+      "seq": 4,
+      "title": "Dogfood",
+      "file": "tasks/04-dogfood.md",
+      "status": "Done",
+      "dependsOn": [
+        "LIF-03"
+      ],
+      "updated": "2026-09-12",
+      "notes": "All criteria verified incl. live agent-authored commit (82b0c1f) in throwaway repo; cleanup done; validate OK."
+    },
+    {
+      "id": "LIF-05",
+      "seq": 5,
+      "title": "Content-hashed asset versioning (fix stale JS)",
+      "file": "tasks/05-content-hashed-assets.md",
+      "status": "Done",
+      "updated": "2026-09-12",
+      "notes": "Verified: hashed URLs served (?v=32a39467), fresh script has commit handler, unit test passes."
+    },
+    {
+      "id": "LIF-06",
+      "seq": 6,
+      "title": "Background commit with button spinner",
+      "file": "tasks/06-background-commit-spinner.md",
+      "status": "Done",
+      "updated": "2026-09-12",
+      "notes": "Verified: wait-blocks-on-busy proven live (15.4s); endpoint + unit tests pass; spinner/poll UI wired; no terminal pop-up."
+    }
+  ]
+}

@@ -1,7 +1,3 @@
----
-id: WTP-07
-title: Prompts, README, and docs-system alignment
----
 
 # WTP-07: Prompts, README, and docs-system alignment
 

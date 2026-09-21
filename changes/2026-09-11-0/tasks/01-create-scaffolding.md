@@ -1,7 +1,3 @@
----
-id: CHW-01
-title: Create changes/ scaffolding and tooling ignore file
----
 
 # CHW-01: Create changes/ scaffolding and tooling ignore file
 

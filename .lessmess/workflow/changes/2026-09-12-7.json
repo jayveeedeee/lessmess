@@ -1,0 +1,124 @@
+{
+  "version": 1,
+  "id": "2026-09-12-7",
+  "title": "Repo docs management",
+  "prefix": "DOC",
+  "status": {
+    "value": "Done",
+    "derived": false
+  },
+  "created": "2026-09-12",
+  "updated": "2026-09-12",
+  "tasks": [
+    {
+      "id": "DOC-00",
+      "seq": 0,
+      "title": "Doc file format model",
+      "file": "tasks/00-doc-file-format-model.md",
+      "status": "Done",
+      "updated": "2026-09-12",
+      "notes": "model/docfile.go + tests; byte-preservation proven; full suite green"
+    },
+    {
+      "id": "DOC-01",
+      "seq": 1,
+      "title": "Coverage configuration (agentsdocs.json)",
+      "file": "tasks/01-coverage-config.md",
+      "status": "Done",
+      "updated": "2026-09-12",
+      "notes": "internal/docs/config.go + repo agentsdocs.json (excludes web/static); TestRepoConfig asserts covered set"
+    },
+    {
+      "id": "DOC-02",
+      "seq": 2,
+      "title": "Deterministic STRUCTURE.md generator",
+      "file": "tasks/02-structure-generator.md",
+      "status": "Done",
+      "dependsOn": [
+        "DOC-00",
+        "DOC-01"
+      ],
+      "updated": "2026-09-12",
+      "notes": "walk.go + structure.go; byte-identical idempotence and hash semantics proven by tests"
+    },
+    {
+      "id": "DOC-03",
+      "seq": 3,
+      "title": "tasktracker init command",
+      "file": "tasks/03-init-command.md",
+      "status": "Done",
+      "dependsOn": [
+        "DOC-00",
+        "DOC-01"
+      ],
+      "updated": "2026-09-12",
+      "notes": "init.go + embedded workflow asset; manual run: init → validate OK → rerun all-skipped"
+    },
+    {
+      "id": "DOC-04",
+      "seq": 4,
+      "title": "tasktracker docs seed command",
+      "file": "tasks/04-seed-command.md",
+      "status": "Done",
+      "dependsOn": [
+        "DOC-02"
+      ],
+      "updated": "2026-09-12",
+      "notes": "Three-phase seed + snapshot/verify/restore; stub-tested; dry-run verified on this repo"
+    },
+    {
+      "id": "DOC-05",
+      "seq": 5,
+      "title": "Close-out hook and serialized refresh queue",
+      "file": "tasks/05-closeout-hook-queue.md",
+      "status": "Done",
+      "dependsOn": [
+        "DOC-00",
+        "DOC-01"
+      ],
+      "updated": "2026-09-12",
+      "notes": "docsqueue.go + touched.go; close→job, stale fallback, refresh reconcile all httptest-covered"
+    },
+    {
+      "id": "DOC-06",
+      "seq": 6,
+      "title": "Doc gardener session and confinement guard",
+      "file": "tasks/06-gardener-session.md",
+      "status": "Done",
+      "dependsOn": [
+        "DOC-05"
+      ],
+      "updated": "2026-09-12",
+      "notes": "docssession.go; skeleton refresh → session → verify/revert → settle; confinement proven by tests"
+    },
+    {
+      "id": "DOC-07",
+      "seq": 7,
+      "title": "Validation and board staleness surfacing",
+      "file": "tasks/07-validation-board-surfacing.md",
+      "status": "Done",
+      "dependsOn": [
+        "DOC-02",
+        "DOC-05"
+      ],
+      "updated": "2026-09-12",
+      "notes": "docs.ValidateDocs + /api/validate docs array + amber banner; banner key-mismatch bugfix locked by wire-format test"
+    },
+    {
+      "id": "DOC-08",
+      "seq": 8,
+      "title": "Dogfood on this repo and documentation",
+      "file": "tasks/08-dogfood-documentation.md",
+      "status": "Done",
+      "dependsOn": [
+        "DOC-03",
+        "DOC-04",
+        "DOC-05",
+        "DOC-06",
+        "DOC-07"
+      ],
+      "updated": "2026-09-12",
+      "notes": "Seed 13/14 LLM + root hand-seeded; close-out and stale drills passed; two real bugs fixed (abs path, WaitDone); docs merged"
+    }
+  ]
+}

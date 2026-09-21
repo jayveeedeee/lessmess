@@ -1,7 +1,3 @@
----
-id: SCF-05
-title: Dogfood full discussion flow
----
 
 # SCF-05: Dogfood full discussion flow
 

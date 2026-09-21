@@ -1,7 +1,3 @@
----
-id: OCI-00
-title: Verify opencode API contracts
----
 
 # OCI-00: Verify opencode API contracts
 

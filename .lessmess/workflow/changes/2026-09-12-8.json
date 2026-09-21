@@ -1,0 +1,73 @@
+{
+  "version": 1,
+  "id": "2026-09-12-8",
+  "title": "Project explorer with directory chat",
+  "prefix": "EXP",
+  "status": {
+    "value": "Done",
+    "derived": false
+  },
+  "created": "2026-09-12",
+  "updated": "2026-09-12",
+  "tasks": [
+    {
+      "id": "EXP-00",
+      "seq": 0,
+      "title": "Exported per-dir docs reader",
+      "file": "tasks/00-dir-docs-reader.md",
+      "status": "Done",
+      "updated": "2026-09-12",
+      "notes": "internal/docs/readdocs.go; placeholder/missing/corrupt semantics tested"
+    },
+    {
+      "id": "EXP-01",
+      "seq": 1,
+      "title": "Explorer page and tree fragment",
+      "file": "tasks/01-explorer-page-fragment.md",
+      "status": "Done",
+      "dependsOn": [
+        "EXP-00"
+      ],
+      "updated": "2026-09-12",
+      "notes": "/explorer + /explorer/tree + nav link; smoke-checked on this repo"
+    },
+    {
+      "id": "EXP-02",
+      "seq": 2,
+      "title": "Directory chat sessions",
+      "file": "tasks/02-directory-chat.md",
+      "status": "Done",
+      "dependsOn": [
+        "EXP-01"
+      ],
+      "updated": "2026-09-12",
+      "notes": "explorerPrompt + POST /explorer/chat + JS; bad-dir/service-down covered"
+    },
+    {
+      "id": "EXP-03",
+      "seq": 3,
+      "title": "Docs watcher and SSE live refresh",
+      "file": "tasks/03-docs-watcher-sse.md",
+      "status": "Done",
+      "dependsOn": [
+        "EXP-01"
+      ],
+      "updated": "2026-09-12",
+      "notes": "docswatch.go + /events merge + expansion-preserving swap"
+    },
+    {
+      "id": "EXP-04",
+      "seq": 4,
+      "title": "Dogfood and documentation",
+      "file": "tasks/04-dogfood-docs.md",
+      "status": "Done",
+      "dependsOn": [
+        "EXP-01",
+        "EXP-02",
+        "EXP-03"
+      ],
+      "updated": "2026-09-12",
+      "notes": "Live: tree renders, chat grounded (transcript checked), SSE fires; README updated"
+    }
+  ]
+}

@@ -1,7 +1,3 @@
----
-id: WTP-03
-title: Store overlay — worktree-aware reads, cross-tree status, validation
----
 
 # WTP-03: Store overlay — worktree-aware reads, cross-tree status, validation
 

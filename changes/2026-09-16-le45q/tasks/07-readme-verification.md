@@ -1,7 +1,3 @@
----
-id: NTD-07
-title: README and end-to-end verification
----
 
 # NTD-07: README and end-to-end verification
 

@@ -1,7 +1,3 @@
----
-id: EXP-03
-title: Docs watcher and SSE live refresh
----
 
 # EXP-03: Docs watcher and SSE live refresh
 

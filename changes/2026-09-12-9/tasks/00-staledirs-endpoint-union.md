@@ -1,7 +1,3 @@
----
-id: REF-00
-title: StaleDirs helper and /docs/refresh union
----
 
 # REF-00: StaleDirs helper and /docs/refresh union
 

@@ -1,7 +1,3 @@
----
-id: JSI-03
-title: Deterministic task-state API
----
 
 # JSI-03: Deterministic task-state API
 
@@ -46,4 +42,9 @@ Every task-level mutation is available over the API with server-side rule enforc
 
 ## Notes
 
-Decide how "user vs agent caller" is distinguished (board-origin vs session-origin) and record it here; keep enforcement in one place per rule.
+- Landed 2026-09-18 in `internal/server/taskstate.go` (+ `taskstate_test.go`) and `internal/store/mutations.go` additions (`SetTaskStatus`, `UpdateTask`+`TaskUpdate`, `ReorderTasks`, `AppendDecision`).
+- Caller identity: the board's mutation fetches carry `X-Lessmess-UI: 1` (`app.js`: drag `/move`, `postLifecycle` close/reopen); `uiClient(r)` gates Done on both `/tasks/{task}/status` and `/move` — 403 with guidance to stop at Test. Best-effort by design (an agent could fake the header), but the sanctioned agent path never does.
+- Test transitions require verification evidence (request `evidence`, appended to notes, or existing non-empty notes) — the AGENTS "record concise verification evidence" rule is now a 422.
+- Dependency existence/cycles enforced by `ChangeState.Validate` on every write; reorder demands an exact permutation of the level.
+- Store-level Done/None gating intentionally absent: identity is a transport concern; the store enforces content rules only.
+- Verification: `go vet ./... && go test ./...` green; endpoint tests cover happy paths, Done gate (agent 403 / UI 200 on both endpoints), evidence gate, unknown deps/title/task, reorder permutations, decision log round-trip into the generated ledger view.

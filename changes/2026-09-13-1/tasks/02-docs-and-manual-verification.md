@@ -1,7 +1,3 @@
----
-id: TUI-02
-title: Docs and manual verification
----
 
 # TUI-02: Docs and manual verification
 

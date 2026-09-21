@@ -1,7 +1,3 @@
----
-id: DQP-00
-title: Write discussion question policy to project settings
----
 
 # DQP-00: Write discussion question policy to project settings
 

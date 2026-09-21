@@ -1,7 +1,3 @@
----
-id: TST-00
-title: Add Test status to model and ledger template
----
 
 # TST-00: Add Test status to model and ledger template
 

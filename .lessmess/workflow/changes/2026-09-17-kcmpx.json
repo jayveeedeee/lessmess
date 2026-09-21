@@ -1,0 +1,110 @@
+{
+  "version": 1,
+  "id": "2026-09-17-kcmpx",
+  "title": "Worktree-per-change with gated PR and agent review",
+  "prefix": "WTP",
+  "status": {
+    "value": "In progress",
+    "derived": true
+  },
+  "created": "2026-09-17",
+  "updated": "2026-09-17",
+  "tasks": [
+    {
+      "id": "WTP-00",
+      "seq": 0,
+      "title": "Git settings — worktrees switch, base branch, reviewer model",
+      "file": "tasks/00-settings.md",
+      "status": "Test",
+      "updated": "2026-09-17",
+      "notes": "Evidence: merge tests (17 sources, worktrees default false, personal wins), allowlist round-trip (git.worktrees/defaultBranch/reviewModel), ReviewModel precedence, patch round-trip through strict decoder; `go vet ./... \u0026\u0026 go test ./...` green"
+    },
+    {
+      "id": "WTP-01",
+      "seq": 1,
+      "title": "internal/gitops — git mechanics and worktree state",
+      "file": "tasks/01-gitops-package.md",
+      "status": "Test",
+      "updated": "2026-09-17",
+      "notes": "Evidence: 14 tests green — real-repo lifecycle (branch/worktree add/dirty/remove/list, push to local bare remote, config copy) + scripted-commander cases (PR arg construction + URL parse, ErrGHUnavailable, ErrNoRemote never pushes, ErrBranchExists); state round-trip/malformed/atomic; `go vet ./... \u0026\u0026 go test ./...` + CGO_ENABLED=0 build green"
+    },
+    {
+      "id": "WTP-02",
+      "seq": 2,
+      "title": "Scaffold creates branch, worktree, and worktree-side change docs",
+      "file": "tasks/02-scaffold-worktree.md",
+      "status": "Test",
+      "dependsOn": [
+        "WTP-00",
+        "WTP-01"
+      ],
+      "updated": "2026-09-17",
+      "notes": "Evidence: 4 httptest flows with real git (enabled+clean, dirty-warn, git-failure aborts with nothing written, disabled legacy) green; live smoke on a scratch clone: branch `change/2026-09-17-jl4pi` + worktree + state + docs-in-worktree + main-tree row + response fields incl. warning and worktree-note all verified"
+    },
+    {
+      "id": "WTP-03",
+      "seq": 3,
+      "title": "Store overlay — worktree-aware reads, cross-tree status, validation",
+      "file": "tasks/03-store-overlay.md",
+      "status": "Test",
+      "dependsOn": [
+        "WTP-01"
+      ],
+      "updated": "2026-09-17",
+      "notes": "Evidence: store tests (resolver matrix incl. stale self-heal, cross-tree SetChangeStatus, MintChangeID row-awareness, CreateChangeAt) green; live smoke: board + plan detail served from worktree, `lessmess validate` shows no rule-6 for the worktree change, close wrote worktree ledger Done + main row Done; watch.go covers worktree dirs"
+    },
+    {
+      "id": "WTP-04",
+      "seq": 4,
+      "title": "Route change sessions, terminal, and commits into the worktree",
+      "file": "tasks/04-session-routing.md",
+      "status": "Test",
+      "dependsOn": [
+        "WTP-03"
+      ],
+      "updated": "2026-09-17",
+      "notes": "Evidence: capture tests — change session, commit session, and terminal cwd all in the worktree with the root-ledger stanza in the prime; legacy path byte-identical (prompt test pinned); spawn signature split settingsDir/sessionDir. opencode.json discovery inside a live worktree remains a user-side check (unit-covered for the copy itself)"
+    },
+    {
+      "id": "WTP-05",
+      "seq": 5,
+      "title": "Gated close — clean check, push, PR, agent review",
+      "file": "tasks/05-close-pipeline.md",
+      "status": "Test",
+      "dependsOn": [
+        "WTP-02",
+        "WTP-03",
+        "WTP-04"
+      ],
+      "updated": "2026-09-17",
+      "notes": "Evidence: pipeline tests green — full success against a real local bare remote (push + PR + review file + comment + Done + reopen resolve), dirty gate 422, no-remote gate 502 with nothing recorded, missing review.md → reviewState failed + close blocked. Real-gh end-to-end deferred to the user (needs GitHub auth); sequence covered by scripted gh"
+    },
+    {
+      "id": "WTP-06",
+      "seq": 6,
+      "title": "Board indicators, cleanup button, reopen reattach",
+      "file": "tasks/06-board-ui.md",
+      "status": "Test",
+      "dependsOn": [
+        "WTP-02",
+        "WTP-05"
+      ],
+      "updated": "2026-09-17",
+      "notes": "Evidence: strip tests (active/missing/dirty flags, absent for main-tree changes), remove endpoint (dirty 422 keeps worktree, clean removes dir+state, second call 404, disabled 409); JSON payload carries worktree; app.js confirm flow + CSS strip"
+    },
+    {
+      "id": "WTP-07",
+      "seq": 7,
+      "title": "Prompts, README, and docs-system alignment",
+      "file": "tasks/07-docs-and-prompts.md",
+      "status": "Test",
+      "dependsOn": [
+        "WTP-02",
+        "WTP-04",
+        "WTP-05"
+      ],
+      "updated": "2026-09-17",
+      "notes": "Evidence: discussion prompt covers branch/worktree/worktree-note/warning handling (pinned tests green); README \"Worktree pipeline (optional)\" section + git settings table rows; learning drafts recorded in the task notes for the close-out gardener job"
+    }
+  ]
+}

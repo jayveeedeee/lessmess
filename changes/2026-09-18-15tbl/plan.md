@@ -31,12 +31,13 @@ Baseline confirmed with the user: **committed** `.lessmess/workflow/` subtree (r
 
 ```
 .lessmess/workflow/                 # committed (gitignore negation)
-├── index.json                      # today's root ledger: one entry per change
-│                                   #   (id, title, prefix, branch, status, dates, archived)
-└── changes/<id>.json               # one change: overall status (+derived flag),
-                                    #   decision log, task tree:
-                                    #   id, seq, parent, title, file, status,
-                                    #   dependsOn[], updated, notes
+├── index.json                      # change registry only: id, title, prefix,
+│                                   #   branch, created, archived — no status
+│                                   #   or dates (single source of truth rule)
+└── changes/<id>.json               # one change: status {value, derived},
+                                    #   created/updated, decision log,
+                                    #   task tree: id, seq, parent, title,
+                                    #   file, status, dependsOn, updated, notes
 
 changes/<id>/                       # prose only, still git-committed
 ├── plan.md                         # unchanged role
@@ -46,8 +47,9 @@ changes/<id>/                       # prose only, still git-committed
 ```
 
 - All markdown ledger files (root, change, container) disappear; humans get generated views instead.
-- Statuses store the exact current display strings (`Not started`, … `Done`) to minimize mapping.
+- Statuses store the exact current display strings (`Not started`, … `Done`) to minimize mapping; empty values (branch, notes, deps) are absent (`omitempty`) rather than `—` — the em-dash convention is a rendering concern.
 - Task identity, order (array order = priority), nesting (`parent`), and per-task metadata live only in JSON; prose files are referenced by path and may keep the heading skeleton by convention.
+- Dates are required `YYYY-MM-DD` strings; schema version is a constant (`StateVersion = 1`) enforced on load.
 
 ### Mutations
 

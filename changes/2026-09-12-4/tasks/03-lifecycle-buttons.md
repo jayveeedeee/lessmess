@@ -1,7 +1,3 @@
----
-id: LIF-03
-title: Board lifecycle buttons
----
 
 # LIF-03: Board lifecycle buttons
 

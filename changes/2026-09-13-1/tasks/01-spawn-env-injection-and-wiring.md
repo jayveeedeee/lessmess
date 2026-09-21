@@ -1,7 +1,3 @@
----
-id: TUI-01
-title: Spawn env injection and terminalWS wiring
----
 
 # TUI-01: Spawn env injection and terminalWS wiring
 

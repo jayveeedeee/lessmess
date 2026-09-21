@@ -70,7 +70,7 @@ func TestTaskPromptContent(t *testing.T) {
 	if n == nil {
 		t.Fatal("FIX-00 node missing")
 	}
-	p := taskPrompt("2026-09-10-0", n)
+	p, modules := s.taskPrime("2026-09-10-0", n, "ses_task")
 	for _, want := range []string{
 		"bound to task FIX-00 of change 2026-09-10-0",
 		"tasks/00-first.md",
@@ -86,6 +86,14 @@ func TestTaskPromptContent(t *testing.T) {
 		if !strings.Contains(p, want) {
 			t.Errorf("task prompt missing %q", want)
 		}
+	}
+	// Deterministic selection: the task audience picks exactly these
+	// modules, and the state snapshot is injected.
+	if strings.Join(modules, ",") != "task.session,closeout" {
+		t.Errorf("modules = %v, want [task.session closeout]", modules)
+	}
+	if !strings.Contains(p, "Current state (tool-injected; authoritative)") || !strings.Contains(p, "FIX-01") {
+		t.Error("task prompt missing the injected state snapshot")
 	}
 }
 

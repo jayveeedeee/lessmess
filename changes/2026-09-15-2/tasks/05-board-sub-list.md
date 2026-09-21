@@ -1,7 +1,3 @@
----
-id: PSB-05
-title: Board UI — per-task sub list with talk button
----
 
 # PSB-05: Board UI — per-task sub list with talk button
 

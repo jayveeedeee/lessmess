@@ -1,7 +1,3 @@
----
-id: EXP-04
-title: Dogfood and documentation
----
 
 # EXP-04: Dogfood and documentation
 

@@ -41,15 +41,17 @@ func TestDiscussionSession(t *testing.T) {
 		t.Fatalf("unassigned = %+v", got)
 	}
 
-	// Prompt: discussion-only + exact scaffold call with injected base and session ID.
+	// Prompt: read-only before scaffold, then execution-capable after approval,
+	// with the exact scaffold call and injected base/session ID.
 	for _, want := range []string{
 		"AGENTS.md",
-		"plan a NEW change",
+		"planning a NEW change",
 		"Empty state",
 		"do NOT investigate the repository",
 		`"What would you like to build?"`,
-		"DO NOT modify the repository",
+		"Before scaffolding, do not modify the repository",
 		"EXPLICITLY agrees",
+		"continue in this same session",
 		"curl -s -X POST http://127.0.0.1:9090/changes/scaffold",
 		`"session":"ses_disc"`,
 		"task-ID prefix",
@@ -71,7 +73,7 @@ func TestDiscussionSessionNoService(t *testing.T) {
 func TestScaffoldFlow(t *testing.T) {
 	var renamedTo string
 	s := mappingServer(t, func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasSuffix(r.URL.Path, "/rename") {
+		if r.Method == http.MethodPatch && r.URL.Path == "/api/session/ses_sc" {
 			var body map[string]string
 			json.NewDecoder(r.Body).Decode(&body)
 			renamedTo = body["title"]
@@ -95,25 +97,16 @@ func TestScaffoldFlow(t *testing.T) {
 		t.Fatalf("resp = %v", resp)
 	}
 
-	// Change exists and root row carries title + prefix.
+	// Change exists and index entry carries title + prefix.
 	if w := do(t, s.Handler(), "GET", "/changes/"+changeID, ""); w.Code != 200 {
 		t.Fatalf("board: code = %d", w.Code)
 	}
-	root, err := s.st.Root()
-	if err != nil {
-		t.Fatal(err)
+	e := s.st.Entry(changeID)
+	if e == nil {
+		t.Fatal("index entry missing for scaffolded change")
 	}
-	var found bool
-	for _, r := range root.Rows {
-		if r.Change == changeID {
-			found = true
-			if r.Title != "Build the thing" || r.Prefix != "BT" {
-				t.Fatalf("root row = %+v", r)
-			}
-		}
-	}
-	if !found {
-		t.Fatal("root row missing for scaffolded change")
+	if e.Title != "Build the thing" || e.Prefix != "BT" {
+		t.Fatalf("index entry = %+v", e)
 	}
 
 	// Session renamed and mapping moved out of the bucket.
@@ -174,7 +167,7 @@ func TestScaffoldBoundSessionRefused(t *testing.T) {
 	if err := s.sessions.add("2026-09-10-0", SessionEntry{Session: "ses_bound", Title: "t", Created: "x"}); err != nil {
 		t.Fatal(err)
 	}
-	rootBefore, err := s.st.Root()
+	idxBefore, err := s.st.Index()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -204,12 +197,12 @@ func TestScaffoldBoundSessionRefused(t *testing.T) {
 	}
 
 	// Nothing created; mapping untouched.
-	rootAfter, err := s.st.Root()
+	idxAfter, err := s.st.Index()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(rootAfter.Rows) != len(rootBefore.Rows) {
-		t.Fatalf("root rows grew: %d → %d", len(rootBefore.Rows), len(rootAfter.Rows))
+	if len(idxAfter.Changes) != len(idxBefore.Changes) {
+		t.Fatalf("index grew: %d → %d", len(idxBefore.Changes), len(idxAfter.Changes))
 	}
 	if got := s.sessions.list("2026-09-10-0"); len(got) != 1 || got[0].Session != "ses_bound" {
 		t.Fatalf("change sessions = %+v", got)
@@ -336,21 +329,12 @@ func TestSpawnChangeHandoff(t *testing.T) {
 	}
 
 	// The new change exists, carries the title/prefix, and validates clean.
-	root, err := s.st.Root()
-	if err != nil {
-		t.Fatal(err)
+	e := s.st.Entry(changeID)
+	if e == nil {
+		t.Fatal("index entry missing for spawned change")
 	}
-	var found bool
-	for _, r := range root.Rows {
-		if r.Change == changeID {
-			found = true
-			if r.Title != "Client resilience" || r.Prefix != "CR" {
-				t.Fatalf("root row = %+v", r)
-			}
-		}
-	}
-	if !found {
-		t.Fatal("root row missing for spawned change")
+	if e.Title != "Client resilience" || e.Prefix != "CR" {
+		t.Fatalf("index entry = %+v", e)
 	}
 	if v := s.st.Validate(); len(v) != 0 {
 		t.Fatalf("violations after spawn: %v", v)

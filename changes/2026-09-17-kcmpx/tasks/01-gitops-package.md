@@ -1,7 +1,3 @@
----
-id: WTP-01
-title: internal/gitops — git mechanics and worktree state
----
 
 # WTP-01: internal/gitops — git mechanics and worktree state
 

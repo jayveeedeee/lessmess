@@ -1,7 +1,3 @@
----
-id: SET-03
-title: Settings HTTP API
----
 
 # SET-03: Settings HTTP API
 

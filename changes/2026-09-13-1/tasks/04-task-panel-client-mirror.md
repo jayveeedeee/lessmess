@@ -1,7 +1,3 @@
----
-id: TUI-04
-title: Task panel client mirror and sync
----
 
 # TUI-04: Task panel client mirror and sync
 

@@ -1,7 +1,3 @@
----
-id: ONB-03
-title: Bootstrap endpoint with docs-coverage option
----
 
 # ONB-03: Bootstrap endpoint with docs-coverage option
 

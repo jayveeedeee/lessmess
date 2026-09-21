@@ -1,7 +1,3 @@
----
-id: WCV-04
-title: Repo remediation, README, end-to-end verification
----
 
 # WCV-04: Repo remediation, README, end-to-end verification
 

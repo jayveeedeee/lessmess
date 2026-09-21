@@ -1,7 +1,3 @@
----
-id: OCI-01
-title: opencode client package
----
 
 # OCI-01: opencode client package
 

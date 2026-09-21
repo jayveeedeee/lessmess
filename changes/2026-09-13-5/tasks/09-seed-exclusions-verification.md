@@ -1,7 +1,3 @@
----
-id: LRN-09
-title: README and verification for seed/exclusions
----
 
 # LRN-09: README and verification for seed/exclusions
 

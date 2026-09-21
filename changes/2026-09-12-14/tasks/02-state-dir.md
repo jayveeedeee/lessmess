@@ -1,7 +1,3 @@
----
-id: REN-02
-title: State dir .tasktracker → .lessmess with startup auto-migration
----
 
 # REN-02: State dir .tasktracker → .lessmess with startup auto-migration
 

@@ -161,17 +161,6 @@ func (s *Server) setupWorktreeInner(ctx context.Context, id string) (worktreeSet
 	return ws, nil
 }
 
-// withWorktreeRule appends the worktree stanza to a change/task prime when
-// the change is worktree-backed; without one, base is returned unchanged so
-// main-tree prompts stay byte-identical to the builders.
-func (s *Server) withWorktreeRule(id, base string) string {
-	stanza := s.worktreeStanza(id)
-	if stanza == "" {
-		return base
-	}
-	return base + "\n\n" + stanza
-}
-
 // changeSessionDir is the working directory for sessions bound to change
 // id: the change's worktree when it has a live one, else the main tree.
 // Settings always come from the main tree; only the session's directory
@@ -203,17 +192,6 @@ func (s *Server) worktreeEntry(id string) (gitops.Entry, bool) {
 		return gitops.Entry{}, false
 	}
 	return e, true
-}
-
-// worktreeStanza is appended to change/task primes for worktree-backed
-// changes: the working-directory rule, the central root-ledger rule, and
-// the push prohibition (the server pushes at close).
-func (s *Server) worktreeStanza(id string) string {
-	e, ok := s.worktreeEntry(id)
-	if !ok {
-		return ""
-	}
-	return fmt.Sprintf(`Worktree: this change's files — including changes/%[1]s/ — live in the worktree at %[2]s on branch %[3]s, which is your working directory for all file edits and commits. NEVER edit the root ledger (changes/ledger.md): the server maintains it centrally in the main tree, and change branches never touch it. Commit normally but never push: the server pushes this branch and opens the PR when the user closes the change.`, id, e.Path, e.Branch)
 }
 
 // worktreeViewFor builds the board header strip for one change: nil unless

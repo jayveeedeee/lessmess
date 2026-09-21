@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "id": "2026-09-16-43mc0",
+  "title": "Curated doc learnings",
+  "prefix": "LRN",
+  "status": {
+    "value": "Done",
+    "derived": false
+  },
+  "created": "2026-09-16",
+  "updated": "2026-09-17",
+  "tasks": [
+    {
+      "id": "LRN-00",
+      "seq": 0,
+      "title": "Curated-learnings convention in workflow text, prompts, and README",
+      "file": "tasks/00-convention.md",
+      "status": "Done",
+      "updated": "2026-09-17",
+      "notes": "Drift test green; vet+full server/docs tests green; no old wording left in prompts or README"
+    },
+    {
+      "id": "LRN-01",
+      "seq": 1,
+      "title": "One-time curation of all AGENTS.md auto sections",
+      "file": "tasks/01-cleanup.md",
+      "status": "Done",
+      "dependsOn": [
+        "LRN-00"
+      ],
+      "updated": "2026-09-17",
+      "notes": "All 14 sections rewritten (≈244 → ≤15 each); vet+tests green; rebuilt `lessmess validate` clean after fixing two self-inflicted lint flags"
+    }
+  ]
+}

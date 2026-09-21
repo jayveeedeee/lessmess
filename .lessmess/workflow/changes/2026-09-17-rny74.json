@@ -1,0 +1,56 @@
+{
+  "version": 1,
+  "id": "2026-09-17-rny74",
+  "title": "Spawn fallback hardening and default_agent alignment",
+  "prefix": "SPF",
+  "status": {
+    "value": "Done",
+    "derived": false
+  },
+  "created": "2026-09-17",
+  "updated": "2026-09-17",
+  "tasks": [
+    {
+      "id": "SPF-00",
+      "seq": 0,
+      "title": "Agent-preserving spawn fallback ladder",
+      "file": "tasks/00-spawn-fallback-ladder.md",
+      "status": "Done",
+      "updated": "2026-09-17",
+      "notes": "Ladder agent+model→agent→model→plain; evidence: 5 new/updated tests green (`go vet ./... \u0026\u0026 go test ./...` OK) — model-rejected keeps agent, agent-rejected keeps model, non-400 stops, full-fail errors"
+    },
+    {
+      "id": "SPF-01",
+      "seq": 1,
+      "title": "Persisted fallback record and board warning banner",
+      "file": "tasks/01-fallback-record-banner.md",
+      "status": "Done",
+      "dependsOn": [
+        "SPF-00"
+      ],
+      "updated": "2026-09-17",
+      "notes": "Evidence: record lifecycle (write on fallback, clear on clean), fail-open read, banner render/clean-absence tests green; full suite OK"
+    },
+    {
+      "id": "SPF-02",
+      "seq": 2,
+      "title": "default_agent divergence notice on the Settings page",
+      "file": "tasks/02-default-agent-notice.md",
+      "status": "Done",
+      "updated": "2026-09-17",
+      "notes": "Evidence: reader table (ok/absent/no-key/JSONC), response surfacing, page hook assertions green; full suite OK"
+    },
+    {
+      "id": "SPF-03",
+      "seq": 3,
+      "title": "Align endpoint and button for opencode.json default_agent",
+      "file": "tasks/03-align-endpoint.md",
+      "status": "Done",
+      "dependsOn": [
+        "SPF-02"
+      ],
+      "updated": "2026-09-17",
+      "notes": "Evidence: patcher golden (order/bytes preserved, JSONC refused), align e2e (200/422/503, file untouched on refusal), UI hooks; `go vet ./... \u0026\u0026 go test ./...` + build + `lessmess validate` all OK"
+    }
+  ]
+}

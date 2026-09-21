@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "id": "2026-09-17-39avm",
+  "title": "Change handoff",
+  "prefix": "HOF",
+  "status": {
+    "value": "Done",
+    "derived": false
+  },
+  "created": "2026-09-17",
+  "updated": "2026-09-19",
+  "tasks": [
+    {
+      "id": "HOF-00",
+      "seq": 0,
+      "title": "spawn-change endpoint, changePrompt session ID + handoff step, SpawnedFrom field",
+      "file": "tasks/00-spawn-endpoint.md",
+      "status": "Done",
+      "updated": "2026-09-18",
+      "notes": "Amended ×2: 409 teaches handoff; addendum + rule 2 hardened (task file + ledger row same pass, validate first). Awaiting acceptance."
+    },
+    {
+      "id": "HOF-01",
+      "seq": 1,
+      "title": "Handoffs listing endpoint and board \"Spawn new change\" action",
+      "file": "tasks/01-board-ui.md",
+      "status": "Done",
+      "dependsOn": [
+        "HOF-00"
+      ],
+      "updated": "2026-09-18",
+      "notes": "Implemented + verified: unit tests green, scratch smoke test passed (board form, listing, 404/422), stray opencode session cleaned up. Awaiting acceptance."
+    },
+    {
+      "id": "HOF-02",
+      "seq": 2,
+      "title": "README documentation and full validation pass",
+      "file": "tasks/02-docs-validation.md",
+      "status": "Done",
+      "dependsOn": [
+        "HOF-00",
+        "HOF-01"
+      ],
+      "updated": "2026-09-19"
+    }
+  ]
+}

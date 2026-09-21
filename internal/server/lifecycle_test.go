@@ -18,12 +18,8 @@ func TestCloseReopenEndpoints(t *testing.T) {
 		t.Fatalf("close code = %d body = %s", w.Code, w.Body)
 	}
 	c, _ := s.st.Change("2026-09-10-0")
-	if c.Ledger.Overall != model.OverallDone {
-		t.Fatalf("overall = %q", c.Ledger.Overall)
-	}
-	root, _ := s.st.Root()
-	if root.Rows[0].Status != model.OverallDone {
-		t.Fatalf("root status = %q", root.Rows[0].Status)
+	if c.Overall() != model.OverallDone {
+		t.Fatalf("overall = %q", c.Overall())
 	}
 
 	w = do(t, s.Handler(), "POST", "/changes/2026-09-10-0/reopen", `{}`)
@@ -31,8 +27,8 @@ func TestCloseReopenEndpoints(t *testing.T) {
 		t.Fatalf("reopen code = %d body = %s", w.Code, w.Body)
 	}
 	c, _ = s.st.Change("2026-09-10-0")
-	if c.Ledger.Overall != model.OverallInProgress {
-		t.Fatalf("after reopen overall = %q", c.Ledger.Overall)
+	if c.Overall() != model.OverallInProgress {
+		t.Fatalf("after reopen overall = %q", c.Overall())
 	}
 
 	if w := do(t, s.Handler(), "POST", "/changes/2099-01-01-9/close", `{}`); w.Code != 404 {

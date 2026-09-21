@@ -1,7 +1,3 @@
----
-id: LIF-02
-title: Commit-session endpoint
----
 
 # LIF-02: Commit-session endpoint
 

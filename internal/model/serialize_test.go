@@ -203,13 +203,17 @@ func TestSetOverall(t *testing.T) {
 }
 
 func TestTemplatesRoundTrip(t *testing.T) {
-	tf, err := ParseTaskFile("new.md", RenderTaskFile("KAN-09", "A new task"))
-	if err != nil {
-		t.Fatalf("task template does not parse: %v", err)
+	// Task prose files carry no frontmatter: identity lives in the JSON
+	// state, the heading carries it for humans.
+	taskDoc := RenderTaskFile("KAN-09", "A new task")
+	if !bytes.HasPrefix(taskDoc, []byte("# KAN-09: A new task")) {
+		t.Errorf("task template = %q, want the identity heading first", taskDoc)
 	}
-	if tf.ID != "KAN-09" || tf.Title != "A new task" {
-		t.Errorf("tf = %+v", tf)
+	if bytes.Contains(taskDoc, []byte("---\n")) {
+		t.Error("task template must not render frontmatter")
 	}
+	// The ledger templates remain the markdown format consumed by the
+	// migration reader.
 	cl, err := ParseChangeLedger("ledger.md", RenderChangeLedger("2026-09-12-0", "2026-09-12"))
 	if err != nil {
 		t.Fatalf("ledger template does not parse: %v", err)
@@ -220,8 +224,8 @@ func TestTemplatesRoundTrip(t *testing.T) {
 	if !bytes.Contains(RenderChangeLedger("2026-09-12-0", "2026-09-12"), []byte("| Test |")) {
 		t.Error("ledger template must define the Test status")
 	}
-	if !bytes.Contains(RenderChangePlan("2026-09-12-0", "T", "2026-09-12"), []byte("[ledger.md](ledger.md)")) {
-		t.Error("plan template must link ledger.md")
+	if !bytes.Contains(RenderChangePlan("2026-09-12-0", "T", "2026-09-12"), []byte(".lessmess/workflow/")) {
+		t.Error("plan template must point at the JSON state for status")
 	}
 }
 

@@ -1,7 +1,3 @@
----
-id: JSI-06
-title: AGENTS.md shrink, init rework, docs
----
 
 # JSI-06: AGENTS.md shrink, init rework, docs
 
@@ -46,4 +42,8 @@ Contract surface fully migrated: pointer AGENTS.md, new-model init, no drift-pin
 
 ## Notes
 
-The pointer text is the one place prose instructions remain resident for all sessions — keep it minimal. Record the final pointer text here for review.
+- Root `AGENTS.md` shrunk from ~300 to 30 lines: a pointer (tool-owned JSON state, API-only mutations, board-spawned sessions with injected instructions) above the untouched marker-guarded learnings (302 → learnings left for normal close-time gardening per plan). The embedded asset `internal/docs/assets/workflow_agents.md` is the same pointer; the drift-pin test now pins the pointer (kept deliberately).
+- `lessmess init` rework had already landed with JSI-02 (`initWorkflow` writes `.lessmess/workflow/index.json`; gitignore block replaces the whole-dir ignore); verified on a scratch repo: all five artifacts created, gitignore carries `.lessmess/*` + `!.lessmess/workflow/`.
+- Template copy: setup wizard bootstrap list and settings branch help updated (JSI-05 pass).
+- README rewritten for the new model: JSON-state overview + layout diagram, `migrate` subcommand, board/nested-task sections, new "Instruction injection" section, safety section (migration deletion is the one destructive exception), dev layout.
+- Verification: `go vet ./... && go test ./...` green; scratch `init` bootstraps a new-model repo; drift test passes against the pointer text.

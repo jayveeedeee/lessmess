@@ -1,7 +1,3 @@
----
-id: HOF-02
-title: README documentation and full validation pass
----
 
 # HOF-02: README documentation and full validation pass
 

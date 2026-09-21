@@ -1,0 +1,539 @@
+{
+  "version": 1,
+  "id": "2026-09-21-aw36x",
+  "title": "Mobile API Chat",
+  "prefix": "MAC",
+  "branch": "main",
+  "status": {
+    "value": "In progress",
+    "derived": true
+  },
+  "created": "2026-09-21",
+  "updated": "2026-09-22",
+  "decisionLog": [
+    {
+      "date": "2026-09-21",
+      "decision": "New-change discussion sessions are read-only only before scaffolding; after planning and explicit user authorization, the same session may implement the tracked change under normal task-state rules."
+    },
+    {
+      "date": "2026-09-21",
+      "decision": "User authorized automatic continuation through Phases 3 and 4 after the Phase 2 verification gate passes; Phase 5 remains planned but not authorized."
+    },
+    {
+      "date": "2026-09-21",
+      "decision": "For experimental OpenCode operations in Phases 2-4, lessmess will expose explicit capability-gated routes and visible unsupported states; it will not emulate missing operations or add a generic API proxy."
+    },
+    {
+      "date": "2026-09-21",
+      "decision": "Service health must capability-detect current V2 /api/info and retain a narrow /api/health fallback: the installed beta service returns 404 for /api/info and 200 for /api/health, while the published 2.0.6 OpenAPI has /api/info only."
+    },
+    {
+      "date": "2026-09-21",
+      "decision": "Lifecycle/management capability detection must be method-and-path based, not version-string based: the installed beta advertises legacy /revert/clear, /inbox/{id}/queue|steer, stable /session/{id}/skill, and non-experimental MCP mutations, while published 2.0.6 moved or replaced those paths."
+    }
+  ],
+  "tasks": [
+    {
+      "id": "MAC-00",
+      "seq": 0,
+      "title": "OpenCode chat API adapter",
+      "file": "tasks/00-opencode-chat-api-adapter.md",
+      "status": "Test",
+      "updated": "2026-09-21",
+      "notes": "User authorized implementation of Phases 1 and 2 in this session. OpenCode V2 transcript/active/interrupt/permission/form adapter implemented; go test -count=1 ./internal/opencode, go vet ./internal/opencode, and diff check pass."
+    },
+    {
+      "id": "MAC-01",
+      "seq": 1,
+      "title": "Chat HTTP surface and rendering",
+      "file": "tasks/01-chat-http-surface-and-rendering.md",
+      "status": "Test",
+      "dependsOn": [
+        "MAC-00"
+      ],
+      "updated": "2026-09-21",
+      "notes": "MAC-00 adapter verified; implementing explicit chat routes and server-rendered snapshot. Explicit transcript/prompt/interrupt/permission/form routes, safe normalized rendering, validation/error mapping, and handler tests pass with go test ./internal/server -run TestChat."
+    },
+    {
+      "id": "MAC-02",
+      "seq": 2,
+      "title": "Parallel mobile chat interface",
+      "file": "tasks/02-parallel-mobile-chat-interface.md",
+      "status": "Test",
+      "dependsOn": [
+        "MAC-01"
+      ],
+      "updated": "2026-09-21",
+      "notes": "Backend surface verified; integrating and testing responsive parallel Chat UI. Parallel Chat/Terminal actions, mobile preferred open, polling, drafts/scroll, permission/forms, task drawer, 100dvh/safe-area UI implemented; node --check, render/chat/project-name tests, and diff check pass."
+    },
+    {
+      "id": "MAC-03",
+      "seq": 3,
+      "title": "Mobile verification and documentation",
+      "file": "tasks/03-mobile-verification-and-documentation.md",
+      "status": "Test",
+      "dependsOn": [
+        "MAC-02"
+      ],
+      "updated": "2026-09-21",
+      "notes": "Phase 1 implementation integrated; running full verification and documentation update. Phase 1 docs updated; go vet ./..., go test ./..., CGO_ENABLED=0 build, node --check, git diff --check, and lessmess validate pass (only stale-doc warnings). Live phone interaction remains user acceptance."
+    },
+    {
+      "id": "MAC-04",
+      "seq": 4,
+      "title": "Phase 2 API and long-session foundation",
+      "file": "tasks/04-phase-2-api-and-long-session-foundation.md",
+      "status": "Test",
+      "dependsOn": [
+        "MAC-03"
+      ],
+      "updated": "2026-09-21",
+      "notes": "Phase 1 full automated gate passed; implementing bounded message pagination and long-session refresh. Bounded 50-message newest polling, opaque cursor history pages, chronology/dedup/scroll anchoring implemented; opencode/server tests, vet, and node syntax check pass."
+    },
+    {
+      "id": "MAC-05",
+      "seq": 5,
+      "title": "Phase 2 attachments and references",
+      "file": "tasks/05-phase-2-attachments-and-references.md",
+      "status": "Test",
+      "dependsOn": [
+        "MAC-04"
+      ],
+      "updated": "2026-09-21",
+      "notes": "MAC-04 verified; implementing bounded attachments and project references. Bounded multipart/JSON attachments, validated project references, safe historic downloads, mobile attachment tray, and spoofing/traversal/limit tests implemented. go test ./..., go vet ./..., node --check, and diff check pass; real phone smoke remains for MAC-08."
+    },
+    {
+      "id": "MAC-06",
+      "seq": 6,
+      "title": "Phase 2 tool details and diffs",
+      "file": "tasks/06-phase-2-tool-details-and-diffs.md",
+      "status": "Test",
+      "dependsOn": [
+        "MAC-05"
+      ],
+      "updated": "2026-09-21",
+      "notes": "MAC-05 verified; implementing on-demand tool details and bounded diffs. On-demand exact tool details and turn diffs, bounded output chunks, mobile unified diff, copy/load-more, hostile/binary/large-output tests implemented. Full tests, vet, node syntax, and diff checks pass; live viewport remains MAC-08."
+    },
+    {
+      "id": "MAC-07",
+      "seq": 7,
+      "title": "Phase 2 session controls",
+      "file": "tasks/07-phase-2-session-controls.md",
+      "status": "Test",
+      "dependsOn": [
+        "MAC-06"
+      ],
+      "updated": "2026-09-21",
+      "notes": "MAC-06 verified; implementing session selectors, commands/skills, and usage state. Scoped agent/model/command/skill controls, capability-detected skill activation, usage/context warning, sanitized retry/provider/compaction states, mobile controls sheet, and redaction/race/invalid-selection tests implemented. Full tests, vet, static build, node syntax, diff and validate checks pass; live phone smoke remains MAC-08."
+    },
+    {
+      "id": "MAC-08",
+      "seq": 8,
+      "title": "Phase 2 mobile verification",
+      "file": "tasks/08-phase-2-mobile-verification.md",
+      "status": "Test",
+      "dependsOn": [
+        "MAC-07"
+      ],
+      "updated": "2026-09-21",
+      "notes": "MAC-07 verified; running full Phase 2 regression, documentation, and available live-service checks. Phase 2 full tests, vet, static build, node syntax, diff check, README capability matrix, and workflow validation pass; validate reports only known stale-doc warnings. Live 375/390px and real-service mutation smoke could not be run in this environment and remain explicit user-acceptance gaps. User authorized Phase 3 continuation."
+    },
+    {
+      "id": "MAC-09",
+      "seq": 9,
+      "title": "Phase 3 lifecycle API foundation",
+      "file": "tasks/09-phase-3-lifecycle-api-foundation.md",
+      "status": "Test",
+      "dependsOn": [
+        "MAC-08"
+      ],
+      "updated": "2026-09-21",
+      "notes": "Phase 2 automated gate passed and live gaps documented; implementing explicit lifecycle adapters and safety contracts. Typed fork/revert/compact/inbox/children/rename/export/delete adapters and explicit confirmation-gated routes implemented with current/beta capability variants, stale/busy checks, safe mapping cleanup, and contract tests. Full tests/vet/build/diff/validate pass."
+    },
+    {
+      "id": "MAC-10",
+      "seq": 10,
+      "title": "Phase 3 fork revert and compaction",
+      "file": "tasks/10-phase-3-fork-revert-and-compaction.md",
+      "status": "Test",
+      "dependsOn": [
+        "MAC-09"
+      ],
+      "updated": "2026-09-21",
+      "notes": "MAC-09 backend foundation verified; implementing mobile fork, staged revert, and compaction controls. Message fork, mapped child open, staged revert preview/commit/cancel with fingerprints, stale 409 refresh, reconnect recovery, compaction gating/progress, and lifecycle tests implemented. Full tests/vet/build/node/diff/validate pass; destructive live smoke deferred to MAC-14."
+    },
+    {
+      "id": "MAC-11",
+      "seq": 11,
+      "title": "Phase 3 inbox and steering",
+      "file": "tasks/11-phase-3-inbox-and-steering.md",
+      "status": "Test",
+      "dependsOn": [
+        "MAC-10"
+      ],
+      "updated": "2026-09-21",
+      "notes": "MAC-10 verified; implementing queue/steer inbox controls and pending-delivery state. Stable-ID queue/steer delivery, rich prompt preservation, separate ordered inbox, delivery changes, best-effort cancel refresh/race wording, current/beta routes, and union/redaction/UI tests implemented. Full tests/vet/build/node/diff pass; live busy smoke deferred to MAC-14."
+    },
+    {
+      "id": "MAC-12",
+      "seq": 12,
+      "title": "Phase 3 subagent navigation",
+      "file": "tasks/12-phase-3-subagent-navigation.md",
+      "status": "Test",
+      "dependsOn": [
+        "MAC-11"
+      ],
+      "updated": "2026-09-21",
+      "notes": "MAC-11 verified; implementing authoritative parent/child navigation and deep mapping reconciliation. Paginated parentID traversal, cycle/cursor guards, deep ownership-safe reconciliation, navigation API, mobile breadcrumb/activity drawer, and per-session draft/attachment/scroll preservation implemented with comprehensive tests. Full tests/vet/build/node/diff pass; live multi-agent phone smoke deferred to MAC-14."
+    },
+    {
+      "id": "MAC-13",
+      "seq": 13,
+      "title": "Phase 3 session management",
+      "file": "tasks/13-phase-3-session-management.md",
+      "status": "Test",
+      "dependsOn": [
+        "MAC-12"
+      ],
+      "updated": "2026-09-21",
+      "notes": "MAC-12 verified; implementing explicit rename/export/unlink/delete and bounded shell transcript management. Mobile rename/sanitized export/unlink/cascade-delete controls, stale tree confirmation, owner closure, idempotent reconciliation, fallback title persistence, shell rendering, and security/mapping/UI tests implemented. Full tests/vet/build/node/diff pass; live management smoke deferred to MAC-14."
+    },
+    {
+      "id": "MAC-14",
+      "seq": 14,
+      "title": "Phase 3 recovery verification",
+      "file": "tasks/14-phase-3-recovery-verification.md",
+      "status": "Test",
+      "dependsOn": [
+        "MAC-13"
+      ],
+      "updated": "2026-09-21",
+      "notes": "MAC-13 verified; running Phase 3 regression, recovery checks, documentation, and available service compatibility checks. Phase 3 full tests, vet, static build, node syntax, diff check, capability matrix, and validation pass; installed beta capabilities verified (fork/compact/inbox/legacy revert clear present, export absent). Live destructive, network-loss, and 375/390px recovery scenarios remain explicit acceptance gaps. User authorized Phase 4 continuation."
+    },
+    {
+      "id": "MAC-15",
+      "seq": 15,
+      "title": "Phase 4 service health foundation",
+      "file": "tasks/15-phase-4-service-health-foundation.md",
+      "status": "Test",
+      "dependsOn": [
+        "MAC-14"
+      ],
+      "updated": "2026-09-21",
+      "notes": "Phase 3 automated gate passed and live gaps documented; implementing capability-aware service health diagnosis. Safe service/location/provider/model/plugin/capability adapters, /api/info with 404-only beta health fallback, stale-client rediscovery, no-store status API, mobile management page, normalized/redacted degraded states, and tests implemented. Full tests/vet/opencode race/build/node/diff/validate pass; live beta read-only contract confirmed. Existing terminal double-Wait race remains unrelated."
+    },
+    {
+      "id": "MAC-16",
+      "seq": 16,
+      "title": "Phase 4 integrations and credentials",
+      "file": "tasks/16-phase-4-integrations-and-credentials.md",
+      "status": "Test",
+      "dependsOn": [
+        "MAC-15"
+      ],
+      "updated": "2026-09-21",
+      "notes": "MAC-15 verified; implementing integration discovery and secure connection attempts. Typed integration/attempt/credential adapters, explicit secure routes, responsive management UI, transient secret handling, no-store/origin/strict-body/stale confirmation controls, and canary/attempt tests implemented. Full tests/vet/build/node/diff pass; live provider flows deferred to MAC-19."
+    },
+    {
+      "id": "MAC-17",
+      "seq": 17,
+      "title": "Phase 4 MCP and saved permissions",
+      "file": "tasks/17-phase-4-mcp-and-saved-permissions.md",
+      "status": "Test",
+      "dependsOn": [
+        "MAC-16"
+      ],
+      "updated": "2026-09-21",
+      "notes": "MAC-16 verified; implementing MCP diagnostics/runtime controls and saved permission management. Typed MCP/resource/permission adapters, current/beta runtime controls, project-scoped saved rules, active request Chat links, stale confirmation, auth remedies, URI/error redaction, responsive UI and security tests implemented. Full tests/vet/build/node/diff/validate pass; live beta reads checked, mutations deferred to MAC-19."
+    },
+    {
+      "id": "MAC-18",
+      "seq": 18,
+      "title": "Phase 4 management UI security",
+      "file": "tasks/18-phase-4-management-ui-security.md",
+      "status": "Test",
+      "dependsOn": [
+        "MAC-17"
+      ],
+      "updated": "2026-09-21",
+      "notes": "MAC-17 verified; unifying management UX and completing sensitive-route security hardening. Unified responsive management navigation, strict origin/UI-header/JSON/path/confirmation controls, no-store headers on all responses, redacted fixed-category logs, DOM cleanup, and forged/canary/hostile/stale/security tests implemented. Full tests/vet/build/node/diff/validate pass; live browser/network inspection deferred to MAC-19."
+    },
+    {
+      "id": "MAC-19",
+      "seq": 19,
+      "title": "Phase 4 mobile verification",
+      "file": "tasks/19-phase-4-mobile-verification.md",
+      "status": "Test",
+      "dependsOn": [
+        "MAC-18"
+      ],
+      "updated": "2026-09-21",
+      "notes": "MAC-18 verified; running final Phase 4 regression, live read-only compatibility checks, documentation, and security evidence. Phase 4 full tests, vet, static build, node syntax, diff check, security-focused handler tests, README operations/security matrix, and workflow validation pass. Installed beta live read checks returned 200 for health/provider/model/plugin/integration/MCP/resources/active-permissions. Live credential/MCP/saved-rule mutations, browser cache/log inspection, OAuth/device flows, and 375/390px accessibility remain explicit acceptance gaps. Phase 5 remains unauthorized."
+    },
+    {
+      "id": "MAC-20",
+      "seq": 20,
+      "title": "Phase 5 release and version foundation",
+      "file": "tasks/20-phase-5-release-and-version-foundation.md",
+      "status": "Not started",
+      "dependsOn": [
+        "MAC-19"
+      ],
+      "updated": "2026-09-21"
+    },
+    {
+      "id": "MAC-21",
+      "seq": 21,
+      "title": "Phase 5 native Windows compatibility",
+      "file": "tasks/21-phase-5-native-windows-compatibility.md",
+      "status": "Not started",
+      "dependsOn": [
+        "MAC-20"
+      ],
+      "updated": "2026-09-21"
+    },
+    {
+      "id": "MAC-22",
+      "seq": 22,
+      "title": "Phase 5 cross-platform release automation",
+      "file": "tasks/22-phase-5-cross-platform-release-automatio.md",
+      "status": "Not started",
+      "dependsOn": [
+        "MAC-21"
+      ],
+      "updated": "2026-09-21"
+    },
+    {
+      "id": "MAC-23",
+      "seq": 23,
+      "title": "Phase 5 package manager distribution",
+      "file": "tasks/23-phase-5-package-manager-distribution.md",
+      "status": "Not started",
+      "dependsOn": [
+        "MAC-22"
+      ],
+      "updated": "2026-09-21"
+    },
+    {
+      "id": "MAC-24",
+      "seq": 24,
+      "title": "Phase 5 clean-machine verification",
+      "file": "tasks/24-phase-5-clean-machine-verification.md",
+      "status": "Not started",
+      "dependsOn": [
+        "MAC-23"
+      ],
+      "updated": "2026-09-21"
+    },
+    {
+      "id": "MAC-25",
+      "seq": 25,
+      "title": "Single-pane mobile navigation shell for the chat overlay",
+      "file": "tasks/25-single-pane-mobile-navigation-shell-for.md",
+      "status": "Test",
+      "dependsOn": [
+        "MAC-19"
+      ],
+      "updated": "2026-09-21",
+      "notes": "User authorized implementation of the mobile hierarchy refinement tasks MAC-25 through MAC-31. Compact 840px single-pane view stack, pane hooks, Back/Escape/backdrop behavior, inert/ARIA/focus handoff, per-session/view scroll restoration, and contract tests implemented. Full tests/vet/build/node/diff pass; manual phone evidence deferred to MAC-31."
+    },
+    {
+      "id": "MAC-26",
+      "seq": 26,
+      "title": "Full-screen Work view replacing the mobile tasks drawer",
+      "file": "tasks/26-full-screen-work-view-replacing-the-mobi.md",
+      "status": "Test",
+      "dependsOn": [
+        "MAC-25"
+      ],
+      "updated": "2026-09-21",
+      "notes": "MAC-25 view-stack foundation verified; implementing full-screen Work navigation. Compact Work action/view, plan-first live grouped task rendering, bound visibility, Work return focus, and contract tests implemented while desktop task panel/Terminal remain unchanged. Full tests/vet/build/node/diff pass."
+    },
+    {
+      "id": "MAC-27",
+      "seq": 27,
+      "title": "Full-width plan and task reading views with sticky mobile Contents",
+      "file": "tasks/27-full-width-plan-and-task-reading-views-w.md",
+      "status": "Test",
+      "dependsOn": [
+        "MAC-25"
+      ],
+      "updated": "2026-09-21",
+      "notes": "MAC-26 Work navigation verified; implementing full-width mobile reading views and top Contents disclosure. Compact full-width detail views, sticky accessible Contents disclosure, active/heading focus, safe-area/visualViewport sizing, source focus restoration, and task/plan/ledger/review contracts implemented. Full tests/vet/build/node/diff pass; manual keyboard/phone smoke deferred to MAC-31."
+    },
+    {
+      "id": "MAC-28",
+      "seq": 28,
+      "title": "Message-first composer with a single + action sheet",
+      "file": "tasks/28-message-first-composer-with-a-single-act.md",
+      "status": "Test",
+      "dependsOn": [
+        "MAC-19"
+      ],
+      "updated": "2026-09-21",
+      "notes": "Mobile reading hierarchy verified; implementing message-first composer and compact action menu. Message-first textarea/Send layout, accessible + action sheet for files/references/skills, focus/backdrop/Escape/ARIA/safe-area behavior, busy-only Interrupt, preserved hooks/caps/gating/chips, and tests implemented. Full tests/vet/build/node/diff pass; manual phone smoke deferred to MAC-31."
+    },
+    {
+      "id": "MAC-29",
+      "seq": 29,
+      "title": "Slim mobile chat header with overflow menu",
+      "file": "tasks/29-slim-mobile-chat-header-with-overflow-me.md",
+      "status": "Test",
+      "dependsOn": [
+        "MAC-25",
+        "MAC-26"
+      ],
+      "updated": "2026-09-21",
+      "notes": "MAC-25/26 compact shell and Work view verified; implementing slim contextual header and overflow menu. Compact one-row header, prioritized title/state, contextual Work/Agents, Terminal/Controls overflow, accessible 44px menu/backdrop/Escape/focus behavior, and bound/agent/busy contracts implemented. Full tests/vet/build/node/diff pass; manual phone smoke deferred to MAC-31."
+    },
+    {
+      "id": "MAC-30",
+      "seq": 30,
+      "title": "Desktop single-auxiliary-panel rule and conversation min-width",
+      "file": "tasks/30-desktop-single-auxiliary-panel-rule-and.md",
+      "status": "Test",
+      "dependsOn": [
+        "MAC-19"
+      ],
+      "updated": "2026-09-21",
+      "notes": "Compact hierarchy tasks verified; implementing desktop single-panel arbitration and conversation width protection. Desktop-only Work/Agents/Controls arbiter, synchronized ARIA state, 600px Chat minimum, capped panels, conversation-relative gutters, compact bypass, and contract tests implemented. Full tests/vet/build/node/diff pass; Terminal unchanged; manual viewport smoke deferred to MAC-31."
+    },
+    {
+      "id": "MAC-31",
+      "seq": 31,
+      "title": "Accessibility and contract-test hardening across breakpoints",
+      "file": "tasks/31-accessibility-and-contract-test-hardenin.md",
+      "status": "Test",
+      "dependsOn": [
+        "MAC-25",
+        "MAC-26",
+        "MAC-27",
+        "MAC-28",
+        "MAC-29",
+        "MAC-30"
+      ],
+      "updated": "2026-09-21",
+      "notes": "MAC-25 through MAC-30 verified; running accessibility, breakpoint, state, and regression hardening. Focus/ARIA/inert synchronization, Chat focus trap and restoration, top-most Escape precedence, menu keyboard navigation, accessible chips/labels/live state, visualViewport/safe-area/44px behavior, per-session state preservation, compact/desktop contracts, and Terminal xterm regression coverage implemented. gofmt, full tests/vet/node/build/diff/validate pass. Manual phone/landscape/virtual-keyboard/keyboard-only-browser/screen-reader checks were unavailable and remain explicit acceptance gaps."
+    },
+    {
+      "id": "MAC-32",
+      "seq": 32,
+      "title": "Compact transcript activity lines",
+      "file": "tasks/32-compact-transcript-activity-lines.md",
+      "status": "Test",
+      "dependsOn": [
+        "MAC-31"
+      ],
+      "updated": "2026-09-21",
+      "notes": "User requested compact color-coded transcript activity lines instead of large stacked cards. Converted passive transcript activity to compact color-coded lines: reasoning, tools, diffs, shell operations, errors, and unknown parts. Shell details are collapsed by default; permission/forms remain actionable cards. Focused and full tests, vet, JavaScript syntax, build, diff check, and validation pass."
+    },
+    {
+      "id": "MAC-33",
+      "seq": 33,
+      "title": "Dense transcript flow without message lifecycle actions",
+      "file": "tasks/33-dense-transcript-flow-without-message-li.md",
+      "status": "Test",
+      "dependsOn": [
+        "MAC-32"
+      ],
+      "updated": "2026-09-21",
+      "notes": "User requested removal of Fork/Preview revert transcript blocks and substantially tighter vertical rhythm. Removed Fork here and Preview revert controls from every transcript message; tightened message spacing, reduced collapsed activity rows to 24px, and removed redundant shell headings. Focused/full tests, vet, JavaScript syntax, build, diff check, and validation pass."
+    },
+    {
+      "id": "MAC-34",
+      "seq": 34,
+      "title": "Remove redundant Assistant transcript headers",
+      "file": "tasks/34-remove-redundant-assistant-transcript-he.md",
+      "status": "Test",
+      "dependsOn": [
+        "MAC-33"
+      ],
+      "updated": "2026-09-21",
+      "notes": "Removing the redundant Assistant message header left after transcript lifecycle actions were removed. Assistant message headers no longer render; responses begin directly with text or activity while user/system labels remain. Full tests/vet/node/build/diff pass. Validation passes with pre-existing documentation reference warnings."
+    },
+    {
+      "id": "MAC-35",
+      "seq": 35,
+      "title": "Subdue activity lines and remove You headers",
+      "file": "tasks/35-subdue-activity-lines-and-remove-you-hea.md",
+      "status": "Test",
+      "dependsOn": [
+        "MAC-34"
+      ],
+      "updated": "2026-09-21",
+      "notes": "Removing redundant You headings and reducing visual emphasis of reasoning and command activity lines. Removed You headings, tightened user bubble padding, and subdued reasoning/tool/shell rows with smaller type, 2px rules, and muted semantic blends. Full tests/vet/node/build/diff pass; validation passes with existing documentation reference warnings."
+    },
+    {
+      "id": "MAC-36",
+      "seq": 36,
+      "title": "Aggregate consecutive system activity with live status",
+      "file": "tasks/36-aggregate-consecutive-system-activity-wi.md",
+      "status": "Test",
+      "dependsOn": [
+        "MAC-35"
+      ],
+      "updated": "2026-09-21",
+      "notes": "Implementing grouped consecutive reasoning/tool/shell activity with running spinner/current action and settled System summary. Consecutive reasoning/tool/shell activity groups across messages under one System disclosure. Latest authoritative busy group shows accessible spinner and Thinking/Running tool/Running shell summary; settled groups show System. Nested expansion and lazy details survive polling via stable keys; history pagination/source markers updated; duplicate working row removed. Full tests/vet/node/build/diff pass; validation passes with existing documentation warnings."
+    },
+    {
+      "id": "MAC-37",
+      "seq": 37,
+      "title": "Hide synthetic OpenCode messages from Chat",
+      "file": "tasks/37-hide-synthetic-opencode-messages-from-ch.md",
+      "status": "Test",
+      "dependsOn": [
+        "MAC-36"
+      ],
+      "updated": "2026-09-21",
+      "notes": "Filtering OpenCode synthetic messages from visible transcript blocks while preserving lifecycle/inbox handling. Synthetic OpenCode messages are excluded from visible transcript blocks and do not split consecutive System activity; inbox/lifecycle handling remains unchanged. Full tests/vet/node/build/diff pass; validation passes with existing documentation warnings."
+    },
+    {
+      "id": "MAC-38",
+      "seq": 38,
+      "title": "Remove unsupported per-turn diff disclosure",
+      "file": "tasks/38-remove-unsupported-per-turn-diff-disclos.md",
+      "status": "Test",
+      "dependsOn": [
+        "MAC-37"
+      ],
+      "updated": "2026-09-21",
+      "notes": "Live reproduction confirmed OpenCode returns 404 for session diff requests using valid current user-message IDs; removing the unconditional broken disclosure. Removed unconditional Review turn changes disclosure from user messages after live valid-message requests confirmed upstream 404. Diff endpoint/renderer retained for future capability wiring. Full tests/vet/node/build/diff pass; validation passes with existing documentation warnings."
+    },
+    {
+      "id": "MAC-39",
+      "seq": 39,
+      "title": "Contextual message actions on click and press",
+      "file": "tasks/39-contextual-message-actions-on-click-and.md",
+      "status": "Test",
+      "dependsOn": [
+        "MAC-38"
+      ],
+      "updated": "2026-09-21",
+      "notes": "Implementing zero-flow contextual Copy/Fork/Revert menu on message click, tap, or keyboard activation with outside-click/Escape dismissal. User/assistant messages now expose an out-of-flow contextual Copy/Fork/Revert to here menu on click, tap, Enter, or Space; it closes on outside click, Escape, selection, or opening another message. Existing lifecycle handlers reused; copy excludes action metadata. Full tests/vet/node/build/diff pass; validation passes with existing documentation warnings."
+    },
+    {
+      "id": "MAC-40",
+      "seq": 40,
+      "title": "Visible context usage and interactive detail modals",
+      "file": "tasks/40-visible-context-usage-and-interactive-de.md",
+      "status": "Test",
+      "dependsOn": [
+        "MAC-39"
+      ],
+      "updated": "2026-09-21",
+      "notes": "Root causes identified: context was hidden in Controls and incorrectly derived from cumulative tokens; detail controls inherited inert from their main ancestor while Chat was open. Chat header now shows active post-compaction context from OpenCode context messages, refreshed every 15s; live session reports 164404/400000 (41%) instead of cumulative 605%. Controls separate cumulative accounting. Nested detail inert ownership now preserves the #detail ancestor path and inerts only siblings, restoring close/Escape/backdrop/Contents interaction. Full tests/vet/node/build/diff pass; validation passes with existing documentation warnings."
+    },
+    {
+      "id": "MAC-41",
+      "seq": 41,
+      "title": "Body-level detail host for Chat modal interaction",
+      "file": "tasks/41-body-level-detail-host-for-chat-modal-in.md",
+      "status": "Test",
+      "dependsOn": [
+        "MAC-40"
+      ],
+      "updated": "2026-09-22",
+      "notes": "Live Chrome pointer tests pass on current code; moving #detail to a direct body-level overlay to eliminate nested inert browser differences reported by the user. Moved the sole #detail host from nested board/index content to a direct body-level overlay. Fresh 390px headless Chrome pointer tests confirm plan Contents and close controls are hit targets, task close works, detail is non-inert with no inert ancestor. Full tests/vet/node/build/diff pass."
+    }
+  ]
+}

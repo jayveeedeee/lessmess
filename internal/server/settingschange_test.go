@@ -68,7 +68,7 @@ func TestSettingsChangeFreshDiscussion(t *testing.T) {
 		t.Fatalf("creates = %d prompts = %d", fake.creates, len(fake.prompts))
 	}
 	p := fake.prompts[0]
-	for _, want := range []string{"planning assistant", "Settings page", "session.agent", "build", "source: project", "scope when clicked: project"} {
+	for _, want := range []string{"planning and execution assistant", "Settings page", "session.agent", "build", "source: project", "scope when clicked: project"} {
 		if !strings.Contains(p, want) {
 			t.Errorf("prime missing %q", want)
 		}

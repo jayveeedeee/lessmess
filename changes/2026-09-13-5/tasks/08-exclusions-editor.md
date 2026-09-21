@@ -1,7 +1,3 @@
----
-id: LRN-08
-title: Exclusions editor and bell seed button
----
 
 # LRN-08: Exclusions editor and bell seed button
 

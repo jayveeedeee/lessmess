@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "id": "2026-09-12-10",
+  "title": "Bind change sessions to their change",
+  "prefix": "BSB",
+  "status": {
+    "value": "Done",
+    "derived": false
+  },
+  "created": "2026-09-12",
+  "updated": "2026-09-12",
+  "tasks": [
+    {
+      "id": "BSB-00",
+      "seq": 0,
+      "title": "Change-scoped prime prompt for change sessions",
+      "file": "tasks/00-change-session-prompt.md",
+      "status": "Done",
+      "updated": "2026-09-12",
+      "notes": "changePrompt + prime-on-create (fail deletes session); go vet + go test green"
+    },
+    {
+      "id": "BSB-01",
+      "seq": 1,
+      "title": "Scaffold guard for bound sessions",
+      "file": "tasks/01-scaffold-guard.md",
+      "status": "Done",
+      "updated": "2026-09-12",
+      "notes": "mapping.changeOf + 409 guard; bound/unassigned/unmapped paths tested; go vet + go test green"
+    },
+    {
+      "id": "BSB-02",
+      "seq": 2,
+      "title": "Live dogfood of session binding",
+      "file": "tasks/02-dogfood.md",
+      "status": "Done",
+      "dependsOn": [
+        "BSB-00",
+        "BSB-01"
+      ],
+      "updated": "2026-09-12",
+      "notes": "Bound-session curl → 409 with redirect; new board session primed and answered scoped to 2026-09-12-10; validate clean; artifacts removed"
+    }
+  ]
+}

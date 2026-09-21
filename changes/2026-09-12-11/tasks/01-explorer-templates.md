@@ -1,7 +1,3 @@
----
-id: EXD-01
-title: Explorer templates — split shell, dirs-only tree, detail fragment
----
 
 # EXD-01: Explorer templates — split shell, dirs-only tree, detail fragment
 

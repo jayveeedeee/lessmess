@@ -1,7 +1,3 @@
----
-id: GEN-00
-title: Placeholder titling flow and button-only UI
----
 
 # GEN-00: Placeholder titling flow and button-only UI
 

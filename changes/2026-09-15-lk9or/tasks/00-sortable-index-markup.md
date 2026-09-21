@@ -1,7 +1,3 @@
----
-id: IDX-00
-title: Sortable index table markup and server-emitted sort keys
----
 
 # IDX-00: Sortable index table markup and server-emitted sort keys
 

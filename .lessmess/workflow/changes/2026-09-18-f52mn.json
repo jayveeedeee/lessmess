@@ -1,0 +1,68 @@
+{
+  "version": 1,
+  "id": "2026-09-18-f52mn",
+  "title": "Workflow canon versioning and sync",
+  "prefix": "WCV",
+  "branch": "main",
+  "status": {
+    "value": "Done",
+    "derived": false
+  },
+  "created": "2026-09-18",
+  "updated": "2026-09-19",
+  "tasks": [
+    {
+      "id": "WCV-02",
+      "seq": 2,
+      "title": "Validate warning and prompt precedence",
+      "file": "tasks/02-warning-prompts.md",
+      "status": "Cancelled",
+      "updated": "2026-09-18",
+      "notes": "Nothing persisted to go stale; precedence → WCV-01, `workflow print` → WCV-00"
+    },
+    {
+      "id": "WCV-00",
+      "seq": 0,
+      "title": "Canon as single source: stamp, print command, init stops writing",
+      "file": "tasks/00-canon-stamp.md",
+      "status": "Cancelled",
+      "updated": "2026-09-18",
+      "notes": "Reshaped by the injection pivot; drift test deleted"
+    },
+    {
+      "id": "WCV-01",
+      "seq": 1,
+      "title": "Prime injection with precedence line",
+      "file": "tasks/01-prime-injection.md",
+      "status": "Cancelled",
+      "dependsOn": [
+        "WCV-00"
+      ],
+      "updated": "2026-09-18",
+      "notes": "Replaces startup auto-sync + hash guard"
+    },
+    {
+      "id": "WCV-03",
+      "seq": 3,
+      "title": "Root-row reconciliation in status sync",
+      "file": "tasks/03-root-row-sync.md",
+      "status": "Cancelled",
+      "updated": "2026-09-18",
+      "notes": "Independent; the tevr-core violation-3 blind spot"
+    },
+    {
+      "id": "WCV-04",
+      "seq": 4,
+      "title": "Repo remediation, README, end-to-end verification",
+      "file": "tasks/04-verification.md",
+      "status": "Cancelled",
+      "dependsOn": [
+        "WCV-00",
+        "WCV-01",
+        "WCV-03"
+      ],
+      "updated": "2026-09-18",
+      "notes": "Strips AGENTS.md only after injection lands; tevr-core is the acceptance environment"
+    }
+  ]
+}

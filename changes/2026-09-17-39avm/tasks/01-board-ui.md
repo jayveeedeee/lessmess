@@ -1,7 +1,3 @@
----
-id: HOF-01
-title: Handoffs listing endpoint and board "Spawn new change" action
----
 
 # HOF-01: Handoffs listing endpoint and board "Spawn new change" action
 

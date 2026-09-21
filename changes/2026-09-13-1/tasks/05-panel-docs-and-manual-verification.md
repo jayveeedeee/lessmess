@@ -1,7 +1,3 @@
----
-id: TUI-05
-title: Panel docs and manual verification
----
 
 # TUI-05: Panel docs and manual verification
 

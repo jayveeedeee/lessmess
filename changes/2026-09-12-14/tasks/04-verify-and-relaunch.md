@@ -1,7 +1,3 @@
----
-id: REN-04
-title: Full verification and relaunch on :9090
----
 
 # REN-04: Full verification and relaunch on :9090
 

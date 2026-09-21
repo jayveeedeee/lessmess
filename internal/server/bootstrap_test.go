@@ -44,7 +44,7 @@ func TestBootstrapFullLoop(t *testing.T) {
 	for _, a := range resp.Actions {
 		byPath[a.Path] = a.Action
 	}
-	for _, p := range []string{"AGENTS.md", "changes/ledger.md", ".gitignore", "opencode.json", "agentsdocs.json"} {
+	for _, p := range []string{"AGENTS.md", ".lessmess/workflow/index.json", ".gitignore", "opencode.json", "agentsdocs.json"} {
 		if byPath[p] != "created" {
 			t.Errorf("%s: %q, want created", p, byPath[p])
 		}

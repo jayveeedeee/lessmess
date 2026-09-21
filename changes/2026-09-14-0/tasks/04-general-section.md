@@ -1,7 +1,3 @@
----
-id: SPS-04
-title: General settings group for wizard re-entry
----
 
 # SPS-04: General settings group for wizard re-entry
 

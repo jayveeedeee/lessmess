@@ -1,7 +1,3 @@
----
-id: SET-04
-title: Settings page UI and client wiring
----
 
 # SET-04: Settings page UI and client wiring
 

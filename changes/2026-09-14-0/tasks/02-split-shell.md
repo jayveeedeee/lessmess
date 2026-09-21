@@ -1,7 +1,3 @@
----
-id: SPS-02
-title: Settings split-shell layout and content de-clutter
----
 
 # SPS-02: Settings split-shell layout and content de-clutter
 

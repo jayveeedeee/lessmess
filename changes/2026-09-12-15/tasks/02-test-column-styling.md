@@ -1,7 +1,3 @@
----
-id: TST-02
-title: Test pill styling in both themes
----
 
 # TST-02: Test pill styling in both themes
 

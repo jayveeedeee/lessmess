@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "id": "2026-09-17-d2x3h",
+  "title": "Remove board add-task form",
+  "prefix": "FORM",
+  "status": {
+    "value": "Done",
+    "derived": false
+  },
+  "created": "2026-09-17",
+  "updated": "2026-09-17",
+  "tasks": [
+    {
+      "id": "FORM-00",
+      "seq": 0,
+      "title": "Remove board add-task form from UI",
+      "file": "tasks/00-remove-add-task-form.md",
+      "status": "Done",
+      "updated": "2026-09-17",
+      "notes": "go vet/test green, validate OK, rebuilt binary: no form at root or drill-down, header/cards/crumbs intact."
+    }
+  ]
+}

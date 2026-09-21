@@ -1,7 +1,3 @@
----
-id: UIX-00
-title: Remove plain new-change form from index template
----
 
 # UIX-00: Remove plain new-change form from index template
 

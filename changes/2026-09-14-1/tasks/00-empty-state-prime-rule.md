@@ -1,7 +1,3 @@
----
-id: DSC-00
-title: Add empty-state rule to discussion prompt
----
 
 # DSC-00: Add empty-state rule to discussion prompt
 

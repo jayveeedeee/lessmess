@@ -1,7 +1,3 @@
----
-id: MTOC-03
-title: In-modal .md link interception
----
 
 # MTOC-03: In-modal .md link interception
 

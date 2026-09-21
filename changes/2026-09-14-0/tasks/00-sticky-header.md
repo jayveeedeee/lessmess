@@ -1,7 +1,3 @@
----
-id: SPS-00
-title: Sticky top menu bar
----
 
 # SPS-00: Sticky top menu bar
 

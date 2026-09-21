@@ -1,7 +1,3 @@
----
-id: OCI-07
-title: Dogfood and acceptance verification
----
 
 # OCI-07: Dogfood and acceptance verification
 

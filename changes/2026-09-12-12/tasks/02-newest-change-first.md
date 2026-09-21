@@ -1,7 +1,3 @@
----
-id: NAV-02
-title: Newest change at top of index
----
 
 # NAV-02: Newest change at top of index
 

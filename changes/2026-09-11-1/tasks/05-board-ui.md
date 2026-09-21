@@ -1,7 +1,3 @@
----
-id: KAN-05
-title: Board UI
----
 
 # KAN-05: Board UI
 

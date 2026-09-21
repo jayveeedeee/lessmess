@@ -19,12 +19,123 @@
 {{end}}
 {{end}}
 
+{{define "chatSnapshot"}}
+<div class="chat-snapshot" data-session="{{.SessionID}}" data-busy="{{.Busy}}" data-page="{{if .History}}history{{else}}latest{{end}}">
+  {{if .OlderCursor}}<div class="chat-history-control"><button type="button" class="btn-ghost" data-chat-load-older data-cursor="{{.OlderCursor}}">Load older messages</button></div>{{end}}
+  {{if and (not .History) (not .Blocks)}}<p class="chat-empty">No messages yet.</p>{{end}}
+  {{range .Blocks}}
+  <div class="chat-transcript-block chat-transcript-block-{{.Kind}}" data-chat-block data-chat-source="{{range .SourceIDs}}{{.}} {{end}}">
+    {{range .Markers}}<span hidden data-message="{{.ID}}" data-message-type="{{.Type}}"{{if .Status}} data-message-status="{{.Status}}"{{end}}></span>{{end}}
+    {{if eq .Kind "activity"}}
+    <details class="chat-system-group" data-chat-expand-key="{{.ExpandKey}}">
+      <summary{{if .Running}} role="status" aria-live="polite"{{end}}>{{if .Running}}<span class="spinner" aria-hidden="true"></span><span class="sr-only">OpenCode is working. </span>{{end}}<span>{{.Summary}}</span></summary>
+      <div class="chat-system-activity">
+      {{range .Activity}}
+        {{if eq .Kind "reasoning"}}<details class="chat-flow-line chat-flow-reasoning chat-reasoning" data-chat-expand-key="{{.ExpandKey}}"><summary>Reasoning</summary><div class="chat-flow-detail prose">{{.Part.Text}}</div></details>
+        {{else if eq .Kind "tool"}}<details class="chat-flow-line chat-flow-tool chat-tool" data-chat-expand-key="{{.ExpandKey}}" data-chat-lazy-key="{{.ExpandKey}}" data-chat-detail-url="{{.Part.ToolURL}}"><summary><span>{{.Part.ToolName}}</span><span class="chat-tool-status" data-status="{{.Part.ToolStatus}}">{{.Part.ToolStatus}}</span></summary><div class="chat-lazy-detail"><p class="chat-detail-prompt">Expand to load input, output, files, errors, and timing.</p></div></details>
+        {{else if eq .Kind "shell"}}<details class="chat-flow-line chat-flow-shell chat-shell-output" data-chat-expand-key="{{.ExpandKey}}" aria-label="Shell operation">
+          <summary><span>Shell</span><span class="chat-flow-meta">Status: {{.Shell.Status}}{{if .Shell.Exit}} · Exit: {{.Shell.Exit}}{{end}}</span></summary>
+          <div class="chat-flow-detail" aria-label="Published shell operation">
+            {{if .Shell.Command}}<div class="chat-detail-heading"><strong>Command</strong></div><pre>{{.Shell.Command}}</pre>{{end}}
+            {{if .Shell.Output}}<div class="chat-detail-heading"><strong>Output</strong></div><pre>{{.Shell.Output}}</pre>{{end}}
+            {{if .Shell.Truncated}}<p class="chat-truncated">Shell output truncated for browser display.</p>{{end}}
+          </div>
+        </details>{{end}}
+      {{end}}
+      </div>
+    </details>
+    {{else}}{{with .Message}}
+  <article class="chat-message chat-message-{{.Type}}"{{if or (eq .Type "assistant") (eq .Type "user")}} data-chat-message-actions data-chat-message-id="{{.ID}}" tabindex="0" aria-haspopup="menu" aria-expanded="false"{{end}}>
+    {{if and (ne .Type "assistant") (ne .Type "user")}}<header>{{.Label}}</header>{{end}}
+    {{if .Text}}<div class="chat-markdown prose">{{.Text}}</div>{{end}}
+    {{if .Files}}<div class="chat-message-files">{{range .Files}}
+      <div class="chat-message-file {{if .Reference}}is-reference{{end}}">
+        {{if .Image}}<a href="{{.URL}}" target="_blank" rel="noreferrer"><img src="{{.URL}}" alt="Preview of {{.Name}}" loading="lazy"></a>{{end}}
+        <span>{{if .Reference}}Reference: {{end}}{{.Name}}</span>{{if .MIME}}<small>{{.MIME}}</small>{{end}}
+        <a href="{{.URL}}" target="_blank" rel="noreferrer">Open</a>
+        <a href="{{.URL}}?download=1" download="{{.Name}}">Download</a>
+      </div>
+    {{end}}</div>{{end}}
+    {{range .Parts}}
+      {{if eq .Kind "text"}}<div class="chat-markdown prose">{{.Text}}</div>
+      {{else}}<div class="chat-flow-line chat-flow-unknown chat-unknown">Unsupported message part: <code>{{.UnknownType}}</code></div>{{end}}
+    {{end}}
+    {{if .Error}}<p class="chat-flow-line chat-flow-error chat-error">{{.Error}}</p>{{end}}
+    {{if .DiffURL}}<details class="chat-flow-line chat-flow-diff chat-turn-diff" data-chat-expand-key="diff:{{.ID}}" data-chat-lazy-key="diff:{{.ID}}" data-chat-detail-url="{{.DiffURL}}"><summary>Review turn changes</summary><div class="chat-lazy-detail"><p class="chat-detail-prompt">Expand to load the affected files and diff.</p></div></details>{{end}}
+    {{if or (eq .Type "assistant") (eq .Type "user")}}<div class="chat-message-menu" role="menu" aria-label="Message actions" hidden>
+      <button type="button" role="menuitem" data-chat-copy-message>Copy</button>
+      <button type="button" role="menuitem" data-chat-fork="{{.ID}}">Fork</button>
+      <button type="button" role="menuitem" data-chat-revert="{{.ID}}">Revert to here</button>
+    </div>{{end}}
+  </article>
+    {{end}}{{end}}
+  </div>
+  {{end}}
+
+  {{range .Permissions}}
+  <section class="chat-interaction chat-permission" data-permission="{{.ID}}">
+    <strong>Permission requested</strong>
+    {{if .Message}}<p>{{.Message}}</p>{{else}}<p>{{.Action}}</p>{{end}}
+    {{if .Resources}}<ul>{{range .Resources}}<li><code>{{.}}</code></li>{{end}}</ul>{{end}}
+    <div class="chat-interaction-actions">
+      <button type="button" data-permission-decision="once">Allow once</button>
+      <button type="button" data-permission-decision="always">Always allow</button>
+      <button type="button" class="secondary" data-permission-decision="reject">Reject</button>
+    </div>
+  </section>
+  {{end}}
+
+  {{range .Forms}}
+  <form class="chat-interaction chat-form" data-chat-form="{{.ID}}">
+    <strong>{{if .Title}}{{.Title}}{{else}}Input requested{{end}}</strong>
+    {{range .Fields}}
+    <label class="chat-field">
+      <span>{{.Title}}{{if .Required}} *{{end}}</span>
+      {{if .Description}}<small>{{.Description}}</small>{{end}}
+      {{if eq .Type "boolean"}}<input name="{{.Key}}" type="checkbox" data-field-type="boolean" {{if .Checked}}checked{{end}}>
+      {{else if eq .Type "multiselect"}}<select name="{{.Key}}" data-field-type="multiselect" multiple {{if .Required}}required{{end}}>{{range .Options}}<option value="{{.Value}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>{{end}}</select>
+      {{else if eq .Type "external"}}<a href="{{.URL}}" target="_blank" rel="noreferrer">Open external form</a>
+      {{else if or (eq .Type "number") (eq .Type "integer")}}<input name="{{.Key}}" type="number" data-field-type="{{.Type}}" value="{{.Default}}" {{if eq .Type "integer"}}step="1"{{else}}step="any"{{end}} {{if .Minimum}}min="{{.Minimum}}"{{end}} {{if .Maximum}}max="{{.Maximum}}"{{end}} {{if .Required}}required{{end}}>
+      {{else if .Options}}<select name="{{.Key}}" data-field-type="string" {{if .Required}}required{{end}}><option value=""></option>{{range .Options}}<option value="{{.Value}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>{{end}}</select>
+      {{else}}<input name="{{.Key}}" type="text" data-field-type="string" value="{{.Default}}" placeholder="{{.Placeholder}}" {{if .Required}}required{{end}}>{{end}}
+    </label>
+    {{end}}
+    <div class="chat-interaction-actions"><button type="submit">Submit</button></div>
+  </form>
+  {{end}}
+</div>
+{{end}}
+
+{{define "chatToolDetail"}}
+<div class="chat-tool-detail">
+  <div class="chat-detail-meta"><strong>{{.Name}}</strong><span class="chat-tool-status" data-status="{{.Status}}">{{.Status}}</span>{{if .Timing}}<span>{{.Timing}}</span>{{end}}</div>
+  {{if .Input}}<section><div class="chat-detail-heading"><strong>Input</strong><button type="button" class="btn-ghost" data-chat-copy>Copy</button></div><pre class="chat-copy-source">{{.Input}}</pre></section>{{end}}
+  {{if .Error}}<section><div class="chat-detail-heading"><strong>Error</strong><button type="button" class="btn-ghost" data-chat-copy>Copy</button></div><pre class="chat-copy-source chat-error">{{.Error}}</pre></section>{{end}}
+  {{if .Output}}<section><div class="chat-detail-heading"><strong>Output</strong><button type="button" class="btn-ghost" data-chat-copy>Copy</button></div><pre class="chat-tool-output chat-copy-source">{{.Output}}</pre></section>{{end}}
+  {{if .Files}}<section><strong>Files</strong><ul class="chat-tool-files">{{range .Files}}<li><code>{{if .Name}}{{.Name}}{{else}}unnamed file{{end}}</code>{{if .MIME}} <span>{{.MIME}}</span>{{end}}{{if .URI}}<small>{{.URI}}</small>{{end}}</li>{{end}}</ul></section>{{end}}
+  {{if .NextURL}}<button type="button" class="btn-ghost chat-load-more" data-chat-load-more="{{.NextURL}}" title="Loads the next browser-transfer chunk; OpenCode returned one result.">Load more output</button><small class="chat-transfer-note">Transferred in bounded browser chunks, not upstream pages.</small>{{else if .Truncated}}<p class="chat-truncated">Tool detail capped at 1 MiB.</p>{{end}}
+</div>
+{{end}}
+
+{{define "chatDiff"}}
+<div class="chat-diff">
+  <div class="chat-diff-summary"><strong>{{len .Files}} affected files</strong><span class="diff-add">+{{.Additions}}</span><span class="diff-delete">-{{.Deletions}}</span></div>
+  {{if not .Files}}<p>No file changes recorded for this turn.</p>{{end}}
+  {{range .Files}}<details class="chat-diff-file" open><summary><code>{{.File}}</code><span>{{.Status}}</span><span class="diff-add">+{{.Additions}}</span><span class="diff-delete">-{{.Deletions}}</span></summary>
+    {{if .Fallback}}<p class="chat-diff-fallback">{{.Fallback}}</p>{{else}}<div class="chat-detail-heading"><span></span><button type="button" class="btn-ghost" data-chat-copy>Copy patch</button></div><pre class="chat-unified-diff chat-copy-source">{{range .Lines}}<span class="diff-line diff-{{.Kind}}">{{.Text}}</span>
+{{end}}</pre>{{end}}
+    {{if .Truncated}}<p class="chat-truncated">Patch truncated for browser transfer.</p>{{end}}
+  </details>{{end}}
+  {{if .Truncated}}<p class="chat-truncated">Diff truncated to keep the browser response bounded.</p>{{end}}
+</div>
+{{end}}
+
 {{define "taskDetail"}}
-<div class="modal" data-doc="{{.Doc}}">
+<div class="modal" data-doc="{{.Doc}}" role="dialog" aria-modal="true" aria-labelledby="detail-title">
   <div class="modal-head">
     <span class="chip">{{.Task.ID}}</span>
     {{if .Status}}<span class="pill status-{{.Status | statusClass}}">{{.Status}}</span>{{end}}
-    <span class="title">{{.Task.Title}}</span>
+    <span class="title" id="detail-title">{{.Task.Title}}</span>
     <button type="button" class="modal-close" data-close-detail aria-label="Close">✕</button>
   </div>
   <div class="modal-panes">
@@ -35,10 +146,10 @@
 {{end}}
 
 {{define "planDetail"}}
-<div class="modal">
+<div class="modal" role="dialog" aria-modal="true" aria-labelledby="detail-title">
   <div class="modal-head">
     <span class="chip">{{.ID}}</span>
-    <span class="title">Plan</span>
+    <span class="title" id="detail-title">Plan</span>
     <button type="button" class="modal-close" data-close-detail aria-label="Close">✕</button>
   </div>
   <div class="modal-panes">
@@ -49,10 +160,10 @@
 {{end}}
 
 {{define "reviewDetail"}}
-<div class="modal">
+<div class="modal" role="dialog" aria-modal="true" aria-labelledby="detail-title">
   <div class="modal-head">
     <span class="chip">{{.ID}}</span>
-    <span class="title">Review</span>
+    <span class="title" id="detail-title">Review</span>
     <button type="button" class="modal-close" data-close-detail aria-label="Close">✕</button>
   </div>
   <div class="modal-panes">
@@ -63,10 +174,10 @@
 {{end}}
 
 {{define "ledgerDetail"}}
-<div class="modal" data-doc="{{.Doc}}">
+<div class="modal" data-doc="{{.Doc}}" role="dialog" aria-modal="true" aria-labelledby="detail-title">
   <div class="modal-head">
     <span class="chip">{{.ID}}</span>
-    <span class="title">Ledger</span>
+    <span class="title" id="detail-title">Ledger</span>
     <button type="button" class="modal-close" data-close-detail aria-label="Close">✕</button>
   </div>
   <div class="modal-panes">

@@ -1,7 +1,3 @@
----
-id: KAN-08
-title: UI polish — cleaner board and task detail
----
 
 # KAN-08: UI polish — cleaner board and task detail
 

@@ -1,5 +1,6 @@
 # Tooling state (see AGENTS.md, "Tooling state")
-.lessmess/
+.lessmess/*
+!.lessmess/workflow/
 
 # Local build artifact (root binary only — do NOT ignore cmd/lessmess/)
 /lessmess

@@ -1,7 +1,3 @@
----
-id: PSB-03
-title: parentID reconciler on session list
----
 
 # PSB-03: parentID reconciler on session list
 

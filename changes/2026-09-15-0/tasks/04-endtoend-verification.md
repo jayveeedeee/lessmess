@@ -1,7 +1,3 @@
----
-id: MTOC-04
-title: End-to-end verification and checks
----
 
 # MTOC-04: End-to-end verification and checks
 

@@ -1,7 +1,3 @@
----
-id: LRN-01
-title: One-time curation of all AGENTS.md auto sections
----
 
 # LRN-01: One-time curation of all AGENTS.md auto sections
 

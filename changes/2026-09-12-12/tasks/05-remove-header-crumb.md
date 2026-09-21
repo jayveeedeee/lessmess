@@ -1,7 +1,3 @@
----
-id: NAV-05
-title: Remove obsolete header crumb
----
 
 # NAV-05: Remove obsolete header crumb
 

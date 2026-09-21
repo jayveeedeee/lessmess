@@ -1,7 +1,3 @@
----
-id: SPS-01
-title: Settings scope strip with segmented control
----
 
 # SPS-01: Settings scope strip with segmented control
 

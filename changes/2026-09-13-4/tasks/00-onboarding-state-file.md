@@ -1,7 +1,3 @@
----
-id: ONB-00
-title: Onboarding state file helpers
----
 
 # ONB-00: Onboarding state file helpers
 

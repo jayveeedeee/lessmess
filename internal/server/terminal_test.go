@@ -151,8 +151,9 @@ func TestTerminalWSConfigFailureFallsBack(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", inherited)
 	srv, s := terminalTestServer(t)
 	s.SpawnCommand = envEchoSpawn
-	// Break config generation: .lessmess exists as a file, so MkdirAll fails.
-	if err := os.WriteFile(filepath.Join(s.st.Dir, store.StateDirName), []byte("blocked"), 0o644); err != nil {
+	// Break config generation: .lessmess/xdg exists as a file, so
+	// MkdirAll for xdg/opencode fails.
+	if err := os.WriteFile(filepath.Join(s.st.Dir, store.StateDirName, "xdg"), []byte("blocked"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

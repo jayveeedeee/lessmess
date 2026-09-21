@@ -1,7 +1,3 @@
----
-id: SET-01
-title: opencode client session defaults support
----
 
 # SET-01: opencode client session defaults support
 

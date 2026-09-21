@@ -1,7 +1,3 @@
----
-id: IGN-00
-title: Anchor artifact pattern and restore main.go tracking
----
 
 # IGN-00: Anchor artifact pattern and restore main.go tracking
 

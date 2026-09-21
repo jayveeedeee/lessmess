@@ -1,7 +1,3 @@
----
-id: SCF-01
-title: Discussion-session endpoint and prime prompt
----
 
 # SCF-01: Discussion-session endpoint and prime prompt
 

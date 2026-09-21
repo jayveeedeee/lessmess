@@ -1,7 +1,3 @@
----
-id: SET-07
-title: Settings nav in explorer selection style
----
 
 # SET-07: Settings nav in explorer selection style
 

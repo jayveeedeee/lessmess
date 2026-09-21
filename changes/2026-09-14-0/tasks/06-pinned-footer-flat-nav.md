@@ -1,7 +1,3 @@
----
-id: SPS-06
-title: Pinned footer and flat full-width side-menu selections
----
 
 # SPS-06: Pinned footer and flat full-width side-menu selections
 

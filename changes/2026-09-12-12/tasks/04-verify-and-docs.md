@@ -1,7 +1,3 @@
----
-id: NAV-04
-title: End-to-end verification and README update
----
 
 # NAV-04: End-to-end verification and README update
 

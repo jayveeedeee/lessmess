@@ -1,7 +1,3 @@
----
-id: DSC-01
-title: Rebuild and verify fresh opening live
----
 
 # DSC-01: Rebuild and verify fresh opening live
 

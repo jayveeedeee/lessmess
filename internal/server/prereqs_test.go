@@ -159,8 +159,8 @@ func TestPrereqsPartialChangesTree(t *testing.T) {
 		t.Fatalf("json: %v", err)
 	}
 	c := prereqByID(t, resp, "changes-present")
-	if c.Status != "warn" || !strings.Contains(c.Detail, "no root ledger") {
-		t.Errorf("changes-present = %+v, want warn about the missing root ledger", c)
+	if c.Status != "warn" || !strings.Contains(c.Detail, "no workflow index") {
+		t.Errorf("changes-present = %+v, want warn about the missing workflow index", c)
 	}
 	if !resp.Ready {
 		t.Error("a partial tree must not block ready (bootstrap fixes it)")

@@ -1,7 +1,3 @@
----
-id: PROJ-03
-title: Onboarding wizard Project name step
----
 
 # PROJ-03: Onboarding wizard Project name step
 

@@ -1,7 +1,3 @@
----
-id: REN-00
-title: Module path rename and import sweep
----
 
 # REN-00: Module path rename and import sweep
 

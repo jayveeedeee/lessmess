@@ -1,0 +1,85 @@
+{
+  "version": 1,
+  "id": "2026-09-15-2",
+  "title": "Per-task subagent sessions",
+  "prefix": "PSB",
+  "status": {
+    "value": "Done",
+    "derived": false
+  },
+  "created": "2026-09-15",
+  "updated": "2026-09-16",
+  "tasks": [
+    {
+      "id": "PSB-00",
+      "seq": 0,
+      "title": "Spike: subagent child promptability and ID visibility",
+      "file": "tasks/00-spike-subagent-session-basics.md",
+      "status": "Done",
+      "updated": "2026-09-16",
+      "notes": "Q1 YES (prompted finished explore child, replied OK under its agent config). Q2 NO (parent model never sees child ID). Title==description confirmed. Evidence in task notes."
+    },
+    {
+      "id": "PSB-01",
+      "seq": 1,
+      "title": "Mapping schema: task and parent fields",
+      "file": "tasks/01-mapping-task-fields.md",
+      "status": "Done",
+      "updated": "2026-09-16",
+      "notes": "`go vet` clean; full `go test ./...` green. Old-shaped files load without empty keys; new fields round-trip; listByTask verified; client parses parentID."
+    },
+    {
+      "id": "PSB-05",
+      "seq": 5,
+      "title": "Board UI: per-task sub list with talk button",
+      "file": "tasks/05-board-sub-list.md",
+      "status": "Done",
+      "dependsOn": [
+        "PSB-00",
+        "PSB-01",
+        "PSB-02",
+        "PSB-03"
+      ],
+      "updated": "2026-09-16",
+      "notes": "`go vet` + full suite green; binary rebuilt. Live (scratch repo, port 9099): board HTML serves #board-subs, task-sessions bind 201, sessions payload carries task/parent, served app.js has the chip renderer. Browser-visual check awaits the user's 9090 server restart."
+    },
+    {
+      "id": "PSB-04",
+      "seq": 4,
+      "title": "changePrompt delegation and bind instructions",
+      "file": "tasks/04-change-prompt-delegation.md",
+      "status": "Done",
+      "dependsOn": [
+        "PSB-00",
+        "PSB-02"
+      ],
+      "updated": "2026-09-16",
+      "notes": "`go vet` clean; full suite green; prompt pins extended (Delegation is optional, description prefix, title verbatim). The new prime reaches only sessions created after the 9090 server restart (user step)."
+    },
+    {
+      "id": "PSB-02",
+      "seq": 2,
+      "title": "Bind endpoint for task sessions",
+      "file": "tasks/02-bind-endpoint.md",
+      "status": "Done",
+      "dependsOn": [
+        "PSB-00",
+        "PSB-01"
+      ],
+      "updated": "2026-09-16",
+      "notes": "`go vet` clean; full suite green. Guard matrix tested: 201 happy (Parent from live session), 200 idempotent retry, 409 rebind/wrong-change caller/taken sub, 422 unknown task + dead sub, 404 unknown change, 503 no service."
+    },
+    {
+      "id": "PSB-03",
+      "seq": 3,
+      "title": "parentID reconciler on session list",
+      "file": "tasks/03-parentid-reconciler.md",
+      "status": "Done",
+      "dependsOn": [
+        "PSB-01"
+      ],
+      "updated": "2026-09-16",
+      "notes": "`go vet` clean; full suite green. Children of bound sessions map on list serve: task from title prefix (unknown/absent prefixes map taskless), deduped across serves, foreign parents ignored, service failure fail-open."
+    }
+  ]
+}

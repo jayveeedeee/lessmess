@@ -1,19 +1,15 @@
 package store
 
 import (
-	"errors"
 	"fmt"
 	"os"
-	"path"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
-
-	"lessmess/internal/model"
 )
 
-// Violation is one breach of the AGENTS.md validation contract.
+// Violation is one breach of the workflow validation contract.
 type Violation struct {
 	Rule int
 	File string
@@ -24,28 +20,42 @@ func (v Violation) String() string {
 	return fmt.Sprintf("%s: rule %d: %s", v.File, v.Rule, v.Msg)
 }
 
-// Validate checks the seven machine-checkable rules from AGENTS.md.
-// Rule 7 (row order reflects intended priority) is advisory by nature and
-// cannot be checked mechanically; it is intentionally not implemented.
+// Validate checks the machine-checkable rules of the JSON workflow state:
+//
+//   - Rule 1: prose directory names are valid change IDs.
+//   - Rule 2: every change has plan.md and tasks/.
+//   - Rule 3: prose tree and state agree (referenced files exist, no
+//     orphan files, no stray directories).
+//   - Rule 4: status vocabularies.
+//   - Rule 5: state schema (the model's Validate issues).
+//   - Rule 6: index and prose tree agree (every entry resolvable, every
+//     directory indexed, archive placement consistent).
+//
+// Row order (priority) is advisory and cannot be checked mechanically.
 func (s *Store) Validate() []Violation {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	var out []Violation
 
-	// Parse failures are violations of rules 4 (status vocabulary) and 5
-	// (pinned schemas) — the parser enforces both strictly.
-	if s.rootErr != nil {
-		out = append(out, Violation{Rule: 5, File: "changes/ledger.md", Msg: s.rootErr.Error()})
+	if s.indexErr != nil {
+		out = append(out, Violation{Rule: 5, File: "workflow/index.json", Msg: s.indexErr.Error()})
 	}
-	for _, c := range s.changes {
+	// Unresolved index entries: no prose directory in the main tree,
+	// archive, or worktree (rule 6).
+	for _, c := range s.sortedUnresolved() {
+		out = append(out, Violation{Rule: 6, File: "changes/" + c.ID, Msg: "index entry " + c.ID + " has no prose directory (main tree, archive, or worktree)"})
+	}
+	for _, c := range s.sortedAll() {
 		if c.Err != nil {
-			out = append(out, Violation{Rule: 5, File: "changes/" + c.ID + "/ledger.md", Msg: c.Err.Error()})
+			out = append(out, Violation{Rule: 5, File: "workflow/changes/" + c.ID + ".json", Msg: c.Err.Error()})
 		}
+		if c.Dir == "" {
+			continue
+		}
+		out = append(out, validateChange(c)...)
 	}
 
 	out = append(out, s.validateDirNames()...)
-	out = append(out, s.validateRequiredFiles()...)
-	out = append(out, s.validateTaskTree()...)
 	out = append(out, s.validateRootConsistency()...)
 
 	sort.Slice(out, func(i, j int) bool {
@@ -57,15 +67,63 @@ func (s *Store) Validate() []Violation {
 	return out
 }
 
-// Rule 1: change directories match changes/YYYY-MM-DD-N/ with valid dates.
+// sortedAll returns active plus archived changes sorted by ID.
+func (s *Store) sortedAll() []*Change {
+	out := append(sortedChanges(s.changes), sortedChanges(s.archived)...)
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out
+}
+
+// sortedUnresolved returns unresolved index entries sorted by ID.
+func (s *Store) sortedUnresolved() []*Change { return sortedChanges(s.unresolved) }
+
+// validateChange checks one change's state schema (rules 4/5), required
+// prose files (rule 2), and state/prose agreement (rule 3).
+func validateChange(c *Change) []Violation {
+	var out []Violation
+	if c.State == nil {
+		return out
+	}
+	for _, issue := range c.State.Validate() {
+		rule := 5
+		if strings.Contains(issue, "status") {
+			rule = 4
+		}
+		out = append(out, Violation{Rule: rule, File: "changes/" + c.ID, Msg: issue})
+	}
+	// Rule 2: required prose files.
+	for _, req := range []string{"plan.md", "tasks"} {
+		p := filepath.Join(c.Dir, req)
+		st, err := os.Stat(p)
+		missing := err != nil || (req == "tasks" && !st.IsDir()) || (req != "tasks" && st.IsDir())
+		if missing {
+			out = append(out, Violation{Rule: 2, File: "changes/" + c.ID + "/" + req, Msg: "required path missing"})
+		}
+	}
+	// Rule 3: referenced prose files exist; no orphans or strays.
+	for i := range c.State.Tasks {
+		t := &c.State.Tasks[i]
+		if _, err := os.Stat(filepath.Join(c.Dir, filepath.FromSlash(t.File))); err != nil {
+			out = append(out, Violation{Rule: 3, File: "changes/" + c.ID + "/" + t.File, Msg: "task " + t.ID + " references a missing prose file"})
+		}
+	}
+	for _, f := range c.OrphanFiles {
+		out = append(out, Violation{Rule: 3, File: "changes/" + c.ID + "/" + f, Msg: "prose file is not referenced by any task in the state"})
+	}
+	for _, d := range c.StrayDirs {
+		out = append(out, Violation{Rule: 3, File: "changes/" + c.ID + "/" + d, Msg: "directory under tasks/ is not part of any sub plan"})
+	}
+	return out
+}
+
+// Rule 1: change directories match changes/YYYY-MM-DD-(N|xxxxx)/ with
+// valid dates; unexpected entries under changes/ are violations.
 func (s *Store) validateDirNames() []Violation {
 	var out []Violation
 	top, _ := os.ReadDir(s.ChangesDir)
 	for _, e := range top {
 		if !e.IsDir() {
-			if e.Name() != "ledger.md" {
-				out = append(out, Violation{Rule: 1, File: "changes/" + e.Name(), Msg: "unexpected file in changes/"})
-			}
+			out = append(out, Violation{Rule: 1, File: "changes/" + e.Name(), Msg: "unexpected file in changes/ (prose only; state lives in .lessmess/workflow/)"})
 			continue
 		}
 		if e.Name() == "archive" {
@@ -92,195 +150,32 @@ func validChangeDirName(name string) bool {
 	return err == nil
 }
 
-// Rule 2: every change directory contains plan.md, ledger.md, tasks/.
-func (s *Store) validateRequiredFiles() []Violation {
-	var out []Violation
-	for _, c := range s.all() {
-		for _, req := range []string{"plan.md", "ledger.md", "tasks"} {
-			p := filepath.Join(c.Dir, req)
-			st, err := os.Stat(p)
-			missing := err != nil || (req == "tasks" && !st.IsDir()) || (req != "tasks" && st.IsDir())
-			if missing {
-				out = append(out, Violation{Rule: 2, File: "changes/" + c.ID + "/" + req, Msg: "required file missing"})
-			}
-		}
-	}
-	return out
-}
-
-// validateTaskTree checks rule 3 (and the container parts of rules 2 and
-// 5) recursively over the change's task tree: every task file has exactly
-// one row in its governing ledger and vice versa, IDs and filename
-// sequences agree, dotted ID depth matches the nesting, containers are
-// well-formed, and directories under tasks/ always match a sibling task
-// file.
-func (s *Store) validateTaskTree() []Violation {
-	var out []Violation
-	for _, c := range s.all() {
-		file := "changes/" + c.ID + "/"
-		for _, d := range c.StrayDirs {
-			out = append(out, Violation{Rule: 3, File: file + d, Msg: "directory under tasks/ has no matching sibling task file"})
-		}
-		if c.Ledger != nil {
-			// Top-level rows link relative to the change directory.
-			out = append(out, validateLevel(c, "", c.Ledger.Rows, c.Roots)...)
-		}
-		c.WalkTasks(func(n *TaskNode) bool {
-			if !n.HasContainer() {
-				return true
-			}
-			rel := n.ContainerRel()
-			switch {
-			case errors.Is(n.ContainerErr, os.ErrNotExist):
-				out = append(out, Violation{Rule: 2, File: file + rel + "/ledger.md", Msg: "task container missing ledger.md"})
-			case n.ContainerErr != nil:
-				out = append(out, Violation{Rule: 5, File: file + rel + "/ledger.md", Msg: n.ContainerErr.Error()})
-			}
-			if st, err := os.Stat(filepath.Join(c.Dir, filepath.FromSlash(rel), "tasks")); err != nil || !st.IsDir() {
-				out = append(out, Violation{Rule: 2, File: file + rel + "/tasks", Msg: "task container missing tasks/ directory"})
-			}
-			if n.Container != nil {
-				out = append(out, validateLevel(c, rel+"/", n.Container.Rows, n.Children)...)
-			}
-			return true
-		})
-	}
-	return out
-}
-
-// validateLevel cross-checks one governing ledger's rows against the
-// nodes of the level it governs. hrefPrefix is "" for the change ledger
-// (its rows already link change-relative) or "<container>/" for container
-// ledgers (their rows link container-relative).
-func validateLevel(c *Change, hrefPrefix string, rows []model.TaskRow, nodes []*TaskNode) []Violation {
-	var out []Violation
-	file := "changes/" + c.ID + "/"
-	nodeByHref := make(map[string]*TaskNode, len(nodes))
-	for _, n := range nodes {
-		nodeByHref[n.Href] = n
-	}
-	rowHrefs := make(map[string]bool, len(rows))
-	for _, r := range rows {
-		href := hrefPrefix + r.Href
-		rowHrefs[href] = true
-		n := nodeByHref[href]
-		if n == nil {
-			out = append(out, Violation{Rule: 3, File: file + href, Msg: fmt.Sprintf("ledger row %s has no parseable task file", r.ID)})
-			continue
-		}
-		if n.FileErr != nil {
-			out = append(out, Violation{Rule: 3, File: file + href, Msg: n.FileErr.Error()})
-		} else if n.File != nil && n.File.ID != r.ID {
-			out = append(out, Violation{Rule: 3, File: file + href, Msg: fmt.Sprintf("frontmatter id %q != ledger row %q", n.File.ID, r.ID)})
-		}
-		if seqOf(href) != model.LastTaskSegment(r.ID) {
-			out = append(out, Violation{Rule: 3, File: file + href, Msg: fmt.Sprintf("filename sequence %q != id segment %q", seqOf(href), model.LastTaskSegment(r.ID))})
-		}
-		if !model.DottedSegmentsValid(r.ID) {
-			out = append(out, Violation{Rule: 3, File: file + href, Msg: fmt.Sprintf("task id %q has malformed dotted segments (want two-digit)", r.ID)})
-		}
-		if depth := 1 + ancestors(n); model.TaskIDDepth(r.ID) != depth {
-			out = append(out, Violation{Rule: 3, File: file + href, Msg: fmt.Sprintf("task id %q depth %d != nesting depth %d", r.ID, model.TaskIDDepth(r.ID), depth)})
-		}
-	}
-	for _, n := range nodes {
-		if rowHrefs[n.Href] {
-			continue
-		}
-		if n.FileErr != nil {
-			out = append(out, Violation{Rule: 3, File: file + n.Href, Msg: "unparseable task file has no ledger row: " + n.FileErr.Error()})
-			continue
-		}
-		id := n.ID
-		if id == "" {
-			id = n.Href
-		}
-		out = append(out, Violation{Rule: 3, File: file + n.Href, Msg: fmt.Sprintf("task file %s has no ledger row", id)})
-	}
-	return out
-}
-
-// ancestors returns the number of ancestor tasks of n (0 for top level).
-func ancestors(n *TaskNode) int {
-	d := 0
-	for p := n.Parent; p != nil; p = p.Parent {
-		d++
-	}
-	return d
-}
-
-// seqOf extracts the filename sequence from a task href ("…/01-x.md" → "01").
-func seqOf(href string) string {
-	base := path.Base(href)
-	if i := strings.Index(base, "-"); i > 0 {
-		return base[:i]
-	}
-	return strings.TrimSuffix(base, ".md")
-}
-
-// CloseOutReady reports whether every non-cancelled task in the change's
-// whole tree is Test or Done (the recursive close-out gate). It lists the
-// offending task IDs (or hrefs for broken files) when not ready.
-func (s *Store) CloseOutReady(changeID string) (bool, []string, error) {
-	c, err := s.Change(changeID)
-	if err != nil {
-		return false, nil, err
-	}
-	var offending []string
-	c.WalkTasks(func(n *TaskNode) bool {
-		st := n.status()
-		if st != model.StatusTest && st != model.StatusDone && st != model.StatusCancelled {
-			if n.ID != "" {
-				offending = append(offending, n.ID)
-			} else {
-				offending = append(offending, n.Href)
-			}
-		}
-		return true
-	})
-	return len(offending) == 0, offending, nil
-}
-
-// Rule 6: the root ledger has one row per change directory (including
-// archived ones) and root status agrees with each change ledger.
+// Rule 6: index and prose tree agree — every changes/<id> directory has
+// an index entry, and archived entries live under changes/archive/.
 func (s *Store) validateRootConsistency() []Violation {
 	var out []Violation
-	if s.root == nil {
-		return out // already reported as rule 5
-	}
-	rowCount := map[string]int{}
-	for _, r := range s.root.Rows {
-		rowCount[r.Change]++
-		found := false
-		for _, c := range s.all() {
-			if c.ID == r.Change {
-				found = true
-				if c.Ledger != nil && c.Ledger.Overall != r.Status {
-					out = append(out, Violation{Rule: 6, File: "changes/ledger.md", Msg: fmt.Sprintf("root status %q != %s overall status %q", r.Status, r.Change, c.Ledger.Overall)})
+	indexed := map[string]bool{}
+	if s.index != nil {
+		for _, e := range s.index.Changes {
+			indexed[e.ID] = true
+			if e.Archived {
+				expected := filepath.Join(s.ChangesDir, "archive", e.ID)
+				if c := s.archived[e.ID]; c != nil && c.Dir != "" && c.Dir != expected {
+					out = append(out, Violation{Rule: 6, File: "changes/" + e.ID, Msg: "archived change's prose is not under changes/archive/" + e.ID})
 				}
 			}
 		}
-		if !found {
-			out = append(out, Violation{Rule: 6, File: "changes/ledger.md", Msg: fmt.Sprintf("root row %s has no change directory", r.Change)})
+	}
+	for _, base := range []string{s.ChangesDir, filepath.Join(s.ChangesDir, "archive")} {
+		entries, _ := os.ReadDir(base)
+		for _, e := range entries {
+			if !e.IsDir() || e.Name() == "archive" || !validChangeDirName(e.Name()) {
+				continue
+			}
+			if !indexed[e.Name()] {
+				out = append(out, Violation{Rule: 6, File: "changes/" + e.Name(), Msg: "change directory has no index entry"})
+			}
 		}
-	}
-	for _, c := range s.all() {
-		if rowCount[c.ID] == 0 {
-			out = append(out, Violation{Rule: 6, File: "changes/ledger.md", Msg: fmt.Sprintf("change %s has no root-ledger row", c.ID)})
-		} else if rowCount[c.ID] > 1 {
-			out = append(out, Violation{Rule: 6, File: "changes/ledger.md", Msg: fmt.Sprintf("change %s has %d root-ledger rows", c.ID, rowCount[c.ID])})
-		}
-	}
-	return out
-}
-
-func (s *Store) all() []*Change {
-	out := make([]*Change, 0, len(s.changes)+len(s.archived))
-	for _, c := range s.changes {
-		out = append(out, c)
-	}
-	for _, c := range s.archived {
-		out = append(out, c)
 	}
 	return out
 }

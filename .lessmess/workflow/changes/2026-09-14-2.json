@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "id": "2026-09-14-2",
+  "title": "Terminal persistence verification",
+  "prefix": "TPV",
+  "status": {
+    "value": "Done",
+    "derived": false
+  },
+  "created": "2026-09-14",
+  "updated": "2026-09-19",
+  "tasks": null
+}

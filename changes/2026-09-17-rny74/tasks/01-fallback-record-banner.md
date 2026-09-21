@@ -1,7 +1,3 @@
----
-id: SPF-01
-title: Persisted fallback record and board warning banner
----
 
 # SPF-01: Persisted fallback record and board warning banner
 

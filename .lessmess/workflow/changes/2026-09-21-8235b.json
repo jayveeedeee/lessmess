@@ -1,0 +1,96 @@
+{
+  "version": 1,
+  "id": "2026-09-21-8235b",
+  "title": "Mobile Chat Layout Hierarchy",
+  "prefix": "MCL",
+  "branch": "main",
+  "status": {
+    "value": "Done",
+    "derived": false
+  },
+  "created": "2026-09-21",
+  "updated": "2026-09-21",
+  "tasks": [
+    {
+      "id": "MCL-00",
+      "seq": 0,
+      "title": "Single-pane mobile navigation shell for the chat overlay",
+      "file": "tasks/00-single-pane-mobile-navigation-shell-for.md",
+      "status": "Cancelled",
+      "updated": "2026-09-21",
+      "notes": "Accidental follow-up scaffold; work moved into umbrella change 2026-09-21-aw36x at user request."
+    },
+    {
+      "id": "MCL-01",
+      "seq": 1,
+      "title": "Full-screen Work view replacing the mobile tasks drawer",
+      "file": "tasks/01-full-screen-work-view-replacing-the-mobi.md",
+      "status": "Cancelled",
+      "dependsOn": [
+        "MCL-00"
+      ],
+      "updated": "2026-09-21",
+      "notes": "Accidental follow-up scaffold; work moved into umbrella change 2026-09-21-aw36x at user request."
+    },
+    {
+      "id": "MCL-02",
+      "seq": 2,
+      "title": "Full-width plan and task reading views with sticky mobile Contents",
+      "file": "tasks/02-full-width-plan-and-task-reading-views-w.md",
+      "status": "Cancelled",
+      "dependsOn": [
+        "MCL-00"
+      ],
+      "updated": "2026-09-21",
+      "notes": "Accidental follow-up scaffold; work moved into umbrella change 2026-09-21-aw36x at user request."
+    },
+    {
+      "id": "MCL-03",
+      "seq": 3,
+      "title": "Message-first composer with a single + action sheet",
+      "file": "tasks/03-message-first-composer-with-a-single-act.md",
+      "status": "Cancelled",
+      "updated": "2026-09-21",
+      "notes": "Accidental follow-up scaffold; work moved into umbrella change 2026-09-21-aw36x at user request."
+    },
+    {
+      "id": "MCL-04",
+      "seq": 4,
+      "title": "Slim mobile chat header with overflow menu",
+      "file": "tasks/04-slim-mobile-chat-header-with-overflow-me.md",
+      "status": "Cancelled",
+      "dependsOn": [
+        "MCL-00",
+        "MCL-01"
+      ],
+      "updated": "2026-09-21",
+      "notes": "Accidental follow-up scaffold; work moved into umbrella change 2026-09-21-aw36x at user request."
+    },
+    {
+      "id": "MCL-05",
+      "seq": 5,
+      "title": "Desktop single-auxiliary-panel rule and conversation min-width",
+      "file": "tasks/05-desktop-single-auxiliary-panel-rule-and.md",
+      "status": "Cancelled",
+      "updated": "2026-09-21",
+      "notes": "Accidental follow-up scaffold; work moved into umbrella change 2026-09-21-aw36x at user request."
+    },
+    {
+      "id": "MCL-06",
+      "seq": 6,
+      "title": "Accessibility and contract-test hardening across breakpoints",
+      "file": "tasks/06-accessibility-and-contract-test-hardenin.md",
+      "status": "Cancelled",
+      "dependsOn": [
+        "MCL-00",
+        "MCL-01",
+        "MCL-02",
+        "MCL-03",
+        "MCL-04",
+        "MCL-05"
+      ],
+      "updated": "2026-09-21",
+      "notes": "Accidental follow-up scaffold; work moved into umbrella change 2026-09-21-aw36x at user request."
+    }
+  ]
+}

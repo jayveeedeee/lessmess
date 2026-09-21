@@ -1,7 +1,3 @@
----
-id: SPF-03
-title: Align endpoint and button for opencode.json default_agent
----
 
 # SPF-03: Align endpoint and button for opencode.json default_agent
 

@@ -38,6 +38,8 @@ func run(args []string) int {
 		return runValidate(args[1:])
 	case "init":
 		return runInit(args[1:])
+	case "migrate":
+		return runMigrate(args[1:])
 	case "docs":
 		return runDocs(args[1:])
 	case "-h", "--help", "help":
@@ -56,6 +58,7 @@ func usage() {
 Usage:
   lessmess serve    [--host 127.0.0.1] [--port 8080] [--dir .]
   lessmess validate [--dir .]
+  lessmess migrate  [--dry-run] [--dir .]
   lessmess init     [--dir .]
   lessmess docs seed [--dry-run] [--budget N] [--dir .]
 `)
@@ -79,6 +82,12 @@ func runServe(args []string) int {
 
 	if err := store.MigrateStateDir(c.dir); err != nil {
 		slog.Warn("state dir migration skipped", "err", err)
+	}
+	// Legacy markdown workflow state migrates to JSON before the store
+	// opens (worktree-backed changes resolve through the same resolver).
+	if _, err := store.MigrateIfNeeded(c.dir, server.WorktreeChangeRoot(c.dir)); err != nil {
+		fmt.Fprintln(os.Stderr, "migrate:", err)
+		return 1
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -163,8 +172,8 @@ func runServe(args []string) int {
 func logStoreSummary(st *store.Store) {
 	tasks := 0
 	for _, ch := range st.Changes() {
-		if ch.Ledger != nil {
-			tasks += len(ch.Ledger.Rows)
+		if ch.State != nil {
+			tasks += len(ch.State.Tasks)
 		}
 	}
 	slog.Info("scanned", "changes", len(st.Changes()), "tasks", tasks)
@@ -176,6 +185,39 @@ func logStoreSummary(st *store.Store) {
 	} else {
 		slog.Info("validation ok")
 	}
+}
+
+// runMigrate converts a repository's markdown workflow state into the
+// JSON state store (one-way; see JSI-01). Worktree-backed changes
+// resolve through the same resolver the server uses.
+func runMigrate(args []string) int {
+	fs := flag.NewFlagSet("migrate", flag.ContinueOnError)
+	dir := fs.String("dir", ".", "repository root containing changes/")
+	dry := fs.Bool("dry-run", false, "verify and report without writing or deleting anything")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if err := store.MigrateStateDir(*dir); err != nil {
+		slog.Warn("state dir migration skipped", "err", err)
+	}
+	res, err := store.MigrateWorkflow(store.MigrateOptions{
+		Dir:        *dir,
+		ChangeRoot: server.WorktreeChangeRoot(*dir),
+		DryRun:     *dry,
+	})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "migrate:", err)
+		return 1
+	}
+	mode := "migrated"
+	if *dry {
+		mode = "verified (dry run)"
+	}
+	fmt.Printf("%s: %d changes, %d tasks, %d containers\n", mode, res.Changes, res.Tasks, res.Containers)
+	if !*dry {
+		fmt.Printf("rewrote %d task files, deleted %d ledger files, .gitignore updated\n", res.FilesRewritten, res.LedgersDeleted)
+	}
+	return 0
 }
 
 func runInit(args []string) int {
@@ -264,6 +306,10 @@ func runValidate(args []string) int {
 	}
 	if err := store.MigrateStateDir(*dir); err != nil {
 		slog.Warn("state dir migration skipped", "err", err)
+	}
+	if _, err := store.MigrateIfNeeded(*dir, server.WorktreeChangeRoot(*dir)); err != nil {
+		fmt.Fprintln(os.Stderr, "migrate:", err)
+		return 1
 	}
 	st, err := store.Open(*dir)
 	if err != nil {

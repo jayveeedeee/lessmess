@@ -1,7 +1,3 @@
----
-id: LRN-07
-title: Resumable seed on the normal server
----
 
 # LRN-07: Resumable seed on the normal server
 

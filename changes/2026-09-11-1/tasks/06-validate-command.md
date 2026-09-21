@@ -1,7 +1,3 @@
----
-id: KAN-06
-title: validate command and UI validation banner
----
 
 # KAN-06: validate command and UI validation banner
 

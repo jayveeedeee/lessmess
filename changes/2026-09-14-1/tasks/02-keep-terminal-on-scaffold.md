@@ -1,7 +1,3 @@
----
-id: DSC-02
-title: Keep the terminal open when a discussion scaffolds
----
 
 # DSC-02: Keep the terminal open when a discussion scaffolds
 

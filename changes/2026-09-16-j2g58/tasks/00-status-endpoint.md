@@ -1,7 +1,3 @@
----
-id: STS-00
-title: Status endpoint and handler tests
----
 
 # STS-00: Status endpoint and handler tests
 

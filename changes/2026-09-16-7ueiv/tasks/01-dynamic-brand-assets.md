@@ -1,7 +1,3 @@
----
-id: ACC-01
-title: Dynamic brand assets and page-head accent injection
----
 
 # ACC-01: Dynamic brand assets and page-head accent injection
 

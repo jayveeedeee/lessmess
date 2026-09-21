@@ -1,7 +1,3 @@
----
-id: CHW-00
-title: Update AGENTS.md with workflow extensions
----
 
 # CHW-00: Update AGENTS.md with workflow extensions
 

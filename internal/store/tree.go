@@ -1,7 +1,7 @@
 package store
 
 import (
-	"os"
+	"io/fs"
 	"path"
 	"path/filepath"
 	"sort"
@@ -11,23 +11,24 @@ import (
 )
 
 // TaskNode is one task in a change's task tree: a top-level task or a
-// nested subtask inside a decomposed parent's container. Hrefs are
-// change-relative slash paths ("tasks/00-a/tasks/01-b.md"); ledger rows
-// link relative to their own ledger's directory.
+// nested subtask inside a decomposed parent's container. Href is the
+// change-relative prose path ("tasks/00-a/tasks/01-b.md"); identity and
+// state come from the JSON store (Task).
 type TaskNode struct {
-	ID           string
-	Href         string
-	File         *model.TaskFile // parsed task file (nil when FileErr set)
-	FileErr      error
-	Row          *model.TaskRow // governing-ledger row when one matches (by href)
-	Parent       *TaskNode      // nil for top-level tasks
-	Children     []*TaskNode    // in governing-ledger row order
-	Container    *model.TaskLedger // set when the task is decomposed
-	ContainerErr error              // container ledger parse error, if any
+	ID       string
+	Href     string
+	Task     *model.TaskState
+	Parent   *TaskNode   // nil for top-level tasks
+	Children []*TaskNode // in priority order
+
+	// containerDir marks tasks whose container prose directory exists
+	// (decomposed, possibly with no subtasks yet).
+	containerDir bool
 }
 
-// HasContainer reports whether the task is decomposed.
-func (n *TaskNode) HasContainer() bool { return n.Container != nil || n.ContainerErr != nil }
+// HasContainer reports whether the task is decomposed: it has subtasks or
+// its container prose directory exists (empty right after DecomposeTask).
+func (n *TaskNode) HasContainer() bool { return n.containerDir || len(n.Children) > 0 }
 
 // ContainerRel is the change-relative path of the task's container
 // directory (its href minus the .md suffix).
@@ -45,10 +46,10 @@ type SubtreeStats struct {
 func (n *TaskNode) SubtreeStats() SubtreeStats {
 	st := SubtreeStats{ByStatus: map[model.TaskStatus]int{}}
 	for _, ch := range n.Children {
-		st.ByStatus[ch.status()]++
-		if ch.status() != model.StatusCancelled {
+		st.ByStatus[ch.NodeStatus()]++
+		if ch.NodeStatus() != model.StatusCancelled {
 			st.Total++
-			if ch.status() == model.StatusTest || ch.status() == model.StatusDone {
+			if ch.NodeStatus() == model.StatusTest || ch.NodeStatus() == model.StatusDone {
 				st.Complete++
 			}
 		}
@@ -62,15 +63,11 @@ func (n *TaskNode) SubtreeStats() SubtreeStats {
 	return st
 }
 
-// NodeStatus returns the node's governing-row status (Not started when no
-// row matched) — the display-facing accessor used by view builders.
-func (n *TaskNode) NodeStatus() model.TaskStatus { return n.status() }
-
-// status returns the node's status from its governing row, defaulting to
-// Not started when no row matched yet.
-func (n *TaskNode) status() model.TaskStatus {
-	if n.Row != nil {
-		return n.Row.Status
+// NodeStatus returns the node's status (Not started when absent) — the
+// display-facing accessor used by view builders.
+func (n *TaskNode) NodeStatus() model.TaskStatus {
+	if n.Task != nil {
+		return n.Task.Status
 	}
 	return model.StatusNotStarted
 }
@@ -99,7 +96,7 @@ func (c *Change) AllTaskStats() SubtreeStats {
 func (c *Change) Node(id string) *TaskNode { return c.Nodes[id] }
 
 // WalkTasks visits every task node in the tree (depth-first, children in
-// ledger row order) until visit returns false.
+// priority order) until visit returns false.
 func (c *Change) WalkTasks(visit func(*TaskNode) bool) {
 	var walk func(nodes []*TaskNode) bool
 	walk = func(nodes []*TaskNode) bool {
@@ -113,117 +110,70 @@ func (c *Change) WalkTasks(visit func(*TaskNode) bool) {
 	walk(c.Roots)
 }
 
-// scanTasks reads one level of a tasks/ directory: task files become
-// nodes, matching subdirectories become containers and are scanned
-// recursively, and directories without a matching sibling task file are
-// recorded as strays for validation. relDir is the change-relative path
-// of the directory with a trailing slash; rows are the governing ledger's
-// rows for this level (nil when that ledger failed to parse).
-func (s *Store) scanTasks(c *Change, absDir, relDir string, parent *TaskNode, rows []model.TaskRow) []*TaskNode {
-	entries, err := os.ReadDir(absDir)
-	if err != nil {
+// scanProse cross-checks the prose tree under tasks/ against the state's
+// referenced files: any .md file not referenced by a task is an orphan,
+// any directory that is neither an ancestor of a referenced file nor the
+// container of a referenced sibling task file is a stray. Container dirs
+// named after referenced sibling files stay allowed even while empty
+// (DecomposeTask creates them before the first subtask exists). Results
+// feed validation and HasContainer.
+func (c *Change) scanProse() {
+	c.OrphanFiles = nil
+	c.StrayDirs = nil
+	c.containers = map[string]bool{}
+	allowed := map[string]bool{"tasks": true}
+	candidates := map[string]bool{} // container dirs named after sibling task files
+	if c.State != nil {
+		for i := range c.State.Tasks {
+			f := c.State.Tasks[i].File
+			// Ancestor directories of the referenced file are allowed.
+			for d := path.Dir(f); d != "." && d != "/"; d = path.Dir(d) {
+				allowed[d] = true
+			}
+			// The container dir named after this task file is allowed
+			// (the sub plan's prose home, empty until the first child).
+			base := strings.TrimSuffix(path.Base(f), ".md")
+			container := path.Join(path.Dir(f), base)
+			allowed[container] = true
+			candidates[container] = true
+		}
+	}
+	tasksDir := filepath.Join(c.Dir, "tasks")
+	_ = filepath.WalkDir(tasksDir, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		rel, rerr := filepath.Rel(c.Dir, p)
+		if rerr != nil {
+			return nil
+		}
+		slashed := filepath.ToSlash(rel)
+		if d.IsDir() {
+			if candidates[slashed] {
+				c.containers[slashed] = true // the container dir really exists
+			}
+			if !allowed[slashed] {
+				c.StrayDirs = append(c.StrayDirs, slashed)
+			}
+			return nil
+		}
+		if strings.HasSuffix(slashed, ".md") && slashed != "plan.md" && !referenced(c.State, slashed) {
+			c.OrphanFiles = append(c.OrphanFiles, slashed)
+		}
 		return nil
-	}
-	var names []string
-	containers := map[string]bool{}
-	for _, e := range entries {
-		if e.IsDir() {
-			containers[e.Name()] = true
-		} else if strings.HasSuffix(e.Name(), ".md") {
-			names = append(names, e.Name())
-		}
-	}
-	sort.Strings(names)
-
-	nodes := map[string]*TaskNode{}
-	for _, name := range names {
-		href := relDir + name
-		n := &TaskNode{Href: href, Parent: parent}
-		data, err := os.ReadFile(filepath.Join(absDir, name))
-		switch {
-		case err != nil:
-			n.FileErr = err
-		default:
-			if tf, err := model.ParseTaskFile(c.ID+"/"+href, data); err != nil {
-				n.FileErr = err
-			} else {
-				n.File, n.ID = tf, tf.ID
-			}
-		}
-		nodes[name] = n
-	}
-
-	// Order nodes by the governing ledger's row order; files without a
-	// row keep filename order after them.
-	var out []*TaskNode
-	seen := map[string]bool{}
-	for i := range rows {
-		r := rows[i]
-		base := path.Base(r.Href)
-		if n, ok := nodes[base]; ok && !seen[base] {
-			seen[base] = true
-			row := r
-			n.Row = &row
-			if n.ID == "" {
-				n.ID = r.ID
-			}
-			out = append(out, n)
-		}
-	}
-	for _, name := range names {
-		if !seen[name] {
-			out = append(out, nodes[name])
-		}
-	}
-
-	// Containers: recurse into directories that match a sibling task file.
-	for _, name := range names {
-		base := strings.TrimSuffix(name, ".md")
-		if !containers[base] {
-			continue
-		}
-		n := nodes[name]
-		containerRel := relDir + base
-		var tl *model.TaskLedger
-		var terr error
-		if data, err := os.ReadFile(filepath.Join(absDir, base, "ledger.md")); err != nil {
-			terr = err
-		} else if l, err := model.ParseTaskLedger(c.ID+"/"+containerRel+"/ledger.md", data); err != nil {
-			terr = err
-		} else {
-			tl = l
-		}
-		n.Container, n.ContainerErr = tl, terr
-		var childRows []model.TaskRow
-		if tl != nil {
-			childRows = tl.Rows
-		}
-		n.Children = s.scanTasks(c, filepath.Join(absDir, base, "tasks"), containerRel+"/tasks/", n, childRows)
-	}
-	for _, d := range sortedKeys(containers) {
-		if _, ok := nodes[d+".md"]; !ok {
-			c.StrayDirs = append(c.StrayDirs, relDir+d)
-		}
-	}
-	return out
-}
-
-// indexNodes populates the change's ID -> node map from its tree.
-func (c *Change) indexNodes() {
-	c.Nodes = map[string]*TaskNode{}
-	c.WalkTasks(func(n *TaskNode) bool {
-		if n.ID != "" {
-			c.Nodes[n.ID] = n
-		}
-		return true
 	})
+	sort.Strings(c.OrphanFiles)
+	sort.Strings(c.StrayDirs)
 }
 
-func sortedKeys(m map[string]bool) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
+func referenced(st *model.ChangeState, file string) bool {
+	if st == nil {
+		return false
 	}
-	sort.Strings(out)
-	return out
+	for i := range st.Tasks {
+		if st.Tasks[i].File == file {
+			return true
+		}
+	}
+	return false
 }

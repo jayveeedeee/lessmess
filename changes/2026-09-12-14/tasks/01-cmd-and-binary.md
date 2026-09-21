@@ -1,7 +1,3 @@
----
-id: REN-01
-title: Rename cmd/tasktracker to cmd/lessmess and rebuild binary
----
 
 # REN-01: Rename cmd/tasktracker to cmd/lessmess and rebuild binary
 

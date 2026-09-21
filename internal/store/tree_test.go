@@ -28,18 +28,12 @@ func TestDecomposeTask(t *testing.T) {
 		t.Errorf("container rel = %q", rel)
 	}
 	cdir := filepath.Join(dir, "changes", "2026-09-10-0")
-	for _, p := range []string{"tasks/00-first/ledger.md", "tasks/00-first/tasks"} {
-		if st, err := os.Stat(filepath.Join(cdir, filepath.FromSlash(p))); err != nil || (p == "tasks" && !st.IsDir()) {
-			t.Errorf("missing %s (%v)", p, err)
-		}
+	// The container prose directory exists; no container ledger does.
+	if _, err := os.Stat(filepath.Join(cdir, "tasks", "00-first", "tasks")); err != nil {
+		t.Fatalf("missing container tasks dir: %v", err)
 	}
-	// The container ledger parses and declares the right task/change.
-	tl, err := model.ParseTaskLedger("ledger.md", readFile(t, filepath.Join(cdir, "tasks", "00-first", "ledger.md")))
-	if err != nil {
-		t.Fatalf("parse container ledger: %v", err)
-	}
-	if tl.TaskID != "FIX-00" || tl.ChangeID != "2026-09-10-0" || len(tl.Rows) != 0 {
-		t.Errorf("container ledger = %+v", tl)
+	if _, err := os.Stat(filepath.Join(cdir, "tasks", "00-first", "ledger.md")); !os.IsNotExist(err) {
+		t.Error("container ledger.md must not exist in the JSON model")
 	}
 	// Second decompose is refused.
 	if _, err := s.DecomposeTask("2026-09-10-0", "FIX-00"); !errors.Is(err, ErrContainerExists) {
@@ -71,20 +65,18 @@ func TestCreateSubtask(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateTask: %v", err)
 	}
-	if row.ID != "FIX-00.00" {
-		t.Errorf("child ID = %q, want FIX-00.00", row.ID)
+	if row.ID != "FIX-00.00" || row.Parent != "FIX-00" {
+		t.Errorf("child = %+v, want FIX-00.00 under FIX-00", row)
 	}
 	cdir := filepath.Join(dir, "changes", "2026-09-10-0")
 	if _, err := os.Stat(filepath.Join(cdir, "tasks", "00-first", "tasks", "00-child-one.md")); err != nil {
 		t.Fatalf("child file: %v", err)
 	}
-	// The row landed in the container ledger with a ledger-relative href.
-	tl, err := model.ParseTaskLedger("ledger.md", readFile(t, filepath.Join(cdir, "tasks", "00-first", "ledger.md")))
-	if err != nil {
-		t.Fatalf("parse container ledger: %v", err)
-	}
-	if len(tl.Rows) != 1 || tl.Rows[0].ID != "FIX-00.00" || tl.Rows[0].Href != "tasks/00-child-one.md" {
-		t.Fatalf("container rows = %+v", tl.Rows)
+	// The task landed in the state with the right href.
+	st := loadState(t, dir, "2026-09-10-0")
+	child := st.Task("FIX-00.00")
+	if child == nil || child.File != "tasks/00-first/tasks/00-child-one.md" || child.Seq != 0 {
+		t.Fatalf("child state = %+v", child)
 	}
 
 	// Second child gets sequence 01.
@@ -107,7 +99,7 @@ func TestCreateSubtask(t *testing.T) {
 }
 
 func TestScanNestedTree(t *testing.T) {
-	s, dir := openFixture(t)
+	s, _ := openFixture(t)
 	decompose(t, s)
 	if _, err := s.CreateTask("2026-09-10-0", "FIX-00", "Child One"); err != nil {
 		t.Fatal(err)
@@ -149,8 +141,9 @@ func TestScanNestedTree(t *testing.T) {
 		t.Error("HasContainer wrong")
 	}
 
-	// A stray directory (no sibling task file) is recorded for validation.
-	if err := os.MkdirAll(filepath.Join(dir, "changes", "2026-09-10-0", "tasks", "99-stray"), 0o755); err != nil {
+	// A stray directory (no referenced prose inside) is recorded for
+	// validation; the container is not.
+	if err := os.MkdirAll(filepath.Join(s.Dir, "changes", "2026-09-10-0", "tasks", "99-stray"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	s.Reload()
@@ -169,27 +162,27 @@ func TestScanNestedTree(t *testing.T) {
 	}
 }
 
-func TestMoveSubtaskViaGoverningLedger(t *testing.T) {
-	s, dir := openFixture(t)
+func TestMoveSubtaskAtOwnLevel(t *testing.T) {
+	s, _ := openFixture(t)
 	decompose(t, s)
 	if _, err := s.CreateTask("2026-09-10-0", "FIX-00", "Child One"); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := s.CreateTask("2026-09-10-0", "FIX-00", "Child Two"); err != nil {
+		t.Fatal(err)
+	}
 
-	// Move the child; the container ledger changes, the change ledger does not.
-	changeLedgerBefore := readFile(t, filepath.Join(dir, "changes", "2026-09-10-0", "ledger.md"))
+	// Move the first child to Test at index 0 of its group; the parent's
+	// status and the sibling's position are untouched.
 	if err := s.MoveTask("2026-09-10-0", "FIX-00.00", model.StatusTest, 0); err != nil {
 		t.Fatalf("MoveTask child: %v", err)
 	}
-	tl, err := model.ParseTaskLedger("ledger.md", readFile(t, filepath.Join(dir, "changes", "2026-09-10-0", "tasks", "00-first", "ledger.md")))
-	if err != nil {
-		t.Fatal(err)
+	c, _ := s.Change("2026-09-10-0")
+	if got := c.Node("FIX-00.00").NodeStatus(); got != model.StatusTest {
+		t.Fatalf("child status after move = %q", got)
 	}
-	if row := tl.Row("FIX-00.00"); row == nil || row.Status != model.StatusTest {
-		t.Fatalf("child row after move = %+v", row)
-	}
-	if got := readFile(t, filepath.Join(dir, "changes", "2026-09-10-0", "ledger.md")); string(got) != string(changeLedgerBefore) {
-		t.Error("change ledger changed by child move")
+	if got := c.Node("FIX-00").NodeStatus(); got != model.StatusNotStarted {
+		t.Fatalf("parent status changed: %q", got)
 	}
 	// Unknown child ID refused.
 	if err := s.MoveTask("2026-09-10-0", "FIX-00.99", model.StatusDone, 0); !errors.Is(err, ErrNotFound) {
@@ -252,24 +245,28 @@ func TestWatchPicksUpNestedDirs(t *testing.T) {
 	}
 	ch := s.Subscribe()
 
-	decompose(t, s) // creates tasks/00-first/{ledger.md,tasks/}
+	decompose(t, s) // creates tasks/00-first/tasks/
 	select {
 	case <-ch:
 	case <-time.After(5 * time.Second):
 		t.Fatal("no fs event after decompose")
 	}
 
-	// A grandchild level created by raw file writes is picked up too:
-	// the watcher re-walks after each quiet period, so newly created
-	// nested directories stay watched.
-	cdir := filepath.Join(s.Dir, "changes", "2026-09-10-0", "tasks", "00-first")
-	if err := os.MkdirAll(filepath.Join(cdir, "tasks", "00-child", "tasks"), 0o755); err != nil {
+	// An external state edit adding a nested task is picked up too: the
+	// watcher re-walks after each quiet period.
+	p := filepath.Join(s.Dir, StateDirName, "workflow", "changes", "2026-09-10-0.json")
+	st := loadState(t, s.Dir, "2026-09-10-0")
+	st.Tasks = append(st.Tasks, model.TaskState{
+		ID: "FIX-00.00", Seq: 0, Parent: "FIX-00", Title: "Child",
+		File: "tasks/00-first/tasks/00-child.md", Status: model.StatusNotStarted, Updated: "2026-09-16",
+	})
+	if err := os.MkdirAll(filepath.Join(s.Dir, "changes", "2026-09-10-0", "tasks", "00-first", "tasks"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(cdir, "tasks", "00-child.md"), model.RenderTaskFile("FIX-00.00", "Child"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(s.Dir, "changes", "2026-09-10-0", "tasks", "00-first", "tasks", "00-child.md"), model.RenderTaskFile("FIX-00.00", "Child"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(cdir, "ledger.md"), model.RenderTaskLedger("FIX-00", "2026-09-10-0", "2026-09-16"), 0o644); err != nil {
+	if err := st.Save(p); err != nil {
 		t.Fatal(err)
 	}
 	select {
@@ -281,7 +278,7 @@ func TestWatchPicksUpNestedDirs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if n := c.Node("FIX-00.00"); n == nil || !n.HasContainer() {
+	if n := c.Node("FIX-00.00"); n == nil || n.Href != "tasks/00-first/tasks/00-child.md" {
 		t.Fatalf("nested node after watch reload = %+v", c.Node("FIX-00.00"))
 	}
 }

@@ -1,7 +1,3 @@
----
-id: NTD-01
-title: Model container ledgers and dotted IDs
----
 
 # NTD-01: Model container ledgers and dotted IDs
 

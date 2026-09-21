@@ -1,7 +1,3 @@
----
-id: DOC-00
-title: Doc file format model
----
 
 # DOC-00: Doc file format model
 

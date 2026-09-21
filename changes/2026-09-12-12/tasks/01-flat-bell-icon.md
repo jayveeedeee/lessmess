@@ -1,7 +1,3 @@
----
-id: NAV-01
-title: Flat SVG bell icon
----
 
 # NAV-01: Flat SVG bell icon
 

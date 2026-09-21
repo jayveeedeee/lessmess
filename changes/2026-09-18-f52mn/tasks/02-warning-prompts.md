@@ -1,7 +1,3 @@
----
-id: WCV-02
-title: Validate warning and prompt precedence
----
 
 # WCV-02: Validate warning and prompt precedence
 

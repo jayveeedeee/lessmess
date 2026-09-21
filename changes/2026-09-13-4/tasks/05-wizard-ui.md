@@ -1,7 +1,3 @@
----
-id: ONB-05
-title: Wizard UI (template, client flow, styles)
----
 
 # ONB-05: Wizard UI (template, client flow, styles)
 

@@ -1,7 +1,3 @@
----
-id: NTD-05
-title: Sessions dotted binding, task prompt, auto-spawn
----
 
 # NTD-05: Sessions dotted binding, task prompt, auto-spawn
 

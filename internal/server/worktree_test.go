@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"lessmess/internal/gitops"
+	"lessmess/internal/model"
 	"lessmess/internal/opencode"
 )
 
@@ -102,28 +103,19 @@ func TestScaffoldWorktreeEnabled(t *testing.T) {
 		t.Error("worktree-note missing: the planning session needs the worktree path")
 	}
 
-	// The docs live in the worktree; the main tree only carries the row.
+	// The index carries the entry with its branch; docs live in the worktree.
 	if _, err := os.Stat(filepath.Join(resp["worktree"], "changes", id, "plan.md")); err != nil {
 		t.Errorf("worktree plan.md: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(s.st.Dir, "changes", id)); !os.IsNotExist(err) {
 		t.Error("change dir materialized in the main tree")
 	}
-	root, err := s.st.Root()
-	if err != nil {
-		t.Fatal(err)
+	e := s.st.Entry(id)
+	if e == nil {
+		t.Fatal("index entry missing")
 	}
-	var found bool
-	for _, r := range root.Rows {
-		if r.Change == id {
-			found = true
-			if r.Branch != "change/"+id {
-				t.Errorf("root row branch = %q", r.Branch)
-			}
-		}
-	}
-	if !found {
-		t.Fatal("root row missing")
+	if e.Branch != "change/"+id {
+		t.Errorf("index branch = %q", e.Branch)
 	}
 
 	// The store resolves the change through its worktree and validates clean.
@@ -139,13 +131,13 @@ func TestScaffoldWorktreeEnabled(t *testing.T) {
 	}
 
 	// State recorded for close and resolution.
-	st, err := s.git.GetState()
+	gst, err := s.git.GetState()
 	if err != nil {
 		t.Fatal(err)
 	}
-	e, ok := st[id]
-	if !ok || e.Branch != resp["branch"] || e.Path != resp["worktree"] {
-		t.Errorf("worktrees state = %+v", e)
+	we, ok := gst[id]
+	if !ok || we.Branch != resp["branch"] || we.Path != resp["worktree"] {
+		t.Errorf("worktrees state = %+v", we)
 	}
 
 	// Mapping moved.
@@ -198,10 +190,10 @@ func TestScaffoldWorktreeGitFailure(t *testing.T) {
 	if !strings.Contains(w.Body.String(), "not a git repository") {
 		t.Errorf("body = %s, want the not-a-repo explanation", w.Body)
 	}
-	// Nothing scaffolded: no root row, no main-tree dir, no state.
-	root, _ := s.st.Root()
-	if len(root.Rows) != 1 {
-		t.Errorf("rows = %d, want only the fixture row", len(root.Rows))
+	// Nothing scaffolded: no index entry, no main-tree dir, no state.
+	idx, _ := s.st.Index()
+	if len(idx.Changes) != 1 {
+		t.Errorf("index = %d entries, want only the fixture entry", len(idx.Changes))
 	}
 	if st, _ := s.git.GetState(); len(st) != 0 {
 		t.Errorf("state = %v, want empty", st)
@@ -260,14 +252,14 @@ func TestChangeSessionsSpawnIntoWorktree(t *testing.T) {
 	wt := resp["worktree"]
 
 	// A board-created change session spawns inside the worktree and its
-	// prime carries the root-ledger rule.
+	// prime carries the worktree rule.
 	if w := do(t, s.Handler(), "POST", "/changes/"+id+"/sessions", `{}`); w.Code != 201 {
 		t.Fatalf("create session: %d %s", w.Code, w.Body)
 	}
 	if len(cap.creates) == 0 || createDirectory(t, cap.creates[0]) != wt {
 		t.Errorf("change session create = %v, want directory %q", cap.creates, wt)
 	}
-	if len(cap.prompts) != 1 || !strings.Contains(cap.prompts[0], "NEVER edit the root ledger") {
+	if len(cap.prompts) != 1 || !strings.Contains(cap.prompts[0], "NEVER edit workflow state files by hand") {
 		t.Errorf("prime = %.120q, want the worktree stanza", cap.prompts)
 	}
 
@@ -304,7 +296,7 @@ func TestChangeSessionMainTreeWithoutWorktree(t *testing.T) {
 	if len(cap.creates) != 1 || createDirectory(t, cap.creates[0]) != s.st.Dir {
 		t.Errorf("create = %v, want the main tree", cap.creates)
 	}
-	if len(cap.prompts) == 1 && strings.Contains(cap.prompts[0], "NEVER edit the root ledger") {
+	if len(cap.prompts) == 1 && strings.Contains(cap.prompts[0], "NEVER edit workflow state files by hand") {
 		t.Error("main-tree prompt must not carry the worktree stanza")
 	}
 }
@@ -312,8 +304,8 @@ func TestChangeSessionMainTreeWithoutWorktree(t *testing.T) {
 // ghFake passes git through to the real binary while scripting gh. It
 // records every call so tests can assert the push/PR/comment sequence.
 type ghFake struct {
-	real gitops.Commander
-	gh   func(args []string) (string, error)
+	real  gitops.Commander
+	gh    func(args []string) (string, error)
 	calls [][2]string
 }
 
@@ -417,11 +409,8 @@ func TestClosePipelineFullSuccess(t *testing.T) {
 	if w := do(t, s.Handler(), "POST", "/changes/"+id+"/close", ``); w.Code != 200 {
 		t.Fatalf("close: %d %s", w.Code, w.Body)
 	}
-	root, _ := s.st.Root()
-	for _, r := range root.Rows {
-		if r.Change == id && r.Status != "Done" {
-			t.Fatalf("root row status = %q, want Done", r.Status)
-		}
+	if c, err := s.st.Change(id); err != nil || c.Overall() != model.OverallDone {
+		t.Fatalf("status after close = %v, %v; want Done", c, err)
 	}
 	st, _ := s.git.GetState()
 	e := st[id]
@@ -469,11 +458,8 @@ func TestCloseGateDirtyWorktree(t *testing.T) {
 	if !strings.Contains(w.Body.String(), "uncommitted") {
 		t.Errorf("body = %s, want commit guidance", w.Body)
 	}
-	root, _ := s.st.Root()
-	for _, r := range root.Rows {
-		if r.Change == id && r.Status == "Done" {
-			t.Fatal("dirty worktree must not reach Done")
-		}
+	if c, err := s.st.Change(id); err == nil && c.Overall() == model.OverallDone {
+		t.Fatal("dirty worktree must not reach Done")
 	}
 }
 
@@ -490,11 +476,8 @@ func TestCloseGateNoRemote(t *testing.T) {
 	if !strings.Contains(w.Body.String(), "no remote") {
 		t.Errorf("body = %s, want the no-remote message", w.Body)
 	}
-	root, _ := s.st.Root()
-	for _, r := range root.Rows {
-		if r.Change == id && r.Status == "Done" {
-			t.Fatal("failed push must not reach Done")
-		}
+	if c, err := s.st.Change(id); err == nil && c.Overall() == model.OverallDone {
+		t.Fatal("failed push must not reach Done")
 	}
 }
 

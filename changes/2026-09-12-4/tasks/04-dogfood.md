@@ -1,7 +1,3 @@
----
-id: LIF-04
-title: Dogfood
----
 
 # LIF-04: Dogfood
 

@@ -20,16 +20,6 @@ var workflowAgents string
 // WorkflowInstructions returns the embedded canonical workflow text.
 func WorkflowInstructions() string { return workflowAgents }
 
-// rootLedgerSkeleton is the empty root ledger written by Init, matching the
-// AGENTS.md root-ledger schema (including the required header sentence).
-const rootLedgerSkeleton = `# Changes — Root Ledger
-
-One row per change directory. This file is authoritative for change existence, task-ID prefixes, and overall change status only. Task statuses live exclusively in the ledger that governs the task — the change's ` + "`ledger.md`" + ` for top-level tasks, the parent task container's ` + "`ledger.md`" + ` below that.
-
-| Change | Title | ID prefix | Branch | Status | Created | Last updated |
-| --- | --- | --- | --- | --- | --- | --- |
-`
-
 // opencodeStarter is the starter agent-permission envelope written by Init:
 // broad allow inside the project, denies for external directories, env
 // files, and git push.
@@ -78,7 +68,7 @@ func Init(root string) ([]InitAction, error) {
 func InitWithOptions(root string, opts InitOptions) ([]InitAction, error) {
 	steps := []func(string) (InitAction, error){
 		initAgents,
-		initLedger,
+		initWorkflow,
 		initGitignore,
 		initOpencode,
 	}
@@ -146,10 +136,15 @@ func rootAgentsWithSection() []byte {
 		model.DocMarkerBegin + "\n" + model.DocMarkerEnd + "\n")
 }
 
-// initLedger creates the changes/ skeleton; an existing ledger is skipped.
-func initLedger(root string) (InitAction, error) {
-	a := InitAction{Path: "changes/ledger.md"}
-	p := filepath.Join(root, "changes", "ledger.md")
+// initWorkflow creates the workflow skeleton: the changes/ prose
+// directory and the empty JSON state index under .lessmess/workflow/.
+// An existing index is skipped.
+func initWorkflow(root string) (InitAction, error) {
+	a := InitAction{Path: ".lessmess/workflow/index.json"}
+	if err := os.MkdirAll(filepath.Join(root, "changes"), 0o755); err != nil {
+		return a, err
+	}
+	p := filepath.Join(root, StateDir, "workflow", "index.json")
 	if _, err := os.Stat(p); err == nil {
 		a.Action = "skipped"
 		return a, nil
@@ -159,32 +154,72 @@ func initLedger(root string) (InitAction, error) {
 	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 		return a, err
 	}
-	err := writeInitFile(p, []byte(rootLedgerSkeleton), &a, "created")
+	idx := &model.WorkflowIndex{Version: model.StateVersion}
+	data, err := json.MarshalIndent(idx, "", "  ")
+	if err != nil {
+		return a, err
+	}
+	err = writeInitFile(p, append(data, '\n'), &a, "created")
 	return a, err
 }
 
-// initGitignore ensures .gitignore ignores .lessmess/. A missing file is
-// created; an existing file gains one line; a file already covering it is
-// skipped.
+// StateDir mirrors store.StateDirName without importing the store.
+const StateDir = ".lessmess"
+
+// gitignoreBlock keeps the tooling state personal while committing the
+// workflow state: git cannot re-include files under an ignored directory,
+// so the ignore is scoped to the directory's children with a negation for
+// the workflow subtree.
+var gitignoreBlock = []string{".lessmess/*", "!.lessmess/workflow/"}
+
+// initGitignore ensures .gitignore ignores .lessmess/ except the workflow
+// subtree. A missing file is created; a legacy whole-directory ignore is
+// replaced; a file already covering it is skipped; otherwise the block is
+// appended.
 func initGitignore(root string) (InitAction, error) {
 	a := InitAction{Path: ".gitignore"}
 	p := filepath.Join(root, ".gitignore")
 	existing, err := os.ReadFile(p)
 	if os.IsNotExist(err) {
-		err = writeInitFile(p, []byte(".lessmess/\n"), &a, "created")
+		err = writeInitFile(p, []byte(strings.Join(gitignoreBlock, "\n")+"\n"), &a, "created")
 		return a, err
 	}
 	if err != nil {
 		return a, err
 	}
-	for _, line := range strings.Split(string(existing), "\n") {
-		if strings.TrimSpace(line) == ".lessmess" || strings.TrimSpace(line) == ".lessmess/" {
-			a.Action = "skipped"
-			return a, nil
+	lines := strings.Split(string(existing), "\n")
+	hasBlock := false
+	var out []string
+	for _, ln := range lines {
+		switch strings.TrimSpace(ln) {
+		case ".lessmess/*":
+			hasBlock = true
+			out = append(out, ln)
+		case "!.lessmess/workflow/":
+			out = append(out, ln)
+		case ".lessmess/", ".lessmess", ".tasktracker/":
+			if !hasBlock { // replace the whole-dir ignore with the block once
+				hasBlock = true
+				out = append(out, gitignoreBlock...)
+			}
+		default:
+			out = append(out, ln)
 		}
 	}
-	merged := strings.TrimRight(string(existing), "\n") + "\n.lessmess/\n"
-	err = writeInitFile(p, []byte(merged), &a, "merged")
+	joined := strings.Join(out, "\n")
+	switch {
+	case !hasBlock:
+		joined = strings.TrimRight(joined, "\n") + "\n" + strings.Join(gitignoreBlock, "\n") + "\n"
+		a.Action = "merged"
+	case joined != string(existing):
+		a.Action = "merged" // legacy ignore replaced by the block
+	default:
+		a.Action = "skipped"
+	}
+	if a.Action == "skipped" {
+		return a, nil
+	}
+	err = writeInitFile(p, []byte(joined), &a, a.Action)
 	return a, err
 }
 

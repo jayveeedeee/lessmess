@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "id": "2026-09-12-2",
+  "title": "Remove plain new-change form from index",
+  "prefix": "UIX",
+  "branch": "main",
+  "status": {
+    "value": "Done",
+    "derived": false
+  },
+  "created": "2026-09-12",
+  "updated": "2026-09-12",
+  "tasks": [
+    {
+      "id": "UIX-00",
+      "seq": 0,
+      "title": "Remove plain new-change form from index template",
+      "file": "tasks/00-remove-plain-form.md",
+      "status": "Done",
+      "updated": "2026-09-12",
+      "notes": "Verified: served index has exactly one form (hx-post=/changes/session); tests green; validate OK; screenshot confirms single orange form."
+    }
+  ]
+}

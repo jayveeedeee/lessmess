@@ -1,7 +1,3 @@
----
-id: LRN-05
-title: docs.gardenerModel setting
----
 
 # LRN-05: docs.gardenerModel setting
 

@@ -1,7 +1,3 @@
----
-id: ONB-02
-title: Prerequisite checks endpoint
----
 
 # ONB-02: Prerequisite checks endpoint
 

@@ -1,7 +1,3 @@
----
-id: KAN-02
-title: Serializers and atomic writers
----
 
 # KAN-02: Serializers and atomic writers
 

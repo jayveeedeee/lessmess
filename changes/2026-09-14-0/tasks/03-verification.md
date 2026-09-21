@@ -1,7 +1,3 @@
----
-id: SPS-03
-title: End-to-end verification and docs update
----
 
 # SPS-03: End-to-end verification and docs update
 

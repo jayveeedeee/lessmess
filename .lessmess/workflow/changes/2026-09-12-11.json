@@ -1,0 +1,86 @@
+{
+  "version": 1,
+  "id": "2026-09-12-11",
+  "title": "Explorer master-detail redesign",
+  "prefix": "EXD",
+  "status": {
+    "value": "Done",
+    "derived": false
+  },
+  "created": "2026-09-12",
+  "updated": "2026-09-12",
+  "tasks": [
+    {
+      "id": "EXD-05",
+      "seq": 5,
+      "title": "Remove tree chat buttons and square orange selection",
+      "file": "tasks/05-tree-polish.md",
+      "status": "Done",
+      "dependsOn": [
+        "EXD-01",
+        "EXD-02",
+        "EXD-03"
+      ],
+      "updated": "2026-09-12",
+      "notes": "Chat button gone from tree (detail header keeps it); selection is now a square orange highlight on the folder name. Tests green, validate OK, screenshot-verified on the rebuilt :9090 server."
+    },
+    {
+      "id": "EXD-00",
+      "seq": 0,
+      "title": "Detail endpoint and route",
+      "file": "tasks/00-server-detail-endpoint.md",
+      "status": "Done",
+      "updated": "2026-09-12",
+      "notes": "`GET /explorer/detail` + `findExplorerNode` + route; vet clean, 3 new tests pass (lookup, 422s, 503); 200-fragment test lands with EXD-01's template."
+    },
+    {
+      "id": "EXD-01",
+      "seq": 1,
+      "title": "Explorer templates — split shell, dirs-only tree, detail fragment",
+      "file": "tasks/01-explorer-templates.md",
+      "status": "Done",
+      "dependsOn": [
+        "EXD-00"
+      ],
+      "updated": "2026-09-12",
+      "notes": "`explorer.html` rewritten: split shell, dirs-only tree with hx-get on summaries, root open+selected, `explorerDetail` fragment; tests updated and passing (old inline-layout assertions replaced)."
+    },
+    {
+      "id": "EXD-02",
+      "seq": 2,
+      "title": "Explorer CSS — two-pane layout, guide lines, selection",
+      "file": "tasks/02-explorer-css.md",
+      "status": "Done",
+      "dependsOn": [
+        "EXD-01"
+      ],
+      "updated": "2026-09-12",
+      "notes": "Explorer section restyled: split panes (sticky 300px tree), guide lines, selected-row accent, always-visible right-aligned chat, detail typography, 720px stacking; live UI check deferred to the rebuild+restart in EXD-03/EXD-04."
+    },
+    {
+      "id": "EXD-03",
+      "seq": 3,
+      "title": "Explorer JS — selection state and refresh restore",
+      "file": "tasks/03-explorer-js.md",
+      "status": "Done",
+      "dependsOn": [
+        "EXD-01"
+      ],
+      "updated": "2026-09-12",
+      "notes": "Selection tracking with root fallback, open+selected restore, detail re-fetch on docs events; `htmx.process` after tree swaps; chat handler moved to capture phase. Live-checked via rebuilt server on :9090 (screenshots: wide split + narrow stacked)."
+    },
+    {
+      "id": "EXD-04",
+      "seq": 4,
+      "title": "Verification, tests, and README",
+      "file": "tasks/04-verify-and-docs.md",
+      "status": "Done",
+      "dependsOn": [
+        "EXD-02",
+        "EXD-03"
+      ],
+      "updated": "2026-09-12",
+      "notes": "Build/vet/test all green, validate OK, README explorer section rewritten, live UI pass (wide + narrow + disabled state) done on the rebuilt :9090 server."
+    }
+  ]
+}

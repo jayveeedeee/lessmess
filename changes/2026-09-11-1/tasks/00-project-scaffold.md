@@ -1,7 +1,3 @@
----
-id: KAN-00
-title: Project scaffold and CLI entry
----
 
 # KAN-00: Project scaffold and CLI entry
 

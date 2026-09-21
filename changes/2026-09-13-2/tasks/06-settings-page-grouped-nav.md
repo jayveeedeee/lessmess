@@ -1,7 +1,3 @@
----
-id: SET-06
-title: Settings page grouped left navigation
----
 
 # SET-06: Settings page grouped left navigation
 

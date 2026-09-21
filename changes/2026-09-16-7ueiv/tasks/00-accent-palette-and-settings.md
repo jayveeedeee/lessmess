@@ -1,7 +1,3 @@
----
-id: ACC-00
-title: Accent palette, ui.accent setting, and roll-once initialization
----
 
 # ACC-00: Accent palette, ui.accent setting, and roll-once initialization
 

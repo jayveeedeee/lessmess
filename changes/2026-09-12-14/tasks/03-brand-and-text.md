@@ -1,7 +1,3 @@
----
-id: REN-03
-title: Brand and user-facing text sweep
----
 
 # REN-03: Brand and user-facing text sweep
 

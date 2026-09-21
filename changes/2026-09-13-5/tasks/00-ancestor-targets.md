@@ -1,7 +1,3 @@
----
-id: LRN-00
-title: Ancestor targets and DocsJob shape
----
 
 # LRN-00: Ancestor targets and DocsJob shape
 

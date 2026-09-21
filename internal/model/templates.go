@@ -2,16 +2,11 @@ package model
 
 import "fmt"
 
-// RenderTaskFile renders a task file matching the AGENTS.md skeleton.
+// RenderTaskFile renders a task prose file matching the AGENTS.md
+// skeleton. Identity (id, title) lives in the JSON state; the file is
+// prose only, kept human-readable with the heading carrying the ID.
 func RenderTaskFile(id, title string) []byte {
-	return []byte(fmt.Sprintf(`---
-id: %s
-title: %s
----
-
-# %s: %s
-
-Status: see [../ledger.md](../ledger.md).
+	return []byte(fmt.Sprintf(`# %s: %s
 
 ## Objective
 
@@ -28,7 +23,7 @@ Status: see [../ledger.md](../ledger.md).
 ## Files affected
 
 ## Notes
-`, id, title, id, title))
+`, id, title))
 }
 
 // RenderChangePlan renders a minimal plan.md for a new change.
@@ -38,7 +33,7 @@ func RenderChangePlan(id, title, date string) []byte {
 - Change ID: %s
 - Created: %s
 - Branch: —
-- Status: see [ledger.md](ledger.md)
+- Status: tracked in the tool-owned JSON state (.lessmess/workflow/)
 
 ## Objective and context
 
@@ -56,7 +51,7 @@ func RenderChangePlan(id, title, date string) []byte {
 
 ## Tasks
 
-1. (add task files under tasks/ and link them here)
+1. (task breakdown is maintained by the tool; see the board)
 `, id, title, id, date))
 }
 

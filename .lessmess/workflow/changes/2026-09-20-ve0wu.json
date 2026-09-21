@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "id": "2026-09-20-ve0wu",
+  "title": "General codebase chat",
+  "prefix": "CHAT",
+  "branch": "main",
+  "status": {
+    "value": "Done",
+    "derived": false
+  },
+  "created": "2026-09-20",
+  "updated": "2026-09-21",
+  "tasks": [
+    {
+      "id": "CHAT-00",
+      "seq": 0,
+      "title": "Server: chat session endpoint and prime module",
+      "file": "tasks/00-server-chat-session-endpoint-and-prime-m.md",
+      "status": "Done",
+      "updated": "2026-09-21",
+      "notes": "go vet clean; go test ./internal/server/ ok — TestChatSession (201, unassigned mapping, modules=[chat], free-agent prime, no workflow leakage), TestChatSessionPrimeFailureDeletes (502 + session deleted + mapping empty), TestChatSessionUnavailable/MappingUnreadable (503s), TestChatPrimeComposition (exact chat module, no placeholders/snapshot); TestSelectionDeterministic extended with chat-\u003echat"
+    },
+    {
+      "id": "CHAT-01",
+      "seq": 1,
+      "title": "UI: header Chat button and terminal wiring",
+      "file": "tasks/01-ui-header-chat-button-and-terminal-wirin.md",
+      "status": "Done",
+      "updated": "2026-09-21",
+      "notes": "node --check app.js clean; render tests pass — chat-btn present on settings page, absent on setup (TestSettingsPageHTML/TestSetupPageHTML), board/index unaffected; scratch binary built (embed+compile OK). Live spawn click-through deferred to user acceptance: scratch server run was refused by the opencode permission policy (external directory), so the live open happens on the real repo after rebuild+restart."
+    },
+    {
+      "id": "CHAT-02",
+      "seq": 2,
+      "title": "Verify suite and document the chat feature",
+      "file": "tasks/02-verify-suite-and-document-the-chat-featu.md",
+      "status": "Done",
+      "updated": "2026-09-21",
+      "notes": "go vet ./... clean; go test ./... all packages ok; lessmess validate exits 0 (only expected docs-staleness warnings — cleared by the close-out gardener); README top-menu bullet documents the Chat button and POST /chat/session."
+    }
+  ]
+}

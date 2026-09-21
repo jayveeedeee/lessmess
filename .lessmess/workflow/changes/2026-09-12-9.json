@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "id": "2026-09-12-9",
+  "title": "UI docs refresh button",
+  "prefix": "REF",
+  "status": {
+    "value": "Done",
+    "derived": false
+  },
+  "created": "2026-09-12",
+  "updated": "2026-09-12",
+  "tasks": [
+    {
+      "id": "REF-00",
+      "seq": 0,
+      "title": "StaleDirs helper and /docs/refresh union",
+      "file": "tasks/00-staledirs-endpoint-union.md",
+      "status": "Done",
+      "updated": "2026-09-12",
+      "notes": "Union enqueued exactly the 6 live hash-stale dirs; tests cover bubbling/disabled/fresh"
+    },
+    {
+      "id": "REF-01",
+      "seq": 1,
+      "title": "Notification bell, modal, banner re-scope",
+      "file": "tasks/01-bell-modal-ui.md",
+      "status": "Done",
+      "dependsOn": [
+        "REF-00"
+      ],
+      "updated": "2026-09-12",
+      "notes": "Bell+modal live-verified; banner violations-only; docs SSE re-checks findings"
+    },
+    {
+      "id": "REF-02",
+      "seq": 2,
+      "title": "Dogfood and README touch-up",
+      "file": "tasks/02-dogfood-readme.md",
+      "status": "Done",
+      "dependsOn": [
+        "REF-00",
+        "REF-01"
+      ],
+      "updated": "2026-09-12",
+      "notes": "6 findings → 0 after one manual job; README updated"
+    }
+  ]
+}

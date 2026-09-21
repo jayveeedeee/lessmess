@@ -1,10 +1,13 @@
 # lessmess
 
-A single-binary kanban server for the `changes/` workflow defined in
-[`AGENTS.md`](AGENTS.md). It visualizes a repository's `changes/` tree as a
-kanban board and writes operations back to the markdown files — which remain
-the canonical, agent-readable database. The server is a view and editor over
-the files, never the owner of the data.
+A single-binary kanban server for the change-management workflow. Workflow
+state — changes, tasks, statuses, dependencies, decision logs — lives in a
+tool-owned JSON store under `.lessmess/workflow/` (committed alongside the
+code); narrative documents (plans, task prose) stay markdown under
+`changes/`. The board visualizes the state, every mutation goes through
+deterministic, rule-enforcing endpoints, and agent sessions receive their
+instructions and the current state injected at spawn — nothing hand-edits
+a table, and no stale instruction copies live in repositories.
 
 ## Build
 
@@ -21,8 +24,12 @@ Node toolchain required.
 # Start the board (http://127.0.0.1:8080)
 lessmess serve [--host 127.0.0.1] [--port 8080] [--dir .]
 
-# Check the changes/ tree against the AGENTS.md validation contract
+# Check the workflow state against the validation contract
 lessmess validate [--dir .]
+
+# One-time conversion of a legacy markdown-ledger repo to the JSON store
+# (serve and validate also auto-migrate on start)
+lessmess migrate [--dry-run] [--dir .]
 
 # Bootstrap an uninitialized directory as a workflow repository
 lessmess init [--dir .]
@@ -31,8 +38,35 @@ lessmess init [--dir .]
 lessmess docs seed [--dry-run] [--budget N] [--dir .]
 ```
 
-`--dir` points at a repository root containing `changes/` (default: current
-directory). One process serves one repository.
+`--dir` points at a repository root (default: current directory). One
+process serves one repository.
+
+## The JSON workflow state
+
+```
+.lessmess/workflow/            # tool-owned state, committed
+├── index.json                 # the change registry (id, title, prefix, branch, created)
+└── changes/<id>.json          # one change: overall status, decision log,
+                               #   task tree (id, title, status, deps, notes, order)
+
+changes/<id>/                  # narrative markdown, committed
+├── plan.md
+└── tasks/<nn>-<slug>.md       # task prose (no tables, no frontmatter)
+```
+
+- The rest of `.lessmess/` (sessions, settings, queues) stays personal and
+  gitignored; only `workflow/` is committed, via a `.gitignore` negation.
+- **Never edit the JSON by hand.** All mutations go through the store's
+  atomic writes, exposed as HTTP endpoints (used by the board and by
+  agents): task create/status/update/reorder, decomposition, decision log.
+  The workflow rules are enforced there — `Test` transitions require
+  recorded verification evidence, and `Done` is user-gated (agent calls
+  are refused; the board is the user's hands).
+- Derived change statuses (`Planned` / `In progress` / `Blocked`) are
+  recomputed from the task tree on every change and converge automatically;
+  `Done` and `Cancelled` are user-set.
+- `lessmess validate` checks the whole contract: state schema, prose/state
+  agreement, index/tree consistency.
 
 ### First run: onboarding wizard
 
@@ -46,12 +80,12 @@ redirect there until setup completes). The wizard walks through:
    credentials, `git`, and that the directory is writable. The wizard
    detects and instructs; it never tries to start anything itself.
 2. **Bootstrap** — creates the workflow files merge-safely (same artifacts
-   as `lessmess init`: `AGENTS.md`, `changes/ledger.md`, `.gitignore`,
-   `opencode.json`), with a separate choice of whether to enable docs
-   coverage (`agentsdocs.json`) and an **exclusion picker** for it: a lazy
-   directory tree (expand ▸ for nested folders) where checked directories
-   and their subtrees get no doc pairs — top-level picks also exclude
-   same-named directories elsewhere, and built-in exclusions like
+   as `lessmess init`: `AGENTS.md`, `.lessmess/workflow/index.json`,
+   `.gitignore`, `opencode.json`), with a separate choice of whether to
+   enable docs coverage (`agentsdocs.json`) and an **exclusion picker** for
+   it: a lazy directory tree (expand ▸ for nested folders) where checked
+   directories and their subtrees get no doc pairs — top-level picks also
+   exclude same-named directories elsewhere, and built-in exclusions like
    `node_modules` are pre-checked and disabled.
    The full UI **hot-opens in place** — no restart.
 3. **Default agent and model** — picked from live lists served by the
@@ -80,50 +114,59 @@ Setup API (for the wizard and other clients): `GET /setup`,
 ### The board
 
 - **Top menu** — Changes and Explorer are always visible in the header; the
-  active route is highlighted.
-- **`/`** — change list, built from the root ledger (`changes/ledger.md`),
-  newest change first.
+  active route is highlighted. On the right, **Chat** spawns a general
+  codebase chat (`POST /chat/session`): a fresh opencode session in the
+  repository root, primed as a free agent — it answers questions, explains
+  code, and edits files when you explicitly ask, with no change binding or
+  bookkeeping (edits land in the main tree as ordinary working-tree
+  changes). Every click opens a new session; chats are unassigned — they
+  appear in the index Discussions list — and open in the terminal overlay.
+  For directory-scoped, docs-grounded Q&A there is the explorer's per-
+  directory chat (see below).
+- **`/`** — change list, built from the workflow index plus each change's
+  state, newest change first.
 - **`/changes/<id>`** — kanban board with six columns (`Not started`,
-  `In progress`, `Blocked`, `Test`, `Done`, `Cancelled`); cards are the change
-  ledger's task rows in row order (= priority, per `AGENTS.md`). Agents stop
-  at `Test` once verification passes; `Done` is user-gated — the user drags
-  the card there or explicitly tells the agent to move it.
-- **Drag a card** between columns or reorder within one: rewrites the task
-  table in the change's `ledger.md` (status cell + row order), preserving all
-  other file content byte-for-byte.
-- **New change session**: creates spec-compliant change directories and
-  ledger rows; task files are written by the session's agent.
-- **Derived change status**: the status pill always mirrors the board —
+  `In progress`, `Blocked`, `Test`, `Done`, `Cancelled`); cards are the
+  change's tasks in priority order. Agents stop at `Test` once verification
+  passes; `Done` is user-gated — the user drags the card there or explicitly
+  accepts, which is enforced server-side (agent-side `Done` calls are
+  refused with guidance).
+- **Drag a card** between columns or reorder within one: writes the task's
+  status and position to the change's JSON state atomically.
+- **New change session**: creates the change (state + prose skeleton) and a
+  primed planning session; tasks are created through the API by the session's
+  agent.
+- **Derived change status**: the status pill always mirrors the state —
   `Planned` while no task has started, `Blocked` when every open task is
   blocked, `In progress` otherwise. The server derives it from the task
-  tree on every task change and repository rescan, and writes the change
-  ledger and the root-ledger row atomically so the two never drift; there
-  is no manual status control. `Done` is user-gated (**Close change**),
-  and new open work on a closed change flips it back to `In progress`.
-- **Live updates**: the server watches `changes/` with fsnotify; edits made
-  by other tools (e.g. an agent updating a ledger) appear on the board via
-  SSE without a restart or reload.
-- **Validation banner**: any breach of the `AGENTS.md` validation rules is
-  shown in a banner and refuses writes to the affected file.
+  tree on every task change and repository rescan. `Done` is user-gated
+  (**Close change**), and new open work on a closed change flips it back
+  to `In progress`.
+- **Live updates**: the server watches the workflow store and the prose
+  trees with fsnotify; external edits appear on the board via SSE without
+  a restart or reload.
+- **Validation banner**: any breach of the workflow validation rules is
+  shown in a banner and refuses writes to the affected state.
 
 ### Nested tasks (sub plans)
 
 Any task can be expanded into a sub plan when it needs detailed work: the
-task keeps its file and gains a container directory
-(`tasks/<NN-slug>/ledger.md` + `tasks/`) holding its subtasks with dotted
-IDs (`EXC-00` → `EXC-00.00` → `EXC-00.00.01`), recursively.
+task keeps its prose file and gains a container directory
+(`tasks/<nn>-<slug>/tasks/`) holding its subtasks with dotted IDs
+(`EXC-00` → `EXC-00.00` → `EXC-00.00.01`), recursively. Nesting lives in
+the JSON state (`parent` + dotted IDs); there are no per-container ledger
+files.
 
 - **⤢ Expand** on a card creates the container (the user-instructed
   decomposition action). Agents propose decompositions when work reveals
-  complexity but never create containers unprompted.
+  complexity but never expand unprompted.
 - **Drill down**: the `x/y ✓` badge on a decomposed card opens that task's
   sub-board (`/changes/<id>?task=<id>`) — the same kanban scoped to its
   children, with a breadcrumb back up.
 - **Progress is display-only**: badges on decomposed cards are computed from
   that task's descendants (`Test` + `Done` count as complete, `Cancelled`
-  leaves the denominator).
-  Nothing is ever written to a ledger by rollup — each status lives in the
-  row of its governing ledger, and `Done` stays user-gated.
+  leaves the denominator). Nothing is ever written by rollup — each status
+  lives in the state, and `Done` stays user-gated.
 - **Close-out is recursive**: closing a change requires every non-cancelled
   task in the whole tree to be `Test` or `Done`.
 - **Sessions**: every decomposed task gets one auto-spawned, task-scoped
@@ -131,6 +174,25 @@ IDs (`EXC-00` → `EXC-00.00` → `EXC-00.00.01`), recursively.
   the sub-board's Start/Continue button is the manual retry). Sub-boards
   list the sessions bound to that task; delegation with dotted title
   prefixes (`EXC-00.01: …`) attaches subagent sessions at any depth.
+
+## Instruction injection
+
+Agent sessions are primed at spawn with exactly the instructions that
+concern them, selected deterministically from versioned modules embedded in
+the binary (`internal/server/instructions.json`) — repositories carry only a
+short pointer in `AGENTS.md`, so refining an instruction needs no
+repository-file updates and can never go stale in downstream repos.
+
+- **Modules** (`discussion`, `change.session`, `change.handoff`, `worktree`,
+  `closeout`, `task.session`) are selected by session kind and change/task
+  state — e.g. the `worktree` module is injected only for worktree-backed
+  changes; a discussion session never sees task rules.
+- **The current state is injected too**: change and task primes carry a
+  deterministic view of the change's state (the same generated markdown the
+  board's Ledger modal shows), so agents never parse state files.
+- **Auditability**: every spawn logs and records the injected module IDs
+  (`.lessmess/sessions.json`), and `GET /workflow/instructions` serves the
+  module manifest.
 
 ## Settings
 
@@ -156,7 +218,7 @@ values apply to new activity immediately — no restart.
 | `session.model` | Model for new sessions as `provider/model` (e.g. `anthropic/claude-sonnet-4-5`). Same validation. |
 | `session.autoOpenTerminal` | Open the embedded terminal automatically after a session is created (default on). |
 | `prompts.discussion` / `change` / `commit` / `repoCommit` / `gardener` / `explorer` | Free text **appended** to the corresponding built-in prompt. Base prompts are never modified, so workflow safeguards stay intact. |
-| `git.defaultBranch` | Base branch for new change worktree branches (`change/<id>` is cut from it; empty uses the current branch at scaffold time). Always recorded in the root ledger Branch column. |
+| `git.defaultBranch` | Base branch for new change worktree branches (`change/<id>` is cut from it; empty uses the current branch at scaffold time). Always recorded on the change's index entry. |
 | `git.worktrees` | **Worktree per change** (default off — see the Worktree pipeline section below). When on, scaffolding creates a git branch and worktree per change, change sessions work there, and closing pushes the branch, opens a PR, and runs an agent review. |
 | `git.reviewModel` | Model for PR review sessions as `provider/model`. Empty inherits `session.model`. |
 | `ui.showArchived` | List archived changes on the Changes page (default on). |
@@ -187,10 +249,10 @@ the main tree and from other changes:
 - **Scaffold** cuts branch `change/<id>` from the configured base branch
   (or the current branch), registers a worktree at
   `<parent>/<repo>-worktrees/<id>`, and creates `changes/<id>/` *inside the
-  worktree*. The root ledger stays in the main tree — the server maintains it
-  there, so parallel branches never conflict. If the main tree has
-  uncommitted files, the scaffold still succeeds but the agent is warned
-  which files the new worktree will not contain.
+  worktree*. The workflow state stays in the main tree — the server
+  maintains it there centrally, so parallel branches never conflict. If the
+  main tree has uncommitted files, the scaffold still succeeds but the
+  agent is warned which files the new worktree will not contain.
 - **During the change**, every session bound to the change (change session,
   task subagents, commit sessions, the per-change terminal) works inside the
   worktree. The board shows the branch, worktree health (active / uncommitted
@@ -218,21 +280,24 @@ as before: no git operations, no gating, no worktrees.
 
 ## Safety
 
-- Binds `127.0.0.1` by default; **no authentication** — it is a local
-  single-user tool. Do not expose it on a network interface.
-- All file writes are atomic (temp file + rename). Change-workflow writes are
-  constrained to the `changes/` tree; docs-system writes are additionally
-  confined to the marker sections of `STRUCTURE.md`/`AGENTS.md` in covered
-  directories, verified after every LLM pass with rollback on violation.
-- The server only **creates and updates** files. The single exception: rolling
-  back a docs LLM pass removes a file that pass created (restoring the
-  pre-pass state).
-- Writes to a file that fails validation are refused, so the tool cannot
-  corrupt canonical data. External edits are never clobbered: every write is
-  applied to the latest on-disk content, and doc writes preserve all bytes
-  outside the markers.
-- Everything is plain markdown; inspect or undo any change with your editor
-  (or git, once the repository is under version control).
+- Binds `127.0.0.1` by default and has **no authentication**. A broader
+  `--host` bind is suitable only on a trusted private network or behind a VPN
+  such as Tailscale; never expose lessmess directly to the public internet.
+- All file writes are atomic (temp file + rename). Workflow writes touch
+  only the JSON store under `.lessmess/workflow/` and the prose files under
+  `changes/`; docs-system writes are additionally confined to the marker
+  sections of `STRUCTURE.md`/`AGENTS.md` in covered directories, verified
+  after every LLM pass with rollback on violation.
+- The server only **creates and updates** files, with two deliberate
+  exceptions: the one-time markdown→JSON migration deletes the legacy
+  ledger files (round-trip-verified first, git-recoverable), and rolling
+  back a docs LLM pass removes a file that pass created.
+- Writes that fail validation are refused, so the tool cannot corrupt
+  canonical data. External edits are never clobbered: every write applies
+  to the latest on-disk content, and doc writes preserve all bytes outside
+  the markers.
+- Workflow state is committed JSON and prose is plain markdown — inspect or
+  undo anything with git (or your editor) as with any other file.
 
 ## opencode integration
 
@@ -255,7 +320,14 @@ calls are made server-side).
   `POST /changes/{id}/task-sessions` binds a subagent session explicitly.
 - **Continue session** button on each board: one click resumes the session
   you last opened for that change — or starts a new one when the change has
-  none.
+  none. Narrow screens open Chat; desktop screens retain the Terminal default.
+- **Mobile Chat**: every mapped session offers a structured Chat view alongside
+  Terminal. It renders the authoritative OpenCode transcript, reasoning, tool
+  progress/results, errors, permission requests, and structured forms; users
+  can send prompts or interrupt work without a PTY. The view polls only while
+  visible, restores drafts, preserves a reader's scroll position, and exposes
+  change tasks as a mobile drawer. Chat and Terminal attach to the same session,
+  so switching modes does not split context.
 - **Embedded terminal**: opening a session renders the live opencode TUI in
   the browser (xterm.js). lessmess spawns `opencode2 --session <id>` in
   its own PTY and bridges it over a WebSocket; the session persists in the
@@ -267,12 +339,12 @@ calls are made server-side).
   the file itself is only ever read). If generation fails, the terminal falls
   back to your normal setup with a logged warning. Your standalone `opencode2`
   is unaffected.
-- **Task panel**: terminals opened on a change board show a lessmess-native
-  panel on the right (~20% width) mirroring the board's tasks grouped by
+- **Task panel**: terminals and desktop Chat views opened on a change board
+  show a lessmess-native panel on the right mirroring the board's tasks grouped by
   status. It updates live as tasks change (no page reload), clicking a row
   opens the task detail above the terminal, and a fixed Plan button at the
-  bottom opens the change plan. Unassigned terminals (Discussions, explorer
-  chats) keep the full-width terminal.
+  bottom opens the change plan. Chat turns the panel into an on-demand drawer
+  at phone widths. Unassigned sessions keep the full-width conversation view.
 - **New change session** (index page): scaffolds a change, creates and
   primes an opencode session, and opens the board with the terminal
   attached. The agent works the `changes/` workflow; the board updates live.
@@ -290,6 +362,71 @@ calls are made server-side).
   same rails as the board's per-change Commit: commit only, never push. The
   session appears under Discussions as "repo — git commit".
 
+### Mobile Chat capability matrix
+
+OpenCode's V2 HTTP API is experimental and differs between releases. lessmess
+uses explicit adapters and shows unavailable controls when the connected
+service does not advertise the required operation; it never forwards arbitrary
+OpenCode paths. This matrix tracks the supported mobile surface:
+
+| Capability | lessmess support | OpenCode qualification |
+| --- | --- | --- |
+| Transcript, prompt, interrupt | Supported | Authoritative polling; no lessmess transcript storage |
+| Permissions and forms | Supported | Pending interactions are reloaded from OpenCode |
+| Long history | Supported | Bounded 50-message pages with opaque cursors |
+| File/image attachments | Supported | In-memory only; 10 files, 20 MiB each and total |
+| Project references | Supported | Aliases are resolved server-side; browser paths are rejected |
+| Historic attachment download | Supported | Projected message bytes only; arbitrary file URIs are never dereferenced |
+| Tool details | Supported | Loaded on demand in bounded chunks; not upstream-paginated |
+| Turn diffs | Capability-gated | Current V2 session-diff API; older services may not provide it |
+| Agent/model switch | Supported | Project-scoped options; failed changes retain the prior selection |
+| Commands and prompt skills | Supported | Project-scoped discovery and validation |
+| Standalone skill activation | Capability-gated | Endpoint path differs across V2 releases |
+| Exact context pressure | Unavailable | UI estimates from latest usage and model context limit |
+| Fork/revert/compact/inbox | Supported | Version-aware; revert and cancellation limitations are shown in the UI |
+| Parent/child navigation | Supported | Authoritative `parentID` traversal with deep pagination and cycle guards |
+| Rename/unlink/delete | Supported | Unlink preserves OpenCode data; delete confirms and removes descendants |
+| Session export | Capability-gated | Experimental in current V2 and absent from some beta services |
+| Service status | Supported | Read-only identity, project scope, provider/model/plugin metadata, and exact operation capabilities at Settings → OpenCode service |
+| Integration connections | Supported | Key, OAuth, command, and service-environment methods use OpenCode's credential store; transient attempts are never persisted by lessmess |
+| MCP and saved permissions | Supported | Project-scoped status/resources, runtime connect/disconnect, active requests, and confirmed saved allow-rule removal |
+| Interactive shell | Terminal only | Chat may show bounded session shell output but never provides a PTY |
+| Public hosting | Unsupported | Use localhost or a trusted LAN/VPN; no built-in authentication or TLS |
+
+In particular, lessmess does not claim atomic revert previews, editable queued
+prompt text, authoritative inbox-cancellation outcomes, provider health pings,
+service restart, plugin updates, generic OpenCode configuration editing, or MCP
+configuration/authentication. MCP authentication links to a tested integration
+when OpenCode supplies one; otherwise the UI gives the OpenCode CLI/TUI remedy.
+
+`/settings/opencode` provides the mobile service-diagnostics view. Its explicit
+`GET /api/opencode/status` payload reports healthy, partial, degraded, and
+unsupported states without forwarding OpenCode errors, credentials, headers,
+settings, process details, connection URLs, temporary paths, or local plugin
+paths. Provider/model/plugin entries describe catalog availability only; they
+are not network health pings. “Rediscover service” re-reads and validates the
+registered endpoint and credentials without starting, stopping, or restarting
+OpenCode.
+
+The same page lists integrations and their supported connection methods. Key
+and provider-form values are submitted directly from a password-sensitive form
+to a narrow lessmess adapter, forwarded to OpenCode, and immediately discarded.
+OAuth and command attempt details are transient, non-cacheable, and polled only
+while their dialog is visible. Saved credential labels can be changed, activated,
+or deleted after a fresh-target check; connections supplied by the OpenCode
+service environment must instead be changed in that environment and the service
+restarted. Automatic loopback OAuth remains provider- and device-dependent.
+
+The MCP section exposes configured server status and redacted resource
+identities. Connect and disconnect use only the exact runtime operation
+advertised by the attached OpenCode service; the state may not survive an
+OpenCode restart. lessmess does not add, remove, or edit MCP configuration and
+does not assume an HTTP OAuth/logout endpoint exists. The permissions section
+shows repository-scoped active requests, links known mapped sessions back to
+Chat, and lists only this repository project's saved allow rules. Saved rules
+can be removed after a fresh-target confirmation; there is no create or edit
+API on this page.
+
 ### Security posture of agent sessions
 
 `opencode.json` in this repository pre-approves agent permissions so change
@@ -297,9 +434,9 @@ sessions run unattended: broad `allow` **inside this project**, with denies
 for external directories, `.env` files, and `git push`. This means an agent
 can edit files and run shell commands in this repo without per-action
 prompts — only run this on a repository you are comfortable letting an agent
-work in autonomously. The embedded terminal and the service API are
-localhost-only, and the opencode service password is never exposed to the
-browser (injected server-side).
+work in autonomously. lessmess binds localhost by default; even when deliberately
+bound to a trusted LAN/VPN interface, the OpenCode service password is never
+exposed to the browser because all service calls are made server-side.
 
 If the service is unreachable, lessmess starts normally without the
 integration (a warning is logged).
@@ -321,8 +458,9 @@ the local learnings. Two files per covered folder:
 Coverage is configured by a committed [`agentsdocs.json`](agentsdocs.json)
 (include/exclude globs; hidden dirs and `changes/` are never covered). Without
 it, the whole subsystem is inert. `lessmess init` writes it along with a
-root `AGENTS.md` carrying the canonical workflow instructions, the `changes/`
-skeleton, `.gitignore` handling, and a starter `opencode.json`.
+root `AGENTS.md` workflow pointer, the workflow state skeleton
+(`changes/` + `.lessmess/workflow/index.json`), `.gitignore` handling, and
+a starter `opencode.json`.
 
 - **Seed**: `lessmess docs seed` walks the tree bottom-up, writes
   `STRUCTURE.md` skeletons, then runs one unattended opencode session per
@@ -403,12 +541,12 @@ go test ./...
 Layout:
 
 ```text
-cmd/lessmess/   CLI entry (serve, validate, init, docs seed)
-internal/model/    parsers + serializers for the AGENTS.md file formats
-internal/store/    scan, cache, fsnotify watch, validation, safe writes
-internal/server/   HTTP handlers, SSE, template rendering, docs queue + gardener
-internal/docs/     repo docs: coverage config, tree walk, STRUCTURE.md generation, seed
-web/               embedded templates and static assets (see web/static/VENDOR.md)
+cmd/lessmess/       CLI entry (serve, validate, migrate, init, docs seed)
+internal/model/     JSON workflow state types + legacy markdown readers (migration)
+internal/store/     state store: scan, cache, fsnotify watch, validation, safe writes, migration
+internal/server/    HTTP handlers, SSE, instruction injection, template rendering, docs queue + gardener
+internal/docs/      repo docs: coverage config, tree walk, STRUCTURE.md generation, seed
+web/                embedded templates and static assets (see web/static/VENDOR.md)
 ```
 
 Vendored frontend assets (htmx, SortableJS) are pinned with checksums in

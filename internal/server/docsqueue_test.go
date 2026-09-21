@@ -2,8 +2,10 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -151,6 +153,66 @@ func TestCloseEnqueuesAndRunsJob(t *testing.T) {
 	}
 }
 
+// A close-out touching more than docsJobMaxDirs dirs enqueues one job per
+// chunk; ancestors are deduped across chunks and never shadow a primary
+// target, so a failed job's stale set is bounded to its own chunk.
+func TestCloseEnqueuesChunkedJobs(t *testing.T) {
+	s, dir := docsServer(t)
+	writeTaskFilesAffected(t, dir, "2026-09-10-0", "00-first.md", `
+- README.md
+- cmd/tasktracker/main.go
+- internal/docs/seed.go
+- internal/model/docfile.go
+- internal/server/server.go
+`)
+	runner := &fakeRunner{}
+	s.SetDocsRunner(runner)
+
+	w := do(t, s.Handler(), "POST", "/changes/2026-09-10-0/close", "")
+	if w.Code != 200 {
+		t.Fatalf("close: %d %s", w.Code, w.Body)
+	}
+	// 5 touched dirs at 3 per chunk: 2 jobs.
+	waitForCond(t, "chunked jobs", func() bool { return len(runner.got()) == 2 })
+
+	wantDirs := []string{".", "cmd/tasktracker", "internal/docs", "internal/model", "internal/server"}
+	var allDirs []string
+	covered := map[string]bool{}
+	for _, job := range runner.got() {
+		if job.Change != "2026-09-10-0" || job.Title != "Fixture change" {
+			t.Errorf("job identity: %+v", job)
+		}
+		if len(job.Dirs) > docsJobMaxDirs {
+			t.Errorf("job has %d dirs, want at most %d", len(job.Dirs), docsJobMaxDirs)
+		}
+		for _, d := range append(append([]string{}, job.Dirs...), job.Ancestors...) {
+			if covered[d] {
+				t.Errorf("dir %s claimed by more than one job: %+v", d, runner.got())
+			}
+			covered[d] = true
+		}
+		allDirs = append(allDirs, job.Dirs...)
+	}
+	sort.Strings(allDirs)
+	if strings.Join(allDirs, ",") != strings.Join(wantDirs, ",") {
+		t.Errorf("union of job dirs = %v, want %v", allDirs, wantDirs)
+	}
+	// Nothing lost versus the old single-job semantics: the union of all
+	// dirs and ancestors equals dirs ∪ coveredAncestors(dirs).
+	want := map[string]bool{}
+	for _, d := range append(append([]string{}, wantDirs...), coveredAncestors(wantDirs, s.docsQ.cfg)...) {
+		want[d] = true
+	}
+	if len(covered) != len(want) {
+		t.Errorf("covered set %v, want %v", covered, want)
+	}
+	for d := range want {
+		if !covered[d] {
+			t.Errorf("dir %s missing from the jobs' union", d)
+		}
+	}
+}
+
 func TestCoveredAncestors(t *testing.T) {
 	cfg := docs.DefaultConfig()
 	cases := []struct {
@@ -242,6 +304,20 @@ func TestDocsRefreshReconcilesStale(t *testing.T) {
 		t.Errorf("reconciliation job: %+v", job)
 	}
 	waitForCond(t, "stale cleared", func() bool { return len(s.docsQ.staleDirs()) == 0 })
+
+	// The cleared flags must also reach disk: a restart must not resurrect
+	// them from the persisted state.
+	data, err := os.ReadFile(filepath.Join(dir, ".lessmess", "docs-queue.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var persisted docsQueueState
+	if err := json.Unmarshal(data, &persisted); err != nil {
+		t.Fatal(err)
+	}
+	if len(persisted.Stale) != 0 {
+		t.Errorf("persisted stale after success: %v", persisted.Stale)
+	}
 }
 
 func TestDocsRefreshUnionCoversHashStale(t *testing.T) {
@@ -339,6 +415,71 @@ func TestChunkDirs(t *testing.T) {
 	}
 }
 
+func TestJobTimeoutScalesWithDirs(t *testing.T) {
+	cases := []struct {
+		name      string
+		dirs      []string
+		ancestors []string
+		want      time.Duration
+	}{
+		{"empty keeps the base", nil, nil, docsJobBaseTimeout},
+		{"one dir", []string{"a"}, nil, docsJobBaseTimeout + docsJobPerDirTimeout},
+		{"dirs and ancestors both count", []string{"a", "b", "c"}, []string{".", "x"}, docsJobBaseTimeout + 5*docsJobPerDirTimeout},
+	}
+	for _, tc := range cases {
+		got := jobTimeout(DocsJob{Dirs: tc.dirs, Ancestors: tc.ancestors})
+		if got != tc.want {
+			t.Errorf("%s: jobTimeout = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
+// deadlineRunner records the context deadline its job ran under.
+type deadlineRunner struct {
+	mu       sync.Mutex
+	deadline time.Time
+	ok       bool
+}
+
+func (d *deadlineRunner) RunDocsJob(ctx context.Context, _ DocsJob) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.deadline, d.ok = ctx.Deadline()
+	return nil
+}
+
+func (d *deadlineRunner) got() (time.Time, bool) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.deadline, d.ok
+}
+
+// The worker's job context must carry jobTimeout's budget, not a constant.
+func TestRunUsesScaledJobTimeout(t *testing.T) {
+	_, dir := docsServer(t) // fixture repo layout only
+	cfg := docs.DefaultConfig()
+	q := newDocsQueue(dir, cfg)
+	q.start()
+	defer q.stop()
+
+	job := DocsJob{
+		Change:    "2026-09-10-0",
+		Dirs:      []string{"internal/model", "internal/docs"},
+		Ancestors: []string{".", "internal"},
+		Enqueued:  time.Now().Format(time.RFC3339),
+	}
+	runner := &deadlineRunner{}
+	start := time.Now()
+	q.setRunner(runner)
+	q.enqueue(job)
+	waitForCond(t, "job under a scaled deadline", func() bool { _, ok := runner.got(); return ok })
+	deadline, _ := runner.got()
+	want := start.Add(jobTimeout(job))
+	if deadline.Before(want) || deadline.After(want.Add(5*time.Second)) {
+		t.Errorf("deadline = %v, want %v (pop latency allowance 5s)", deadline, want)
+	}
+}
+
 // A union larger than docsJobMaxDirs splits into several sequential jobs
 // so one fragile giant session cannot flag everything stale at once.
 func TestDocsRefreshChunksLargeUnions(t *testing.T) {
@@ -359,9 +500,10 @@ func TestDocsRefreshChunksLargeUnions(t *testing.T) {
 	if w.Code != 202 {
 		t.Fatalf("refresh: %d %s", w.Code, w.Body)
 	}
-	waitForCond(t, "chunked jobs", func() bool { return len(runner.got()) == 2 })
+	// 13 dirs at docsJobMaxDirs per job: 4 full chunks plus a remainder.
+	waitForCond(t, "chunked jobs", func() bool { return len(runner.got()) == 5 })
 	for _, job := range runner.got() {
-		if len(job.Dirs) > 10 {
+		if len(job.Dirs) > docsJobMaxDirs {
 			t.Errorf("job dir count %d exceeds the chunk bound", len(job.Dirs))
 		}
 	}

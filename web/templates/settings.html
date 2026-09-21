@@ -37,6 +37,11 @@
       <a class="btn-ghost settings-wizard-btn" href="/setup">Re-run the onboarding wizard</a>
       <p class="muted field-help">Six steps: prerequisites, project name, bootstrap, default agent and model, optional docs seeding, finish. Runs on top of the current repository — existing artifacts are kept.</p>
     </div>
+    <div class="settings-field">
+      <label>OpenCode service</label>
+      <a class="btn-ghost settings-wizard-btn" href="/settings/opencode">View service status</a>
+      <p class="muted field-help">Diagnose service reachability, project scope, providers, models, plugins, and supported operations.</p>
+    </div>
   </section>
 
   <section class="settings-section" data-section="session">
@@ -124,7 +129,7 @@
       <label>Base branch <span class="src-badge" data-badge></span><button type="button" class="settings-change" title="Discuss changing this setting">✦ change</button></label>
       <input type="text" list="settings-branch-list" data-input autocomplete="off" spellcheck="false">
       <datalist id="settings-branch-list"></datalist>
-      <p class="muted field-help">Base for new change worktree branches (change/&lt;id&gt; is cut from it). Empty uses the current branch at scaffold time. Always recorded in the root ledger Branch column.</p>
+      <p class="muted field-help">Base for new change worktree branches (change/&lt;id&gt; is cut from it). Empty uses the current branch at scaffold time. Always recorded on the change's index entry.</p>
     </div>
     <div class="settings-field" data-field="git.worktrees" data-kind="bool">
       <label>Worktree per change <span class="src-badge" data-badge></span><button type="button" class="settings-change" title="Discuss changing this setting">✦ change</button></label>

@@ -18,12 +18,12 @@ import (
 // DocsJob is one queued doc-gardener unit of work: refresh the doc pairs of
 // Dirs on behalf of a closed change (or a manual reconciliation).
 type DocsJob struct {
-	Change    string            `json:"change"`              // change ID, or "manual"
-	Title     string            `json:"title"`               // change title, for prompt context
-	Dirs      []string          `json:"dirs"`                // covered repo-relative dirs, sorted; may contain "."
-	Ancestors []string          `json:"ancestors,omitempty"` // covered ancestors of Dirs: review-and-fix targets
-	LintRefs  map[string][]string `json:"lintRefs,omitempty"` // manual jobs: dir → missing paths flagged by the reference lint
-	Enqueued  string            `json:"enqueued"`            // RFC3339
+	Change    string              `json:"change"`              // change ID, or "manual"
+	Title     string              `json:"title"`               // change title, for prompt context
+	Dirs      []string            `json:"dirs"`                // covered repo-relative dirs, sorted; may contain "."
+	Ancestors []string            `json:"ancestors,omitempty"` // covered ancestors of Dirs: review-and-fix targets
+	LintRefs  map[string][]string `json:"lintRefs,omitempty"`  // manual jobs: dir → missing paths flagged by the reference lint
+	Enqueued  string              `json:"enqueued"`            // RFC3339
 }
 
 // DocsRunner executes one job. Implemented by the doc gardener (DOC-06);
@@ -171,7 +171,7 @@ func (q *docsQueue) run(job DocsJob) {
 		q.failStale(job, "opencode service unavailable")
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), jobTimeout(job))
 	err := runner.RunDocsJob(ctx, job)
 	cancel()
 	if err != nil {
@@ -183,6 +183,9 @@ func (q *docsQueue) run(job DocsJob) {
 	for _, d := range append(append([]string{}, job.Dirs...), job.Ancestors...) {
 		delete(q.state.Stale, d)
 	}
+	// Persist the clears too: without this, a restart would resurrect
+	// stale flags from disk for dirs the job just refreshed.
+	q.persistLocked()
 	q.mu.Unlock()
 	slog.Info("docs job done", "change", job.Change, "dirs", job.Dirs, "ancestors", job.Ancestors)
 }
@@ -222,7 +225,11 @@ func (q *docsQueue) staleReasons() map[string]string {
 }
 
 // enqueueDocsRefresh is the close-out hook: best-effort, never failing the
-// close itself.
+// close itself. The touched dirs are chunked (docsJobMaxDirs) into one job
+// each, so a failed job flags and reverts only its own chunk; ancestors are
+// claimed by the earliest chunk that touches their subtree and never shadow
+// a primary target — every directory is updated or reviewed exactly once
+// across the change's jobs.
 func (s *Server) enqueueDocsRefresh(changeID string) {
 	if s.docsQ == nil {
 		return
@@ -236,21 +243,32 @@ func (s *Server) enqueueDocsRefresh(changeID string) {
 		return
 	}
 	title := changeID
-	if root, err := s.st.Root(); err == nil {
-		for _, rr := range root.Rows {
-			if rr.Change == changeID {
-				title = rr.Title
-				break
-			}
-		}
+	if e := s.st.Entry(changeID); e != nil {
+		title = e.Title
 	}
-	s.docsQ.enqueue(DocsJob{
-		Change:    changeID,
-		Title:     title,
-		Dirs:      dirs,
-		Ancestors: coveredAncestors(dirs, s.docsQ.cfg),
-		Enqueued:  time.Now().Format(time.RFC3339),
-	})
+	primary := make(map[string]bool, len(dirs))
+	for _, d := range dirs {
+		primary[d] = true
+	}
+	now := time.Now().Format(time.RFC3339)
+	seen := map[string]bool{}
+	for _, chunk := range chunkDirs(dirs, docsJobMaxDirs) {
+		var ancestors []string
+		for _, a := range coveredAncestors(chunk, s.docsQ.cfg) {
+			if primary[a] || seen[a] {
+				continue
+			}
+			seen[a] = true
+			ancestors = append(ancestors, a)
+		}
+		s.docsQ.enqueue(DocsJob{
+			Change:    changeID,
+			Title:     title,
+			Dirs:      chunk,
+			Ancestors: ancestors,
+			Enqueued:  now,
+		})
+	}
 }
 
 // SetDocsRunner attaches the job executor (tests and, via SetOpencode, the
@@ -261,11 +279,31 @@ func (s *Server) SetDocsRunner(r DocsRunner) {
 	}
 }
 
-// docsJobMaxDirs bounds one manual reconciliation job: a union covering
-// dozens of directories would otherwise become a single giant gardener
-// session whose failure flags every dir stale at once. The serialized
-// queue drains the chunks sequentially.
-const docsJobMaxDirs = 10
+// docsJobMaxDirs bounds one docs job — both close-out chunks and manual
+// reconciliation unions: a job covering many directories becomes one long
+// gardener session whose failure flags every covered dir stale at once
+// (observed 2026-09-19: whole-tree close-out and refresh jobs all died at
+// the fixed job budget while still busy). Three dirs keeps a session
+// comfortably inside the scaled job budget; the serialized queue drains
+// the chunks sequentially.
+const docsJobMaxDirs = 3
+
+// The gardener session budget: a fixed 15 minutes provably cannot fit a
+// multi-dir session (2026-09-19: three consecutive jobs died at exactly
+// 15:00 while still busy; the model gardens on the order of five minutes
+// per directory), so the budget scales with the job's target count.
+const (
+	docsJobBaseTimeout   = 15 * time.Minute
+	docsJobPerDirTimeout = 5 * time.Minute
+)
+
+// jobTimeout returns the gardener session budget for one job: the base
+// plus per-dir time for every update and review target — one session
+// gardens both lists. A 1-dir job keeps today's effective budget (20 min);
+// a 3-dir chunk with ancestors gets 30–40+.
+func jobTimeout(job DocsJob) time.Duration {
+	return docsJobBaseTimeout + time.Duration(len(job.Dirs)+len(job.Ancestors))*docsJobPerDirTimeout
+}
 
 // chunkDirs splits dirs into consecutive chunks of at most size entries.
 func chunkDirs(dirs []string, size int) [][]string {

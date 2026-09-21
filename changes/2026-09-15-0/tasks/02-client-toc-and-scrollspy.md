@@ -1,7 +1,3 @@
----
-id: MTOC-02
-title: Client TOC builder with click-to-scroll and scroll-spy
----
 
 # MTOC-02: Client TOC builder with click-to-scroll and scroll-spy
 

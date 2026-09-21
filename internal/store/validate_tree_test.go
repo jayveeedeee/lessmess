@@ -56,83 +56,78 @@ func TestValidateStrayDir(t *testing.T) {
 		t.Fatal(err)
 	}
 	s.Reload()
-	hasViolation(t, s.Validate(), 3, "tasks/77-stray", "no matching sibling task file")
+	hasViolation(t, s.Validate(), 3, "tasks/77-stray", "not part of any sub plan")
 }
 
-func rewrite(t *testing.T, path string, old, new string) {
+// mutateState applies f to the fixture change's state on disk and reloads.
+func mutateState(t *testing.T, s *Store, f func(*model.ChangeState)) {
 	t.Helper()
-	b := strings.Replace(string(readFile(t, path)), old, new, 1)
-	if err := os.WriteFile(path, []byte(b), 0o644); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestValidateContainerMissingPieces(t *testing.T) {
-	s, dir := nestedFixture(t)
-	inner := filepath.Join(dir, "changes", "2026-09-10-0", "tasks", "00-first", "tasks", "00-child-one")
-
-	// Remove the inner container's tasks/ directory (with its grandchild):
-	// rule 2 flags the missing directory; the dangling grandchild row is a
-	// bonus rule-3 violation we do not assert.
-	if err := os.RemoveAll(filepath.Join(inner, "tasks")); err != nil {
-		t.Fatal(err)
-	}
-	s.Reload()
-	hasViolation(t, s.Validate(), 2, "00-child-one/tasks", "missing tasks/")
-
-	// Remove the inner container's ledger.md: rule 2 flags it; the task
-	// file 00-child-one.md keeps its governing row one level up.
-	if err := os.Remove(filepath.Join(inner, "ledger.md")); err != nil {
-		t.Fatal(err)
-	}
-	s.Reload()
-	hasViolation(t, s.Validate(), 2, "00-child-one/ledger.md", "missing ledger.md")
-}
-
-func TestValidateNestedSequenceAndDepth(t *testing.T) {
-	s, dir := nestedFixture(t)
-	innerLedger := filepath.Join(dir, "changes", "2026-09-10-0", "tasks", "00-first", "tasks", "00-child-one", "ledger.md")
-	grand := filepath.Join(dir, "changes", "2026-09-10-0", "tasks", "00-first", "tasks", "00-child-one", "tasks")
-
-	// Rename the grandchild file and update the row's href to follow it:
-	// the sequence now disagrees with the row ID's final segment.
-	if err := os.Rename(filepath.Join(grand, "00-grand.md"), filepath.Join(grand, "05-grand.md")); err != nil {
-		t.Fatal(err)
-	}
-	rewrite(t, innerLedger, "(tasks/00-grand.md)", "(tasks/05-grand.md)")
-	s.Reload()
-	hasViolation(t, s.Validate(), 3, "05-grand.md", "filename sequence")
-
-	// Restore, then make the row ID one level too deep for its nesting.
-	if err := os.Rename(filepath.Join(grand, "05-grand.md"), filepath.Join(grand, "00-grand.md")); err != nil {
-		t.Fatal(err)
-	}
-	rewrite(t, innerLedger, "(tasks/05-grand.md)", "(tasks/00-grand.md)")
-	rewrite(t, innerLedger, "[FIX-00.00.00]", "[FIX-00.00.00.09]")
-	s.Reload()
-	hasViolation(t, s.Validate(), 3, "00-grand.md", "depth")
-
-	// A single-digit dotted segment is malformed.
-	rewrite(t, innerLedger, "[FIX-00.00.00.09]", "[FIX-00.00.0]")
-	s.Reload()
-	hasViolation(t, s.Validate(), 3, "00-grand.md", "malformed dotted")
-}
-
-func TestValidateOrphanChildFile(t *testing.T) {
-	s, dir := nestedFixture(t)
-	// Drop the container's ledger row for the second child by rewriting
-	// the ledger with only the first child's row.
-	containerLedger := filepath.Join(dir, "changes", "2026-09-10-0", "tasks", "00-first", "ledger.md")
-	tl, err := model.ParseTaskLedger("ledger.md", model.RenderTaskLedger("FIX-00", "2026-09-10-0", "2026-09-16"))
+	p := filepath.Join(s.Dir, StateDirName, "workflow", "changes", "2026-09-10-0.json")
+	st, err := model.LoadChangeState(p)
 	if err != nil {
 		t.Fatal(err)
 	}
-	tl.AppendTask(model.TaskRow{ID: "FIX-00.00", Href: "tasks/00-child-one.md", Title: "Child One", Status: model.StatusNotStarted, Updated: "2026-09-16", Notes: model.Empty})
-	if err := os.WriteFile(containerLedger, tl.Content(), 0o644); err != nil {
+	f(st)
+	if err := os.WriteFile(p, mustRead(t, p)[:0], 0o644); err != nil { // truncate in place
+		t.Fatal(err)
+	}
+	if err := st.Save(p); err != nil {
 		t.Fatal(err)
 	}
 	s.Reload()
-	hasViolation(t, s.Validate(), 3, "01-child-two.md", "no ledger row")
+}
+
+func TestValidateMissingNestedProse(t *testing.T) {
+	s, dir := nestedFixture(t)
+	grand := filepath.Join(dir, "changes", "2026-09-10-0", "tasks", "00-first", "tasks", "00-child-one", "tasks", "00-grand.md")
+	if err := os.Remove(grand); err != nil {
+		t.Fatal(err)
+	}
+	s.Reload()
+	hasViolation(t, s.Validate(), 3, "00-grand.md", "missing prose file")
+}
+
+func TestValidateNestedSequenceAndDepth(t *testing.T) {
+	s, _ := nestedFixture(t)
+
+	// Sequence disagreement between a task's id and its file name.
+	mutateState(t, s, func(st *model.ChangeState) {
+		st.Task("FIX-00.00.00").File = "tasks/00-first/tasks/00-child-one/tasks/05-grand.md"
+	})
+	hasViolation(t, s.Validate(), 5, "changes/2026-09-10-0", "does not start with seq 00")
+
+	// Restore, then make the id one level too deep for its nesting.
+	mutateState(t, s, func(st *model.ChangeState) {
+		g := st.Task("FIX-00.00.00")
+		g.File = "tasks/00-first/tasks/00-child-one/tasks/00-grand.md"
+		g.ID = "FIX-00.00.00.09"
+		g.Parent = "FIX-00.00.00" // keep parent coherent so depth is the flagged issue
+	})
+	hasViolation(t, s.Validate(), 5, "changes/2026-09-10-0", "parent")
+
+	// A single-digit dotted segment is malformed.
+	mutateState(t, s, func(st *model.ChangeState) {
+		g := st.Task("FIX-00.00.00.09")
+		g.ID = "FIX-00.00.0"
+		g.Parent = "FIX-00.00"
+	})
+	hasViolation(t, s.Validate(), 5, "changes/2026-09-10-0", "two-digit")
+}
+
+func TestValidateOrphanChildFile(t *testing.T) {
+	s, _ := nestedFixture(t)
+	// Drop the second child from the state; its prose file becomes an
+	// orphan.
+	mutateState(t, s, func(st *model.ChangeState) {
+		var tasks []model.TaskState
+		for i := range st.Tasks {
+			if st.Tasks[i].ID != "FIX-00.01" {
+				tasks = append(tasks, st.Tasks[i])
+			}
+		}
+		st.Tasks = tasks
+	})
+	hasViolation(t, s.Validate(), 3, "01-child-two.md", "not referenced")
 }
 
 func TestCloseOutReadyRecursive(t *testing.T) {

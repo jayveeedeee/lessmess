@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "id": "2026-09-17-4esfh",
+  "title": "Project name branding",
+  "prefix": "PROJ",
+  "status": {
+    "value": "Done",
+    "derived": false
+  },
+  "created": "2026-09-17",
+  "updated": "2026-09-17",
+  "tasks": [
+    {
+      "id": "PROJ-00",
+      "seq": 0,
+      "title": "General settings section and project-name plumbing",
+      "file": "tasks/00-general-section-plumbing.md",
+      "status": "Done",
+      "updated": "2026-09-17",
+      "notes": "settingsgeneral_test.go: fallback, layering, patch rejection, allowlist; full `go test ./...` green"
+    },
+    {
+      "id": "PROJ-01",
+      "seq": 1,
+      "title": "Project name in header, terminal head, and tab title",
+      "file": "tasks/01-project-name-chrome.md",
+      "status": "Done",
+      "dependsOn": [
+        "PROJ-00"
+      ],
+      "updated": "2026-09-17",
+      "notes": "projectnamechrome_test.go: title+2 spans on 5 pages, fallback, escaping; live-verified via scratch server"
+    },
+    {
+      "id": "PROJ-02",
+      "seq": 2,
+      "title": "Settings General project-name field",
+      "file": "tasks/02-settings-general-ui.md",
+      "status": "Done",
+      "dependsOn": [
+        "PROJ-00"
+      ],
+      "updated": "2026-09-17",
+      "notes": "Field + save-reload wired; PUT verified live (project+personal, badge source); interactive pass awaits user"
+    },
+    {
+      "id": "PROJ-03",
+      "seq": 3,
+      "title": "Onboarding wizard Project name step",
+      "file": "tasks/03-onboarding-name-step.md",
+      "status": "Done",
+      "dependsOn": [
+        "PROJ-00"
+      ],
+      "updated": "2026-09-17",
+      "notes": "Step, prefill, save/skip, finish summary wired; step markup live-verified on /setup; click-through awaits user"
+    }
+  ]
+}

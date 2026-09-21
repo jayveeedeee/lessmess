@@ -1,0 +1,75 @@
+{
+  "version": 1,
+  "id": "2026-09-15-0",
+  "title": "Modal TOC and in-modal navigation",
+  "prefix": "MTOC",
+  "status": {
+    "value": "Done",
+    "derived": false
+  },
+  "created": "2026-09-15",
+  "updated": "2026-09-15",
+  "tasks": [
+    {
+      "id": "MTOC-00",
+      "seq": 0,
+      "title": "Heading anchors and ledger detail endpoint",
+      "file": "tasks/00-heading-ids-and-ledger-endpoint.md",
+      "status": "Done",
+      "updated": "2026-09-15",
+      "notes": "GFM table extension added (required for ledger rendering); `go vet` + full server/store tests green"
+    },
+    {
+      "id": "MTOC-02",
+      "seq": 2,
+      "title": "Client TOC builder with click-to-scroll and scroll-spy",
+      "file": "tasks/02-client-toc-and-scrollspy.md",
+      "status": "Done",
+      "dependsOn": [
+        "MTOC-00",
+        "MTOC-01"
+      ],
+      "updated": "2026-09-15",
+      "notes": "JS syntax-checked; heading ids verified in served HTML; visual scroll-spy awaits user click-through"
+    },
+    {
+      "id": "MTOC-04",
+      "seq": 4,
+      "title": "End-to-end verification and checks",
+      "file": "tasks/04-endtoend-verification.md",
+      "status": "Done",
+      "dependsOn": [
+        "MTOC-00",
+        "MTOC-01",
+        "MTOC-02",
+        "MTOC-03"
+      ],
+      "updated": "2026-09-15",
+      "notes": "`go vet ./... \u0026\u0026 go test ./...` green; `lessmess validate` OK; binary rebuilt + server restarted; browser click-through handed to user"
+    },
+    {
+      "id": "MTOC-01",
+      "seq": 1,
+      "title": "Two-pane modal layout in templates and CSS",
+      "file": "tasks/01-two-pane-modal-layout.md",
+      "status": "Done",
+      "dependsOn": [
+        "MTOC-00"
+      ],
+      "updated": "2026-09-15",
+      "notes": "Panes + hidden TOC rail verified in served HTML for plan/task/ledger; notif/commit modals untouched"
+    },
+    {
+      "id": "MTOC-03",
+      "seq": 3,
+      "title": "In-modal .md link interception",
+      "file": "tasks/03-inmodal-md-links.md",
+      "status": "Done",
+      "dependsOn": [
+        "MTOC-00"
+      ],
+      "updated": "2026-09-15",
+      "notes": "JS syntax-checked; all four link shapes served by live endpoints; behavior awaits user click-through"
+    }
+  ]
+}
