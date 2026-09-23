@@ -6,10 +6,8 @@ import (
 	"testing"
 )
 
-// The project name renders server-side in three chrome surfaces: the
-// header brand, the terminal overlay head, and the tab <title>. The
-// renderer hook fills pageData centrally, so every page (and the setup
-// shell) shows it.
+// The project name renders server-side in the header brand and tab <title>.
+// The renderer hook fills pageData centrally, so every page (and setup) shows it.
 
 func writeProjectName(t *testing.T, dir, name string) {
 	t.Helper()
@@ -32,9 +30,8 @@ func TestProjectNameInChrome(t *testing.T) {
 		if !strings.Contains(body, "<title>Atlas</title>") {
 			t.Errorf("%s: tab title missing the project name", path)
 		}
-		// Header brand plus terminal overlay head: exactly two spans.
-		if got := strings.Count(body, `<span class="brand-name">Atlas</span>`); got != 2 {
-			t.Errorf("%s: brand-name spans = %d, want 2", path, got)
+		if got := strings.Count(body, `<span class="brand-name">Atlas</span>`); got != 1 {
+			t.Errorf("%s: brand-name spans = %d, want 1", path, got)
 		}
 	}
 }
@@ -49,8 +46,8 @@ func TestProjectNameChromeFallsBackToDirectory(t *testing.T) {
 	if !strings.Contains(body, "<title>"+want+"</title>") {
 		t.Errorf("tab title = unset name, want fallback %q", want)
 	}
-	if got := strings.Count(body, `<span class="brand-name">`+want+`</span>`); got != 2 {
-		t.Errorf("brand-name spans = %d, want 2 (fallback name)", got)
+	if got := strings.Count(body, `<span class="brand-name">`+want+`</span>`); got != 1 {
+		t.Errorf("brand-name spans = %d, want 1 (fallback name)", got)
 	}
 }
 

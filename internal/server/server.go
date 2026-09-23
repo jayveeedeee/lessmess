@@ -20,7 +20,6 @@ import (
 	"lessmess/internal/model"
 	"lessmess/internal/opencode"
 	"lessmess/internal/store"
-	"lessmess/internal/terminal"
 )
 
 // Server routes requests to the store.
@@ -28,10 +27,6 @@ type Server struct {
 	st   *store.Store
 	mux  *http.ServeMux
 	rend *renderer
-	term *terminal.Manager
-	// SpawnCommand builds the command run in a PTY for a session ID.
-	// Overridable in tests.
-	SpawnCommand func(sessionID string) (string, []string)
 	// PublicBase is the host:port the server listens on, used in
 	// agent-facing prompts. Set by main; empty falls back to a default.
 	PublicBase string
@@ -50,12 +45,9 @@ func New(st *store.Store) *Server {
 	if err := store.MigrateStateDir(st.Dir); err != nil {
 		slog.Warn("state dir migration skipped", "err", err)
 	}
-	s := &Server{st: st, rend: newRenderer(), term: terminal.NewManager()}
+	s := &Server{st: st, rend: newRenderer()}
 	s.git = gitops.New(st.Dir, filepath.Join(st.Dir, store.StateDirName))
 	s.st.SetChangeRoot(s.worktreeChangeRoot())
-	s.SpawnCommand = func(sessionID string) (string, []string) {
-		return "opencode2", []string{"--session", sessionID}
-	}
 	m, err := loadMapping(filepath.Join(st.Dir, store.StateDirName, "sessions.json"))
 	s.sessions, s.mapErr = m, err
 	s.autos = loadAutosession(filepath.Join(st.Dir, store.StateDirName, "autosession.json"))
@@ -101,7 +93,6 @@ func New(st *store.Store) *Server {
 	mux.HandleFunc("GET /workflow/instructions", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, instructionManifest())
 	})
-	mux.HandleFunc("GET /terminal/ws", s.terminalWS)
 	mux.HandleFunc("GET /api/sessions/{sessionID}/chat", s.chatSnapshot)
 	mux.HandleFunc("GET /api/sessions/{sessionID}/chat/references", s.chatReferences)
 	mux.HandleFunc("GET /api/sessions/{sessionID}/chat/controls", s.chatControls)
@@ -217,7 +208,7 @@ func (s *Server) SetOpencode(c *opencode.Client) {
 	}
 }
 
-// Close releases resources (terminal PTYs, docs queue worker, docs watcher).
+// Close releases background workers and watchers.
 func (s *Server) Close() {
 	if s.docsQ != nil {
 		s.docsQ.stop()
@@ -225,7 +216,6 @@ func (s *Server) Close() {
 	if s.docsW != nil {
 		_ = s.docsW.Close()
 	}
-	s.term.CloseAll()
 }
 
 // Handler returns the root http.Handler.
@@ -474,12 +464,20 @@ func (s *Server) taskDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if wantsHTML(r) || isHX(r) {
-		view := taskView{Task: tf, Body: dropLeadingH1(tf.Body, tf.ID), Doc: "tasks/" + file}
+		view := taskView{Task: tf, Change: id, Body: dropLeadingH1(tf.Body, tf.ID), Doc: "tasks/" + file}
+		for _, status := range model.TaskStatusOrder {
+			view.Statuses = append(view.Statuses, string(status))
+		}
 		if c, err := s.st.Change(id); err == nil {
 			// Status lives in the JSON state: the tree node knows it
 			// wherever the task nests.
 			if n := c.Node(tf.ID); n != nil {
 				view.Status = string(n.NodeStatus())
+				if n.HasContainer() {
+					stats := n.SubtreeStats()
+					view.HasSub = true
+					view.SubDone, view.SubTotal = stats.Complete, stats.Total
+				}
 			}
 		}
 		s.rend.render(w, s.rend.partial, "taskDetail", view)

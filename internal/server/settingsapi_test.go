@@ -28,7 +28,7 @@ func TestSettingsAPIDefaults(t *testing.T) {
 	if resp.Project != nil || resp.Personal != nil {
 		t.Error("layers must be null when their files do not exist")
 	}
-	if !resp.Effective.Session.AutoOpenTerminal || !resp.Effective.UI.ShowArchived || !resp.Effective.Docs.AutoGardenerOnClose {
+	if !resp.Effective.UI.ShowArchived || !resp.Effective.Docs.AutoGardenerOnClose {
 		t.Errorf("effective defaults = %+v", resp.Effective)
 	}
 	if resp.LoadError != "" {

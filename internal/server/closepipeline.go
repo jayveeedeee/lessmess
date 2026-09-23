@@ -137,7 +137,7 @@ func (s *Server) prBodyFile(id, title string) (string, func(), error) {
 // runReviewer spawns, primes, awaits an unattended reviewer session working
 // in the change's worktree. Unlike the docs gardener it is NOT deleted when
 // it finishes: it is bound to the change, so the board's Sessions list and
-// terminal let you continue the conversation with the full context of its
+// Chat lets you continue the conversation with the full context of its
 // own review. The reviewer writes changes/<id>/review.md and touches
 // nothing else; the reply itself is not captured (the file is the
 // artifact).
@@ -168,7 +168,7 @@ Reply with a one-line verdict summary.`, id, e.Branch, e.Base)
 		return &gitMechanicsError{fmt.Errorf("prime reviewer: %w", err)}
 	}
 	// Bind as soon as the review is underway: finished or failed, the
-	// session stays on the board for follow-up questions in its terminal.
+	// session stays on the board for follow-up questions in Chat.
 	if s.mapErr == nil {
 		if err := s.sessions.add(id, SessionEntry{
 			Session: sess.ID, Title: title,

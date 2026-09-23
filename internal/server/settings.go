@@ -65,9 +65,8 @@ type GeneralSettings struct {
 // SessionSettings configure defaults for newly spawned opencode sessions.
 // Model is a single "providerID/id" string (model IDs may contain slashes).
 type SessionSettings struct {
-	Agent            string `json:"agent,omitempty"`
-	Model            string `json:"model,omitempty"`
-	AutoOpenTerminal *bool  `json:"autoOpenTerminal,omitempty"`
+	Agent string `json:"agent,omitempty"`
+	Model string `json:"model,omitempty"`
 }
 
 // PromptSettings holds free-text addenda appended to the built-in prompts.
@@ -118,8 +117,8 @@ type DocsSettings struct {
 type EffectiveSettings struct {
 	General EffectiveGeneralSettings `json:"general"`
 	Session EffectiveSessionSettings `json:"session"`
-	Prompts  PromptSettings           `json:"prompts"`
-	Git      EffectiveGitSettings     `json:"git"`
+	Prompts PromptSettings           `json:"prompts"`
+	Git     EffectiveGitSettings     `json:"git"`
 	UI      EffectiveUISettings      `json:"ui"`
 	Docs    EffectiveDocsSettings    `json:"docs"`
 }
@@ -133,9 +132,8 @@ type EffectiveGeneralSettings struct {
 
 // EffectiveSessionSettings resolves SessionSettings to concrete values.
 type EffectiveSessionSettings struct {
-	Agent            string `json:"agent"`
-	Model            string `json:"model"`
-	AutoOpenTerminal bool   `json:"autoOpenTerminal"`
+	Agent string `json:"agent"`
+	Model string `json:"model"`
 }
 
 // EffectiveUISettings resolves UISettings to concrete values. Accent is
@@ -262,8 +260,6 @@ func mergeSettings(project, personal Settings) (EffectiveSettings, map[string]st
 
 	eff.Session.Agent = pickStr("session.agent", project.Session.Agent, personal.Session.Agent)
 	eff.Session.Model = pickStr("session.model", project.Session.Model, personal.Session.Model)
-	eff.Session.AutoOpenTerminal = pickBool("session.autoOpenTerminal", true, project.Session.AutoOpenTerminal, personal.Session.AutoOpenTerminal)
-
 	eff.Prompts.Discussion = pickStr("prompts.discussion", project.Prompts.Discussion, personal.Prompts.Discussion)
 	eff.Prompts.Change = pickStr("prompts.change", project.Prompts.Change, personal.Prompts.Change)
 	eff.Prompts.Commit = pickStr("prompts.commit", project.Prompts.Commit, personal.Prompts.Commit)

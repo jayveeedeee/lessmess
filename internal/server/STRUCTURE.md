@@ -1,7 +1,7 @@
 <!-- tasktracker:begin -->
 # Structure: internal/server
 
-<!-- tasktracker-meta: refreshed=2026-09-21 source=2026-09-21-8235b tree=05de19bac01c -->
+<!-- tasktracker-meta: refreshed=2026-09-23 source=manual tree=b42321c17a15 -->
 
 HTTP server over the store: HTML pages, JSON endpoints, SSE updates, session mapping, PTY terminal, and the docs refresh queue
 
@@ -77,11 +77,7 @@ HTTP server over the store: HTML pages, JSON endpoints, SSE updates, session map
 | `spawnfallback_test.go` | Tests for the spawn de-escalation ladder outcomes, the record lifecycle and fail-open reads, and the index fallback banner. |
 | `taskstate.go` | Deterministic task-state endpoints (task status, update, reorder, decisions) with workflow rules enforced server-side and the user-only Done transition gated on the X-Lessmess-UI header. |
 | `taskstate_test.go` | Tests for the task-state endpoints: status transitions with evidence, user-gated Done, update, reorder, and decisions. |
-| `terminal.go` | WebSocket-to-PTY bridge running the opencode TUI |
-| `terminal_test.go` | Tests for the terminal WebSocket bridge |
 | `touched.go` | Derives covered docs dirs touched by a change |
-| `tuiconfig.go` | Merges the user's opencode CLI config with chrome-free overrides for embedded TUI sessions. |
-| `tuiconfig_test.go` | Tests for TUI config merging, JSONC fallback, and XDG env replacement. |
 | `validatedocs_test.go` | Tests for docs findings in the validate endpoint |
 | `worktree.go` | Worktree-backed changes: docs-root resolution from worktree state plus git confirmation, scaffold-time branch and worktree setup with rollback and dirt warning, and typed git-mechanics errors. |
 | `worktree_test.go` | Tests for worktree setup, docs-root resolution, and the close pipeline against a real git repository. |

@@ -16,6 +16,15 @@ Mobile access is assumed to be over a trusted internal network or VPN.
 lessmess remains bound to localhost by default; public-internet exposure is not
 part of this change.
 
+## Scope amendment — 2026-09-23
+
+After the API Chat reached feature parity for normal session work, the user
+approved removing the embedded terminal integration. MAC-51 supersedes the
+earlier parallel-mode decisions below: Chat is now the sole lessmess session
+interface, while published shell/tool activity remains visible in the Chat
+transcript. Historical phase descriptions are retained as the record of how the
+change evolved.
+
 ## Current behavior
 
 - Session creation, mapping, task association, and lifecycle operations already

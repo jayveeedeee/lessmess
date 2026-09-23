@@ -18,9 +18,9 @@ func TestSettingsDefaultsOnly(t *testing.T) {
 	if loadErr != "" {
 		t.Fatalf("loadErr = %q, want empty", loadErr)
 	}
-	if !eff.Session.AutoOpenTerminal || !eff.UI.ShowArchived || !eff.Docs.AutoGardenerOnClose {
-		t.Errorf("bool defaults = %v/%v/%v, want all true",
-			eff.Session.AutoOpenTerminal, eff.UI.ShowArchived, eff.Docs.AutoGardenerOnClose)
+	if !eff.UI.ShowArchived || !eff.Docs.AutoGardenerOnClose {
+		t.Errorf("bool defaults = %v/%v, want both true",
+			eff.UI.ShowArchived, eff.Docs.AutoGardenerOnClose)
 	}
 	if eff.Session.Agent != "" || eff.Session.Model != "" || eff.Git.DefaultBranch != "" {
 		t.Errorf("string defaults = %q/%q/%q, want all empty",
@@ -37,15 +37,15 @@ func TestSettingsDefaultsOnly(t *testing.T) {
 			t.Errorf("sources[%s] = %q, want default", field, src)
 		}
 	}
-	if len(sources) != 17 {
-		t.Errorf("len(sources) = %d, want 17", len(sources))
+	if len(sources) != 16 {
+		t.Errorf("len(sources) = %d, want 16", len(sources))
 	}
 }
 
 func TestSettingsProjectAndPersonalLayers(t *testing.T) {
 	dir := t.TempDir()
 	writeJSONFile(t, settingsProjectPath(dir), Settings{
-		Session: SessionSettings{Agent: "build", Model: "prov/proj-model", AutoOpenTerminal: boolp(false)},
+		Session: SessionSettings{Agent: "build", Model: "prov/proj-model"},
 		Prompts: PromptSettings{Discussion: "from project"},
 		Git:     GitSettings{DefaultBranch: "main"},
 	})
@@ -66,9 +66,6 @@ func TestSettingsProjectAndPersonalLayers(t *testing.T) {
 	}
 	if eff.Session.Model != "me/personal-model" || sources["session.model"] != "personal" {
 		t.Errorf("model = %q (%s), want me/personal-model (personal)", eff.Session.Model, sources["session.model"])
-	}
-	if eff.Session.AutoOpenTerminal != false || sources["session.autoOpenTerminal"] != "project" {
-		t.Errorf("autoOpenTerminal = %v (%s), want false (project)", eff.Session.AutoOpenTerminal, sources["session.autoOpenTerminal"])
 	}
 	if eff.Prompts.Discussion != "from project" || sources["prompts.discussion"] != "project" {
 		t.Errorf("discussion addendum = %q (%s)", eff.Prompts.Discussion, sources["prompts.discussion"])
@@ -147,7 +144,8 @@ func TestReviewModelPrecedence(t *testing.T) {
 	}
 }
 
-func TestSettingsMalformedFailsOpen(t *testing.T) {	dir := t.TempDir()
+func TestSettingsMalformedFailsOpen(t *testing.T) {
+	dir := t.TempDir()
 	if err := os.WriteFile(settingsProjectPath(dir), []byte("{not json"), 0o644); err != nil {
 		t.Fatal(err)
 	}

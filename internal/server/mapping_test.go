@@ -435,7 +435,7 @@ func TestReconcileTaskSessions(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Serving the session list reconciles the unmapped children.
+	// Serving the session list reconciles task-bound children only.
 	w := do(t, s.Handler(), "GET", "/changes/2026-09-10-0/sessions", "")
 	if w.Code != 200 {
 		t.Fatalf("code = %d body = %s", w.Code, w.Body)
@@ -445,17 +445,16 @@ func TestReconcileTaskSessions(t *testing.T) {
 	for _, e := range entries {
 		byID[e.Session] = e
 	}
-	if len(entries) != 5 {
+	if len(entries) != 3 {
 		t.Fatalf("entries = %+v", entries)
 	}
 	if e := byID["ses_kid"]; e.Task != "FIX-00" || e.Parent != "ses_main" {
 		t.Errorf("ses_kid = %+v", e)
 	}
-	if e := byID["ses_weird"]; e.Task != "" || e.Parent != "ses_main" {
-		t.Errorf("ses_weird = %+v", e)
-	}
-	if e := byID["ses_badtask"]; e.Task != "" {
-		t.Errorf("ses_badtask = %+v", e)
+	for _, id := range []string{"ses_weird", "ses_badtask"} {
+		if _, ok := byID[id]; ok {
+			t.Errorf("unbound helper %s was mapped", id)
+		}
 	}
 	if _, ok := byID["ses_foreign"]; ok {
 		t.Error("child of another parent was mapped")
@@ -470,8 +469,36 @@ func TestReconcileTaskSessions(t *testing.T) {
 	if w.Code != 200 {
 		t.Fatalf("second code = %d body = %s", w.Code, w.Body)
 	}
-	if got := s.sessions.list("2026-09-10-0"); len(got) != 5 {
+	if got := s.sessions.list("2026-09-10-0"); len(got) != 3 {
 		t.Fatalf("after re-serve = %+v", got)
+	}
+}
+
+func TestListSessionsHidesPreviouslyMappedUnboundChildren(t *testing.T) {
+	s := mappingServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"data":[]}`))
+	})
+	for _, entry := range []SessionEntry{
+		{Session: "ses_main", Title: "main", Created: "x"},
+		{Session: "ses_helper", Title: "explore", Created: "x", Parent: "ses_main"},
+		{Session: "ses_task", Title: "FIX-00: work", Created: "x", Task: "FIX-00", Parent: "ses_main"},
+	} {
+		if err := s.sessions.add("2026-09-10-0", entry); err != nil {
+			t.Fatal(err)
+		}
+	}
+	w := do(t, s.Handler(), "GET", "/changes/2026-09-10-0/sessions", "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("list = %d %s", w.Code, w.Body.String())
+	}
+	var response struct {
+		Sessions []sessionResponse `json:"sessions"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if len(response.Sessions) != 2 || response.Sessions[0].Session != "ses_main" || response.Sessions[1].Session != "ses_task" {
+		t.Fatalf("visible sessions = %#v", response.Sessions)
 	}
 }
 
@@ -562,14 +589,14 @@ func TestReconcileDeepPaginatedDescendantsDefensively(t *testing.T) {
 	for _, entry := range entries {
 		byID[entry.Session] = entry
 	}
-	if len(entries) != 54 || rootPages < 4 {
+	if len(entries) != 3 || rootPages < 4 {
 		t.Fatalf("entries=%d root pages=%d", len(entries), rootPages)
 	}
 	if got := byID["ses_child_00"].Task; got != "FIX-01" {
 		t.Fatalf("existing task binding replaced: %q", got)
 	}
-	if got := byID["ses_grand"]; got.Parent != "ses_child_01" || got.Task != "FIX-01" {
-		t.Fatalf("deep child = %#v", got)
+	if _, ok := byID["ses_grand"]; ok {
+		t.Fatal("task-like descendant below an unbound helper was claimed")
 	}
 	if _, ok := byID["ses_dead"]; !ok {
 		t.Fatal("dead mapping was removed")

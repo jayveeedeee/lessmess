@@ -26,6 +26,12 @@ func TestNestedBoardMarkup(t *testing.T) {
 	if strings.Contains(body, `pill progress`) || strings.Contains(body, `id="overall-status"`) {
 		t.Error("root board must not render the header progress pill or a status select")
 	}
+	parentDetail := htmlGet(t, h, "/changes/2026-09-10-0/tasks/00-first.md", false).Body.String()
+	for _, want := range []string{`data-open-subtasks`, `data-task="FIX-00"`, `View subtasks`, `1/2`} {
+		if !strings.Contains(parentDetail, want) {
+			t.Errorf("decomposed task detail missing %q", want)
+		}
+	}
 
 	// Drill-down: breadcrumb and scoped board marker.
 	w = htmlGet(t, h, "/changes/2026-09-10-0?task=FIX-00", false)

@@ -70,19 +70,23 @@ type chatActivityView struct {
 	Kind, ExpandKey string
 	Part            *chatPartView
 	Shell           *chatShellView
+	Running         bool
 }
 
 type chatMessageView struct {
-	ID      string
-	Type    string
-	Status  string
-	Label   string
-	Text    template.HTML
-	Parts   []chatPartView
-	Files   []chatFileView
-	Error   string
-	DiffURL string
-	Shell   *chatShellView
+	ID        string
+	Type      string
+	Status    string
+	Label     string
+	Text      template.HTML
+	Markdown  string
+	Copyable  bool
+	Parts     []chatPartView
+	Files     []chatFileView
+	Error     string
+	DiffURL   string
+	Shell     *chatShellView
+	Completed bool
 }
 
 type chatShellView struct {
@@ -93,6 +97,7 @@ type chatShellView struct {
 type chatPartView struct {
 	Kind        string
 	Text        template.HTML
+	Markdown    string
 	ToolName    string
 	ToolStatus  string
 	ToolID      string
@@ -156,13 +161,19 @@ type chatReferenceView struct {
 
 type chatControlsResponse struct {
 	Agents          []settingsAgentOpt     `json:"agents"`
-	Models          []settingsModelOpt     `json:"models"`
+	Models          []chatModelOpt         `json:"models"`
 	Commands        []opencode.CommandInfo `json:"commands"`
 	Skills          []opencode.SkillInfo   `json:"skills"`
 	Agent           string                 `json:"agent,omitempty"`
 	Model           string                 `json:"model,omitempty"`
+	Variant         string                 `json:"variant,omitempty"`
 	StandaloneSkill bool                   `json:"standaloneSkill"`
 	Usage           chatUsageView          `json:"usage"`
+}
+
+type chatModelOpt struct {
+	settingsModelOpt
+	Variants []string `json:"variants"`
 }
 
 type chatUsageView struct {
@@ -275,19 +286,40 @@ func (s *Server) chatSnapshot(w http.ResponseWriter, r *http.Request) {
 
 	view.Permissions = permissions
 	view.Busy = active[sessionID].Type == "running"
-	if view.Busy {
-		for i := len(view.Blocks) - 1; i >= 0; i-- {
-			if view.Blocks[i].Kind == "activity" {
-				view.Blocks[i].Running = true
-				view.Blocks[i].Summary = runningActivitySummary(view.Blocks[i].Activity[len(view.Blocks[i].Activity)-1])
-				break
-			}
-		}
-	}
 	for _, form := range forms {
 		view.Forms = append(view.Forms, makeChatFormView(form))
 	}
+	view.Blocks = liveChatTranscriptBlocks(view.Blocks, view.Busy, len(view.Permissions) > 0 || len(view.Forms) > 0)
 	s.rend.render(w, s.rend.partial, "chatSnapshot", view)
+}
+
+func liveChatTranscriptBlocks(blocks []chatTranscriptBlockView, busy, waitingForInput bool) []chatTranscriptBlockView {
+	current := -1
+	if busy && !waitingForInput && len(blocks) > 0 {
+		latest := &blocks[len(blocks)-1]
+		if latest.Kind == "activity" && len(latest.Activity) > 0 && latest.Activity[len(latest.Activity)-1].Running {
+			current = len(blocks) - 1
+			latest.Running = true
+			latest.Summary = runningActivitySummary(latest.Activity[len(latest.Activity)-1])
+		}
+	}
+
+	filtered := blocks[:0]
+	for i := range blocks {
+		if blocks[i].Kind != "activity" || i == current || (!waitingForInput && containsShellActivity(blocks[i])) {
+			filtered = append(filtered, blocks[i])
+		}
+	}
+	return filtered
+}
+
+func containsShellActivity(block chatTranscriptBlockView) bool {
+	for _, activity := range block.Activity {
+		if activity.Kind == "shell" {
+			return true
+		}
+	}
+	return false
 }
 
 func makeChatTranscriptBlocks(messages []chatMessageView) []chatTranscriptBlockView {
@@ -330,7 +362,7 @@ func makeChatTranscriptBlocks(messages []chatMessageView) []chatTranscriptBlockV
 			continue
 		case "assistant":
 			if message.Text != "" {
-				chunk := chatMessageView{ID: message.ID, Type: message.Type, Status: message.Status, Label: message.Label, Text: message.Text}
+				chunk := chatMessageView{ID: message.ID, Type: message.Type, Status: message.Status, Label: message.Label, Text: message.Text, Markdown: message.Markdown, Copyable: message.Markdown != ""}
 				addMessage(chunk)
 				emitted = true
 			}
@@ -347,9 +379,13 @@ func makeChatTranscriptBlocks(messages []chatMessageView) []chatTranscriptBlockV
 					if part.Kind == "tool" && part.ToolID != "" {
 						key = "tool:" + message.ID + ":" + part.ToolID
 					}
-					addActivity(message, chatActivityView{Kind: part.Kind, ExpandKey: key, Part: &part})
+					running := part.Kind == "reasoning" && !message.Completed
+					if part.Kind == "tool" {
+						running = part.ToolStatus == "running" || part.ToolStatus == "streaming"
+					}
+					addActivity(message, chatActivityView{Kind: part.Kind, ExpandKey: key, Part: &part, Running: running})
 				default:
-					chunk := chatMessageView{ID: message.ID, Type: message.Type, Status: message.Status, Label: message.Label, Parts: []chatPartView{part}}
+					chunk := chatMessageView{ID: message.ID, Type: message.Type, Status: message.Status, Label: message.Label, Parts: []chatPartView{part}, Copyable: part.Kind == "text" && part.Markdown != ""}
 					addMessage(chunk)
 				}
 				emitted = true
@@ -361,7 +397,7 @@ func makeChatTranscriptBlocks(messages []chatMessageView) []chatTranscriptBlockV
 			}
 		case "shell":
 			if message.Shell != nil {
-				addActivity(message, chatActivityView{Kind: "shell", ExpandKey: "shell:" + message.ID, Shell: message.Shell})
+				addActivity(message, chatActivityView{Kind: "shell", ExpandKey: "shell:" + message.ID, Shell: message.Shell, Running: message.Status == "running" || message.Status == "streaming"})
 				emitted = true
 			}
 			if message.Error != "" {
@@ -401,15 +437,18 @@ func runningActivitySummary(activity chatActivityView) string {
 }
 
 func makeChatMessageView(sessionID string, message opencode.Message) chatMessageView {
-	view := chatMessageView{ID: message.ID, Type: message.Type, Status: message.Status, Label: message.Type}
+	view := chatMessageView{ID: message.ID, Type: message.Type, Status: message.Status, Label: message.Type, Completed: message.Time.Completed > 0}
 	switch message.Type {
 	case "user":
 		view.Label = "You"
 		view.Text = renderMarkdown(message.Text)
+		view.Markdown = message.Text
+		view.Copyable = true
 	case "assistant":
 		view.Label = "Assistant"
 		if message.Retry != nil {
-			view.Text = renderMarkdown(fmt.Sprintf("Retrying provider request (attempt %d).", message.Retry.Attempt))
+			view.Markdown = fmt.Sprintf("Retrying provider request (attempt %d).", message.Retry.Attempt)
+			view.Text = renderMarkdown(view.Markdown)
 		}
 		if message.Finish == "length" {
 			view.Error = "The model stopped because its output limit was reached. Continue the conversation to resume."
@@ -458,6 +497,7 @@ func makeChatMessageView(sessionID string, message opencode.Message) chatMessage
 		switch part := part.(type) {
 		case opencode.TextPart:
 			pv.Text = renderMarkdown(part.Text)
+			pv.Markdown = part.Text
 		case opencode.ReasoningPart:
 			pv.Text = renderMarkdown(part.Text)
 		case opencode.ToolPart:
@@ -517,7 +557,7 @@ func safeChatStructuredError(err *opencode.StructuredError) string {
 	case strings.Contains(kind, "provider"):
 		return "The provider request failed. Check the selected model or provider connection, then retry."
 	default:
-		return "OpenCode could not complete this response. Retry or inspect the session in Terminal."
+		return "OpenCode could not complete this response. Retry or check the session controls."
 	}
 }
 
@@ -1308,6 +1348,9 @@ func (s *Server) chatControls(w http.ResponseWriter, r *http.Request) {
 	}
 	_, standalone, _ := s.oc.StandaloneSkillRoute(ctx)
 	resp := chatControlsResponse{Commands: commands, Skills: skills, Agent: session.Agent, StandaloneSkill: standalone}
+	if session.Model != nil {
+		resp.Variant = session.Model.Variant
+	}
 	for _, agent := range agents {
 		resp.Agents = append(resp.Agents, settingsAgentOpt{ID: agent.ID, Name: agent.Name, Description: agent.Description})
 	}
@@ -1316,7 +1359,11 @@ func (s *Server) chatControls(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		value := model.ProviderID + "/" + model.ID
-		resp.Models = append(resp.Models, settingsModelOpt{ID: model.ID, ProviderID: model.ProviderID, Name: model.Name, Value: value})
+		option := chatModelOpt{settingsModelOpt: settingsModelOpt{ID: model.ID, ProviderID: model.ProviderID, Name: model.Name, Value: value}}
+		for _, variant := range model.Variants {
+			option.Variants = append(option.Variants, variant.ID)
+		}
+		resp.Models = append(resp.Models, option)
 		if session.Model != nil && session.Model.ProviderID == model.ProviderID && session.Model.ID == model.ID {
 			resp.Model = value
 		}
@@ -1413,12 +1460,14 @@ func (s *Server) chatSwitchModel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Model string `json:"model"`
+		Model   string `json:"model"`
+		Variant string `json:"variant"`
 	}
 	if !decodeChatJSON(w, r, &req) {
 		return
 	}
 	req.Model = strings.TrimSpace(req.Model)
+	req.Variant = strings.TrimSpace(req.Variant)
 	models, err := s.oc.ListModelsFor(r.Context(), s.st.Dir)
 	if err != nil {
 		writeChatUpstreamError(w, err)
@@ -1426,7 +1475,17 @@ func (s *Server) chatSwitchModel(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, model := range models {
 		if model.IsEnabled() && model.ProviderID+"/"+model.ID == req.Model {
-			if err := s.oc.SwitchModel(r.Context(), sessionID, opencode.ModelRef{ProviderID: model.ProviderID, ID: model.ID}); err != nil {
+			if req.Variant != "" {
+				valid := false
+				for _, variant := range model.Variants {
+					valid = valid || variant.ID == req.Variant
+				}
+				if !valid {
+					writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "selected variant is no longer available"})
+					return
+				}
+			}
+			if err := s.oc.SwitchModel(r.Context(), sessionID, opencode.ModelRef{ProviderID: model.ProviderID, ID: model.ID, Variant: req.Variant}); err != nil {
 				writeChatUpstreamError(w, err)
 				return
 			}

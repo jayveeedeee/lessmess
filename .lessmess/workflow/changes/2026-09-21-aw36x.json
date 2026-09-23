@@ -9,7 +9,7 @@
     "derived": true
   },
   "created": "2026-09-21",
-  "updated": "2026-09-22",
+  "updated": "2026-09-24",
   "decisionLog": [
     {
       "date": "2026-09-21",
@@ -534,6 +534,255 @@
       ],
       "updated": "2026-09-22",
       "notes": "Live Chrome pointer tests pass on current code; moving #detail to a direct body-level overlay to eliminate nested inert browser differences reported by the user. Moved the sole #detail host from nested board/index content to a direct body-level overlay. Fresh 390px headless Chrome pointer tests confirm plan Contents and close controls are hit targets, task close works, detail is non-inert with no inert ancestor. Full tests/vet/node/build/diff pass."
+    },
+    {
+      "id": "MAC-42",
+      "seq": 42,
+      "title": "Descriptive choice rows for Chat forms",
+      "file": "tasks/42-descriptive-choice-rows-for-chat-forms.md",
+      "status": "Test",
+      "dependsOn": [
+        "MAC-41"
+      ],
+      "updated": "2026-09-22",
+      "notes": "Rendering OpenCode option descriptions in accessible radio/checkbox choice rows while preserving defaults, required validation, and typed replies. Single-choice options now render accessible radio rows and multiselect options checkbox rows with labels and per-option descriptions. Defaults, required one-or-more validation, and string/array reply shapes are preserved. Full tests/vet/node/build/diff pass."
+    },
+    {
+      "id": "MAC-43",
+      "seq": 43,
+      "title": "Step-by-step Chat form wizard with review",
+      "file": "tasks/43-step-by-step-chat-form-wizard-with-revie.md",
+      "status": "Test",
+      "dependsOn": [
+        "MAC-42"
+      ],
+      "updated": "2026-09-22",
+      "notes": "Replacing stacked/misaligned choice forms and no-op submission with a one-question wizard, stable navigation, review summary, and explicit submit state. One-question wizard, Previous/Next, final review, compact custom choice indicators, controlled validation, polling state preservation, duplicate-submit guard, and visible submit/error states implemented. Live 390px Chrome test created a real two-question OpenCode form, advanced one visible step at a time, reviewed labels, submitted successfully, and observed form removal. Full tests/vet/node/build/diff pass; validation passes with existing docs warnings. User rejected the first wizard visual design; refining from card-heavy radio rows to compact flat choices after inspecting a real 390px screenshot. Refined rejected visual design using real 390px screenshots: removed visible native/faux radio circles and card stack, replaced choices with compact flat divider rows, aligned descriptions, selected-only checkmarks, tighter type/header/footer, and fully clipped native inputs. Wizard behavior and real submit remain verified. Full tests/vet/node/build/diff pass."
+    },
+    {
+      "id": "MAC-44",
+      "seq": 44,
+      "title": "Remove busy delivery mode controls",
+      "file": "tasks/44-remove-busy-delivery-mode-controls.md",
+      "status": "Test",
+      "dependsOn": [
+        "MAC-43"
+      ],
+      "updated": "2026-09-22",
+      "notes": "Removing the unwanted busy Queue/Steer composer row and defaulting supported busy follow-ups to queue. Removed While OpenCode is working, Queue/Steer selector, and delivery explanation from Chat markup/CSS/JS. Supported busy follow-ups now silently use queue; capability gating and pending inbox management remain. Full tests/vet/node/build/diff pass."
+    },
+    {
+      "id": "MAC-45",
+      "seq": 45,
+      "title": "Donut context percentage in Chat header",
+      "file": "tasks/45-donut-context-percentage-in-chat-header.md",
+      "status": "Test",
+      "dependsOn": [
+        "MAC-44"
+      ],
+      "updated": "2026-09-22",
+      "notes": "Replacing visible Context text with a compact percentage donut while preserving token details accessibly. Replaced header Context text with compact 32-34px conic-gradient donut showing only NN%; ring clamps visually at 100%, warning/unavailable states retained, exact token counts preserved in title and aria-label. Full tests/vet/node/build/diff pass. User requested a smaller donut and removal of the visible percent sign. Reduced donut to 26px desktop/24px compact and removed visible percent sign; accessible label still announces percentage. Focused tests/vet/node/build/diff pass."
+    },
+    {
+      "id": "MAC-46",
+      "seq": 46,
+      "title": "Move Chat navigation into composer toolbar",
+      "file": "tasks/46-move-chat-navigation-into-composer-toolb.md",
+      "status": "Test",
+      "dependsOn": [
+        "MAC-45"
+      ],
+      "updated": "2026-09-22",
+      "notes": "Moving Work, Agents, Controls, Terminal, and compact overflow from the Chat header into the composer toolbar between add and Send. Moved Work, Agents, Controls, Terminal, and compact overflow from Chat header into composer toolbar between add and Send. Compact overflow opens upward; existing IDs, behaviors, conditional visibility, and accessibility links remain. Full tests/vet/node/build/diff pass."
+    },
+    {
+      "id": "MAC-47",
+      "seq": 47,
+      "title": "Restrict message actions to user messages",
+      "file": "tasks/47-restrict-message-actions-to-user-message.md",
+      "status": "Test",
+      "dependsOn": [
+        "MAC-46"
+      ],
+      "updated": "2026-09-22",
+      "notes": "Restricting Copy/Fork/Revert action targets and menu markup to user messages only. Restricted contextual Copy/Fork/Revert action attributes and menus to user messages. Assistant and activity messages no longer respond to pointer or keyboard action-menu triggers; user behavior is preserved. Full tests/vet/node/build/diff pass."
+    },
+    {
+      "id": "MAC-48",
+      "seq": 48,
+      "title": "Move context donut into composer toolbar",
+      "file": "tasks/48-move-context-donut-into-composer-toolbar.md",
+      "status": "Test",
+      "dependsOn": [
+        "MAC-47"
+      ],
+      "updated": "2026-09-22",
+      "notes": "Moving the context donut from the Chat header to the right of composer navigation controls, before the Send-side spacer. Moved the existing context donut out of the Chat header and into the composer toolbar immediately after Work/Agents/Controls/Terminal/compact overflow and before the flexible Send-side gap. Usage polling, warning state, tooltip, and aria-label remain unchanged. Full tests/vet/node/build/diff pass."
+    },
+    {
+      "id": "MAC-49",
+      "seq": 49,
+      "title": "Promote compact action in session controls",
+      "file": "tasks/49-promote-compact-action-in-session-contro.md",
+      "status": "Test",
+      "dependsOn": [
+        "MAC-48"
+      ],
+      "updated": "2026-09-23",
+      "notes": "Moving the existing manual compaction action directly below usage and above Agent/Model and lower control groups. Promoted Compact context directly below active usage and above Agent, Model, Commands, Skills, and Conversation history. Existing capability, busy, pending, and usage states remain wired through the same IDs. Full tests/vet/node/build/diff pass."
+    },
+    {
+      "id": "MAC-50",
+      "seq": 50,
+      "title": "Copy assistant Markdown from contextual action",
+      "file": "tasks/50-copy-assistant-markdown-from-contextual.md",
+      "status": "Test",
+      "dependsOn": [
+        "MAC-49"
+      ],
+      "updated": "2026-09-23",
+      "notes": "Adding a copy-only contextual action to assistant output and preserving original Markdown source for clipboard use. Assistant text blocks now open a copy-only contextual menu and carry escaped original Markdown source for clipboard output. User messages retain Copy/Fork/Revert; non-Markdown assistant blocks have no dead action. Full tests/vet/node/build/diff pass."
+    },
+    {
+      "id": "MAC-51",
+      "seq": 51,
+      "title": "Remove embedded terminal integration",
+      "file": "tasks/51-remove-embedded-terminal-integration.md",
+      "status": "Test",
+      "dependsOn": [
+        "MAC-50"
+      ],
+      "updated": "2026-09-23",
+      "notes": "Removing the embedded terminal end-to-end and making API Chat the sole session interface; preserving shell/tool transcript support. Removed embedded xterm/PTTY integration end-to-end; all session entry points now use Chat. go vet ./..., go test ./..., node syntax, static build, diff check, and served 404/settings checks pass."
+    },
+    {
+      "id": "MAC-52",
+      "seq": 52,
+      "title": "Simplify compact Chat headers and auxiliary close behavior",
+      "file": "tasks/52-simplify-compact-chat-headers-and-auxili.md",
+      "status": "Test",
+      "dependsOn": [
+        "MAC-51"
+      ],
+      "updated": "2026-09-23",
+      "notes": "Consolidating compact auxiliary views into the persistent Chat header and making its close action dismiss the active view first. Compact Work, Child activity, and Controls now reuse one persistent header; its X dismisses the active auxiliary view before Chat. Focused and full tests, vet, JS syntax, static build, validation, diff check, and served-asset checks pass. Visual feedback identified the remaining duplicate as the root session ancestry bar; refining it so only real parent-session navigation renders. Follow-up fix removes the root-session ancestry row that repeated title, idle state, and Return to change. Child sessions retain only real parent navigation. Full verification and served-asset checks pass."
+    },
+    {
+      "id": "MAC-53",
+      "seq": 53,
+      "title": "Refine active thinking state and suppress chat update notices",
+      "file": "tasks/53-refine-active-thinking-state-and-suppres.md",
+      "status": "Test",
+      "dependsOn": [
+        "MAC-52"
+      ],
+      "updated": "2026-09-23",
+      "notes": "Fixing running activity projection at the latest-block boundary, accenting active thinking, and suppressing routine poll update notices. Active thinking uses the configured accent; previous-turn activity remains settled across the prompt publication race; routine Conversation updated notices are removed. Regression, full tests, vet, JS syntax, build, validation, diff, and served checks pass."
+    },
+    {
+      "id": "MAC-54",
+      "seq": 54,
+      "title": "Control model variants from Chat",
+      "file": "tasks/54-control-model-variants-from-chat.md",
+      "status": "Test",
+      "dependsOn": [
+        "MAC-53"
+      ],
+      "updated": "2026-09-23",
+      "notes": "Adding model-dependent OpenCode variant selection to Chat Controls with server-side validation and session model switching. Chat Controls now exposes model-dependent OpenCode variants with Default reset, validates them server-side, and switches the active session model ref. Adapter, handler, UI, full tests, vet, JS, build, validation, diff, and live served checks pass."
+    },
+    {
+      "id": "MAC-55",
+      "seq": 55,
+      "title": "Consolidate Chat actions into one options menu",
+      "file": "tasks/55-consolidate-chat-actions-into-one-option.md",
+      "status": "Test",
+      "dependsOn": [
+        "MAC-54"
+      ],
+      "updated": "2026-09-23",
+      "notes": "Merging message additions, Work, Agents, and Controls into one vertical-ellipsis Options menu across desktop and compact Chat. Composer additions, Work, Agents, and Controls now live in one vertical-ellipsis Chat options menu on desktop and mobile; legacy plus/direct controls are removed. Focused/full tests, vet, JS, build, validation, diff, and served checks pass."
+    },
+    {
+      "id": "MAC-56",
+      "seq": 56,
+      "title": "Move context compaction into Chat options",
+      "file": "tasks/56-promote-context-compaction-beside-chat-o.md",
+      "status": "Test",
+      "dependsOn": [
+        "MAC-55"
+      ],
+      "updated": "2026-09-23",
+      "notes": "Promoting Compact beside Chat Options and clarifying reference/skill actions as one-message repository and instruction attachments. Compact is now directly beside Chat Options with all prior safety gates and availability help. Reference and skill actions now explain their one-message behavior. Focused/full tests, vet, JS, build, validation, diff, and served checks pass. Correcting feedback: removing unrequested reference/skill menu entries, moving Compact into Options, and decoupling compaction availability from whether Controls has been opened. Corrected implementation: Options now contains Attach files, contextual Work/Agents, Controls, and Compact only. Reference/skill entries are removed. Compact availability now uses background usage state and no longer requires opening Controls. Full verification and served checks pass. Removing the remaining unrequested Attach files option so the menu contains only Work, Agents, Controls, and Compact. Attach files is removed from Chat Options. The menu now contains only contextual Work/Agents, Controls, and Compact. Full tests, vet, JS, build, validation, diff, and served HTML checks pass. Found click-path regression: enabled state used background usage, but click still required Controls data and silently returned. Fixing the guard and surfacing compaction errors. Fixed Compact click regression: the click guard now uses background context usage rather than requiring Controls data, and endpoint errors are shown in Chat. Native OpenCode compact endpoint mapping confirmed. Focused/full tests, vet, JS syntax, build, validation, diff, and served asset checks pass."
+    },
+    {
+      "id": "MAC-57",
+      "seq": 57,
+      "title": "Keep transient subagents out of session lists",
+      "file": "tasks/57-keep-transient-subagents-out-of-session.md",
+      "status": "Test",
+      "dependsOn": [
+        "MAC-56"
+      ],
+      "updated": "2026-09-23",
+      "notes": "Implementing workflow-only session lists: keep directly created change sessions and task-bound sessions visible; retain transient descendants only in Chat Agents navigation. Workflow session lists now return directly created root sessions and valid task-bound sessions only; unbound child helpers remain available through Chat Agents navigation. Current change serves 1 workflow session while Agents still exposes all 30 descendants. Focused/full tests, vet, JS syntax, build, validation, diff, and served API checks pass."
+    },
+    {
+      "id": "MAC-58",
+      "seq": 58,
+      "title": "Change task status from the detail view",
+      "file": "tasks/58-change-task-status-from-the-detail-view.md",
+      "status": "Test",
+      "dependsOn": [
+        "MAC-57"
+      ],
+      "updated": "2026-09-23",
+      "notes": "Adding a mobile-friendly task detail status form backed by the existing deterministic task-status endpoint. Task detail status form renders all canonical states, conditionally supports Test evidence, submits with UI identity, reports errors inline, and refreshes the board. Full tests, vet, JS syntax, build, validation, diff, and served checks pass. Refining feedback: remove duplicate header status and save button; make the styled status select save immediately on change across desktop and mobile. Refined task detail control: removed duplicate header status and Update button; compact styled select now saves immediately, requests Test evidence only when needed, and adapts cleanly to desktop and mobile. Full verification and served checks pass."
+    },
+    {
+      "id": "MAC-59",
+      "seq": 59,
+      "title": "Expose subtasks in Chat Work and task details",
+      "file": "tasks/59-expose-subtasks-in-chat-work-and-task-de.md",
+      "status": "Test",
+      "dependsOn": [
+        "MAC-58"
+      ],
+      "updated": "2026-09-23",
+      "notes": "Adding subtle subtask markers to Chat Work rows and a detail action that opens the nested task Work view. Decomposed tasks now show a subtle completion fraction in Chat Work. Their detail view exposes View subtasks, which loads the nested Work list in Chat with an All tasks return and falls back to the scoped board outside Chat. Focused/full tests, vet, JS syntax, build, validation, diff, and served checks pass."
+    },
+    {
+      "id": "MAC-60",
+      "seq": 60,
+      "title": "Use compact back arrows in Chat and details",
+      "file": "tasks/60-replace-detail-close-control-with-compac.md",
+      "status": "Test",
+      "dependsOn": [
+        "MAC-59"
+      ],
+      "updated": "2026-09-24",
+      "notes": "Replacing detail-reader close icons with a compact left-aligned back arrow while leaving Chat controls unchanged. Task, plan, review, and ledger details now use a compact borderless left-aligned back arrow (26px desktop, 30px compact). Chat close remains unchanged. Focused/full tests, vet, JS syntax, build, validation, diff, and served checks pass. Clarified scope: apply the compact back arrow to both Chat and detail headers, with a larger, bolder tailed arrow glyph. Both Chat and all detail readers now use compact left-aligned tailed back arrows with larger bold glyphs. Full tests, vet, JS syntax, build, validation, diff, and LAN-served HTML checks pass. Correcting icon direction: replace tailed left arrows in Chat and details with simple left chevrons. Chat and detail back controls now use a CSS-drawn tail-free left chevron. Full tests, vet, build, validation, diff, and LAN-served checks pass."
+    },
+    {
+      "id": "MAC-61",
+      "seq": 61,
+      "title": "Keep mobile Chat flush with the keyboard",
+      "file": "tasks/61-keep-mobile-chat-flush-with-the-keyboard.md",
+      "status": "Test",
+      "dependsOn": [
+        "MAC-60"
+      ],
+      "updated": "2026-09-24",
+      "notes": "Anchoring mobile Chat to visualViewport position, width, and height during keyboard resize/pan and preventing board bleed-through. Mobile Chat now tracks visualViewport offsetTop, offsetLeft, width, and height during keyboard resize/pan, and compact overlay is opaque to prevent kanban bleed-through. Focused/full tests, vet, JS syntax, build, validation, diff, and LAN-served checks pass. Android Chrome reproduction context identified. Adding interactive-widget=resizes-content so the layout viewport and fixed Chat shell resize directly to the keyboard boundary. Added Android Chrome viewport policy interactive-widget=resizes-content alongside visualViewport rectangle synchronization and opaque compact overlay. Full tests, vet, build, validation, diff, and LAN-served meta verification pass; physical-device keyboard verification remains user-side."
+    },
+    {
+      "id": "MAC-62",
+      "seq": 62,
+      "title": "Retire stale System activity around Chat forms",
+      "file": "tasks/62-retire-stale-system-activity-around-chat.md",
+      "status": "Test",
+      "updated": "2026-09-24",
+      "notes": "Root cause identified: live snapshots retain completed System activity and infer a running state from session-level status, including while OpenCode is waiting on a permission or form. Implementing lifecycle-based filtering without wall-clock assumptions. Live Chat now removes settled reasoning/tool System groups, preserves durable shell output and paged history, and suppresses all System activity while permissions or forms await input. Running state comes from explicit message/tool lifecycle rather than session status or wall-clock age. Focused/full tests, vet, JS syntax, build, validation, diff, and LAN-served checks pass."
     }
   ]
 }

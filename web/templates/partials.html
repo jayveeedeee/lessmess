@@ -27,7 +27,7 @@
   <div class="chat-transcript-block chat-transcript-block-{{.Kind}}" data-chat-block data-chat-source="{{range .SourceIDs}}{{.}} {{end}}">
     {{range .Markers}}<span hidden data-message="{{.ID}}" data-message-type="{{.Type}}"{{if .Status}} data-message-status="{{.Status}}"{{end}}></span>{{end}}
     {{if eq .Kind "activity"}}
-    <details class="chat-system-group" data-chat-expand-key="{{.ExpandKey}}">
+    <details class="chat-system-group{{if .Running}} is-running{{end}}" data-chat-expand-key="{{.ExpandKey}}">
       <summary{{if .Running}} role="status" aria-live="polite"{{end}}>{{if .Running}}<span class="spinner" aria-hidden="true"></span><span class="sr-only">OpenCode is working. </span>{{end}}<span>{{.Summary}}</span></summary>
       <div class="chat-system-activity">
       {{range .Activity}}
@@ -45,9 +45,9 @@
       </div>
     </details>
     {{else}}{{with .Message}}
-  <article class="chat-message chat-message-{{.Type}}"{{if or (eq .Type "assistant") (eq .Type "user")}} data-chat-message-actions data-chat-message-id="{{.ID}}" tabindex="0" aria-haspopup="menu" aria-expanded="false"{{end}}>
+  <article class="chat-message chat-message-{{.Type}}"{{if .Copyable}} data-chat-message-actions data-chat-message-id="{{.ID}}" tabindex="0" aria-haspopup="menu" aria-expanded="false"{{end}}>
     {{if and (ne .Type "assistant") (ne .Type "user")}}<header>{{.Label}}</header>{{end}}
-    {{if .Text}}<div class="chat-markdown prose">{{.Text}}</div>{{end}}
+    {{if .Text}}<div class="chat-markdown prose">{{.Text}}</div>{{if and .Markdown (or (eq .Type "assistant") (eq .Type "user"))}}<span class="chat-markdown-source" hidden>{{.Markdown}}</span>{{end}}{{end}}
     {{if .Files}}<div class="chat-message-files">{{range .Files}}
       <div class="chat-message-file {{if .Reference}}is-reference{{end}}">
         {{if .Image}}<a href="{{.URL}}" target="_blank" rel="noreferrer"><img src="{{.URL}}" alt="Preview of {{.Name}}" loading="lazy"></a>{{end}}
@@ -57,15 +57,15 @@
       </div>
     {{end}}</div>{{end}}
     {{range .Parts}}
-      {{if eq .Kind "text"}}<div class="chat-markdown prose">{{.Text}}</div>
+      {{if eq .Kind "text"}}<div class="chat-markdown prose">{{.Text}}</div>{{if .Markdown}}<span class="chat-markdown-source" hidden>{{.Markdown}}</span>{{end}}
       {{else}}<div class="chat-flow-line chat-flow-unknown chat-unknown">Unsupported message part: <code>{{.UnknownType}}</code></div>{{end}}
     {{end}}
     {{if .Error}}<p class="chat-flow-line chat-flow-error chat-error">{{.Error}}</p>{{end}}
     {{if .DiffURL}}<details class="chat-flow-line chat-flow-diff chat-turn-diff" data-chat-expand-key="diff:{{.ID}}" data-chat-lazy-key="diff:{{.ID}}" data-chat-detail-url="{{.DiffURL}}"><summary>Review turn changes</summary><div class="chat-lazy-detail"><p class="chat-detail-prompt">Expand to load the affected files and diff.</p></div></details>{{end}}
-    {{if or (eq .Type "assistant") (eq .Type "user")}}<div class="chat-message-menu" role="menu" aria-label="Message actions" hidden>
+    {{if .Copyable}}<div class="chat-message-menu" role="menu" aria-label="Message actions" hidden>
       <button type="button" role="menuitem" data-chat-copy-message>Copy</button>
-      <button type="button" role="menuitem" data-chat-fork="{{.ID}}">Fork</button>
-      <button type="button" role="menuitem" data-chat-revert="{{.ID}}">Revert to here</button>
+      {{if eq .Type "user"}}<button type="button" role="menuitem" data-chat-fork="{{.ID}}">Fork</button>
+      <button type="button" role="menuitem" data-chat-revert="{{.ID}}">Revert to here</button>{{end}}
     </div>{{end}}
   </article>
     {{end}}{{end}}
@@ -86,21 +86,42 @@
   {{end}}
 
   {{range .Forms}}
-  <form class="chat-interaction chat-form" data-chat-form="{{.ID}}">
-    <strong>{{if .Title}}{{.Title}}{{else}}Input requested{{end}}</strong>
-    {{range .Fields}}
-    <label class="chat-field">
-      <span>{{.Title}}{{if .Required}} *{{end}}</span>
-      {{if .Description}}<small>{{.Description}}</small>{{end}}
-      {{if eq .Type "boolean"}}<input name="{{.Key}}" type="checkbox" data-field-type="boolean" {{if .Checked}}checked{{end}}>
-      {{else if eq .Type "multiselect"}}<select name="{{.Key}}" data-field-type="multiselect" multiple {{if .Required}}required{{end}}>{{range .Options}}<option value="{{.Value}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>{{end}}</select>
+  <form class="chat-interaction chat-form" data-chat-form="{{.ID}}" novalidate>
+    <header class="chat-form-head">
+      <strong>{{if .Title}}{{.Title}}{{else}}Input requested{{end}}</strong>
+      <span data-chat-form-progress role="status" aria-live="polite">Question 1 of {{len .Fields}}</span>
+    </header>
+    <div class="chat-form-body">
+    {{range $index, $field := .Fields}}
+    <section data-chat-form-step="{{$index}}"{{if ne $index 0}} hidden{{end}}>
+    {{if .Options}}<fieldset class="chat-field chat-choice-field" data-chat-choice-type="{{.Type}}"{{if .Required}} data-chat-choice-required="true"{{end}}>
+      <legend>{{.Title}}{{if .Required}} *{{end}}{{if .Description}}<small>{{.Description}}</small>{{end}}</legend>
+      <div class="chat-choice-list"{{if ne .Type "multiselect"}} role="radiogroup"{{end}}>
+        {{$field := .}}{{range .Options}}<label class="chat-choice">
+          <input name="{{$field.Key}}" type="{{if eq $field.Type "multiselect"}}checkbox{{else}}radio{{end}}" data-field-type="{{$field.Type}}" value="{{.Value}}" {{if .Selected}}checked{{end}} {{if and $field.Required (ne $field.Type "multiselect")}}required{{end}}>
+          <span><strong>{{.Label}}</strong>{{if .Description}}<small>{{.Description}}</small>{{end}}</span>
+        </label>{{end}}
+      </div>
+    </fieldset>{{else}}<fieldset class="chat-field">
+      <legend>{{.Title}}{{if .Required}} *{{end}}{{if .Description}}<small>{{.Description}}</small>{{end}}</legend>
+      {{if eq .Type "boolean"}}<label class="chat-boolean"><input name="{{.Key}}" type="checkbox" data-field-type="boolean" {{if .Checked}}checked{{end}} {{if .Required}}required{{end}}> <span>Yes</span></label>
       {{else if eq .Type "external"}}<a href="{{.URL}}" target="_blank" rel="noreferrer">Open external form</a>
       {{else if or (eq .Type "number") (eq .Type "integer")}}<input name="{{.Key}}" type="number" data-field-type="{{.Type}}" value="{{.Default}}" {{if eq .Type "integer"}}step="1"{{else}}step="any"{{end}} {{if .Minimum}}min="{{.Minimum}}"{{end}} {{if .Maximum}}max="{{.Maximum}}"{{end}} {{if .Required}}required{{end}}>
-      {{else if .Options}}<select name="{{.Key}}" data-field-type="string" {{if .Required}}required{{end}}><option value=""></option>{{range .Options}}<option value="{{.Value}}" {{if .Selected}}selected{{end}}>{{.Label}}</option>{{end}}</select>
       {{else}}<input name="{{.Key}}" type="text" data-field-type="string" value="{{.Default}}" placeholder="{{.Placeholder}}" {{if .Required}}required{{end}}>{{end}}
-    </label>
+    </fieldset>{{end}}
+    </section>
     {{end}}
-    <div class="chat-interaction-actions"><button type="submit">Submit</button></div>
+    <section class="chat-form-review" data-chat-form-review hidden tabindex="-1" aria-labelledby="chat-form-review-{{.ID}}">
+      <h3 id="chat-form-review-{{.ID}}">Review your answers</h3>
+      <dl></dl>
+    </section>
+    </div>
+    <p class="chat-form-error" data-chat-form-error role="alert" hidden></p>
+    <nav class="chat-form-nav" aria-label="Form navigation">
+      <button type="button" class="secondary" data-chat-form-prev hidden>Previous</button>
+      <button type="button" data-chat-form-next>Next</button>
+      <button type="submit" data-chat-form-submit hidden>Submit</button>
+    </nav>
   </form>
   {{end}}
 </div>
@@ -133,10 +154,14 @@
 {{define "taskDetail"}}
 <div class="modal" data-doc="{{.Doc}}" role="dialog" aria-modal="true" aria-labelledby="detail-title">
   <div class="modal-head">
+    <button type="button" class="modal-close detail-back" data-close-detail aria-label="Back"><span class="back-chevron" aria-hidden="true"></span></button>
     <span class="chip">{{.Task.ID}}</span>
-    {{if .Status}}<span class="pill status-{{.Status | statusClass}}">{{.Status}}</span>{{end}}
     <span class="title" id="detail-title">{{.Task.Title}}</span>
-    <button type="button" class="modal-close" data-close-detail aria-label="Close">✕</button>
+  </div>
+  <div class="task-detail-state" data-task-status-control data-change="{{.Change}}" data-task="{{.Task.ID}}" data-status="{{.Status}}">
+    <label for="task-status-{{.Task.ID}}"><span>Status</span><span class="task-detail-select"><select id="task-status-{{.Task.ID}}" data-task-status>{{range .Statuses}}<option value="{{.}}"{{if eq . $.Status}} selected{{end}}>{{.}}</option>{{end}}</select></span></label>
+    {{if .HasSub}}<button type="button" class="task-detail-subtasks" data-open-subtasks data-change="{{.Change}}" data-task="{{.Task.ID}}">View subtasks <span>{{.SubDone}}/{{.SubTotal}}</span></button>{{end}}
+    <span class="task-detail-state-message" role="status" aria-live="polite"></span>
   </div>
   <div class="modal-panes">
     <nav class="modal-toc" hidden></nav>
@@ -148,9 +173,9 @@
 {{define "planDetail"}}
 <div class="modal" role="dialog" aria-modal="true" aria-labelledby="detail-title">
   <div class="modal-head">
+    <button type="button" class="modal-close detail-back" data-close-detail aria-label="Back"><span class="back-chevron" aria-hidden="true"></span></button>
     <span class="chip">{{.ID}}</span>
     <span class="title" id="detail-title">Plan</span>
-    <button type="button" class="modal-close" data-close-detail aria-label="Close">✕</button>
   </div>
   <div class="modal-panes">
     <nav class="modal-toc" hidden></nav>
@@ -162,9 +187,9 @@
 {{define "reviewDetail"}}
 <div class="modal" role="dialog" aria-modal="true" aria-labelledby="detail-title">
   <div class="modal-head">
+    <button type="button" class="modal-close detail-back" data-close-detail aria-label="Back"><span class="back-chevron" aria-hidden="true"></span></button>
     <span class="chip">{{.ID}}</span>
     <span class="title" id="detail-title">Review</span>
-    <button type="button" class="modal-close" data-close-detail aria-label="Close">✕</button>
   </div>
   <div class="modal-panes">
     <nav class="modal-toc" hidden></nav>
@@ -176,9 +201,9 @@
 {{define "ledgerDetail"}}
 <div class="modal" data-doc="{{.Doc}}" role="dialog" aria-modal="true" aria-labelledby="detail-title">
   <div class="modal-head">
+    <button type="button" class="modal-close detail-back" data-close-detail aria-label="Back"><span class="back-chevron" aria-hidden="true"></span></button>
     <span class="chip">{{.ID}}</span>
     <span class="title" id="detail-title">Ledger</span>
-    <button type="button" class="modal-close" data-close-detail aria-label="Close">✕</button>
   </div>
   <div class="modal-panes">
     <nav class="modal-toc" hidden></nav>

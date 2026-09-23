@@ -119,8 +119,8 @@ Setup API (for the wizard and other clients): `GET /setup`,
   repository root, primed as a free agent — it answers questions, explains
   code, and edits files when you explicitly ask, with no change binding or
   bookkeeping (edits land in the main tree as ordinary working-tree
-  changes). Every click opens a new session; chats are unassigned — they
-  appear in the index Discussions list — and open in the terminal overlay.
+  changes). Every click opens a new session; chats are unassigned, appear in
+  the index Discussions list, and open in Chat.
   For directory-scoped, docs-grounded Q&A there is the explorer's per-
   directory chat (see below).
 - **`/`** — change list, built from the workflow index plus each change's
@@ -162,7 +162,9 @@ files.
   complexity but never expand unprompted.
 - **Drill down**: the `x/y ✓` badge on a decomposed card opens that task's
   sub-board (`/changes/<id>?task=<id>`) — the same kanban scoped to its
-  children, with a breadcrumb back up.
+  children, with a breadcrumb back up. Chat Work carries the same progress as
+  a quiet row marker; opening the task exposes **View subtasks**, which swaps
+  Work to the child list without leaving Chat and provides an All tasks return.
 - **Progress is display-only**: badges on decomposed cards are computed from
   that task's descendants (`Test` + `Done` count as complete, `Cancelled`
   leaves the denominator). Nothing is ever written by rollup — each status
@@ -213,10 +215,9 @@ values apply to new activity immediately — no restart.
 
 | Setting | Effect |
 | --- | --- |
-| `general.projectName` | Project display name shown next to the logo (including the terminal overlay) and used as the browser tab title on every page. Empty uses the repository folder's basename, so renaming the folder updates the default until you set an explicit name. Also collected by the onboarding wizard. |
+| `general.projectName` | Project display name shown next to the logo and used as the browser tab title on every page. Empty uses the repository folder's basename, so renaming the folder updates the default until you set an explicit name. Also collected by the onboarding wizard. |
 | `session.agent` | opencode agent for newly spawned sessions (change sessions, discussions, explorer chats, commits, doc gardener). Unknown values are rejected at save time when the service is reachable. |
 | `session.model` | Model for new sessions as `provider/model` (e.g. `anthropic/claude-sonnet-4-5`). Same validation. |
-| `session.autoOpenTerminal` | Open the embedded terminal automatically after a session is created (default on). |
 | `prompts.discussion` / `change` / `commit` / `repoCommit` / `gardener` / `explorer` | Free text **appended** to the corresponding built-in prompt. Base prompts are never modified, so workflow safeguards stay intact. |
 | `git.defaultBranch` | Base branch for new change worktree branches (`change/<id>` is cut from it; empty uses the current branch at scaffold time). Always recorded on the change's index entry. |
 | `git.worktrees` | **Worktree per change** (default off — see the Worktree pipeline section below). When on, scaffolding creates a git branch and worktree per change, change sessions work there, and closing pushes the branch, opens a PR, and runs an agent review. |
@@ -254,7 +255,7 @@ the main tree and from other changes:
   main tree has uncommitted files, the scaffold still succeeds but the
   agent is warned which files the new worktree will not contain.
 - **During the change**, every session bound to the change (change session,
-  task subagents, commit sessions, the per-change terminal) works inside the
+  task subagents, commit sessions) works inside the
   worktree. The board shows the branch, worktree health (active / uncommitted
   / missing), PR link, and review state on the change page.
 - **Close is gated**: it refuses while the worktree has uncommitted *code*
@@ -267,7 +268,7 @@ the main tree and from other changes:
   [gh CLI](https://cli.github.com/) to be authenticated. A close attempt that
   fails after the PR was created reuses that PR on the next attempt.
 - **The reviewer session stays** after finishing: it is bound to the change,
-  shows up in the Sessions list, and you can open it (Talk/terminal) to ask
+  shows up in the Sessions list, and you can open it in Chat to ask
   follow-up questions — it remembers its own review. The review text is also
   readable on the board via the **Review** button next to the PR link.
 - **Reopen** reattaches the existing worktree. **Remove worktree** is a
@@ -313,41 +314,28 @@ calls are made server-side).
 - **Subagent sessions per task**: a change session may delegate a task to an
   opencode subagent. When it titles the subagent's description `TSK-NN: …`
   (the change prompt teaches this), the board attaches the subagent session
-  to that task card with a **Talk** button — opening a terminal chat on the
+  to that task card with a **Chat** button, opening that child conversation
   subagent directly, including after it has finished. Unbound subagent
   sessions surface on the board header; bindings live in
   `.lessmess/sessions.json` (`task`/`parent` fields), never in `changes/`.
   `POST /changes/{id}/task-sessions` binds a subagent session explicitly.
-- **Continue session** button on each board: one click resumes the session
-  you last opened for that change — or starts a new one when the change has
-  none. Narrow screens open Chat; desktop screens retain the Terminal default.
-- **Mobile Chat**: every mapped session offers a structured Chat view alongside
-  Terminal. It renders the authoritative OpenCode transcript, reasoning, tool
+- **Continue session** button on each board: one click opens the session you
+  last used for that change, or starts a new one when the change has none.
+- **Chat**: every mapped session opens in a structured, responsive Chat view.
+  It renders the authoritative OpenCode transcript, reasoning, tool
   progress/results, errors, permission requests, and structured forms; users
   can send prompts or interrupt work without a PTY. The view polls only while
   visible, restores drafts, preserves a reader's scroll position, and exposes
-  change tasks as a mobile drawer. Chat and Terminal attach to the same session,
-  so switching modes does not split context.
-- **Embedded terminal**: opening a session renders the live opencode TUI in
-  the browser (xterm.js). lessmess spawns `opencode2 --session <id>` in
-  its own PTY and bridges it over a WebSocket; the session persists in the
-  opencode service, so reconnecting resumes it.
-- **Chrome-free embedded TUI**: embedded terminals run with a lessmess-managed
-  opencode CLI config — generated per spawn at `.lessmess/xdg/opencode/cli.json`
-  by forcing `tabs.enabled: false` and `session.sidebar: "hide"` on top of your
-  own `~/.config/opencode/cli.json` (theme, keybinds, and plugins carry over;
-  the file itself is only ever read). If generation fails, the terminal falls
-  back to your normal setup with a logged warning. Your standalone `opencode2`
-  is unaffected.
-- **Task panel**: terminals and desktop Chat views opened on a change board
-  show a lessmess-native panel on the right mirroring the board's tasks grouped by
+  change tasks as a full-width Work view on compact screens.
+- **Work panel**: desktop Chat views opened on a change board show a
+  lessmess-native panel on the right mirroring the board's tasks grouped by
   status. It updates live as tasks change (no page reload), clicking a row
-  opens the task detail above the terminal, and a fixed Plan button at the
-  bottom opens the change plan. Chat turns the panel into an on-demand drawer
+  opens the task detail above Chat, and a fixed Plan button at the bottom opens
+  the change plan. Chat turns the panel into an on-demand full-width view
   at phone widths. Unassigned sessions keep the full-width conversation view.
 - **New change session** (index page): scaffolds a change, creates and
-  primes an opencode session, and opens the board with the terminal
-  attached. The agent works the `changes/` workflow; the board updates live.
+  primes an opencode session, and opens the board with Chat attached. The
+  agent works the `changes/` workflow; the board updates live.
 - **Sortable change list** (index page): click a column header (Change,
   Title, Prefix, Status, Tasks, Updated) to sort the table; click again to
   flip direction. Status sorts in board workflow order, and your chosen
@@ -390,8 +378,13 @@ OpenCode paths. This matrix tracks the supported mobile surface:
 | Service status | Supported | Read-only identity, project scope, provider/model/plugin metadata, and exact operation capabilities at Settings → OpenCode service |
 | Integration connections | Supported | Key, OAuth, command, and service-environment methods use OpenCode's credential store; transient attempts are never persisted by lessmess |
 | MCP and saved permissions | Supported | Project-scoped status/resources, runtime connect/disconnect, active requests, and confirmed saved allow-rule removal |
-| Interactive shell | Terminal only | Chat may show bounded session shell output but never provides a PTY |
+| Interactive shell | Unsupported | Chat shows bounded published shell output but does not provide a PTY |
 | Public hosting | Unsupported | Use localhost or a trusted LAN/VPN; no built-in authentication or TLS |
+
+Change and task session lists contain workflow sessions only: sessions created
+for that change and descendants explicitly associated with a valid task.
+Temporary explore, review, and other unbound child agents remain available in
+Chat's Agents hierarchy without being promoted into the workflow session list.
 
 In particular, lessmess does not claim atomic revert previews, editable queued
 prompt text, authoritative inbox-cancellation outcomes, provider health pings,
@@ -526,9 +519,9 @@ the visible detail refreshes along with it.
 
 Every directory has a **chat button** (tree row or detail header): it
 creates an opencode session scoped to the repository root, primed with that
-directory's STRUCTURE.md and AGENTS.md and instructed to answer questions
-about the directory. Explorer chats are unassigned sessions: they appear in
-the index Discussions list and open in the terminal overlay.
+  directory's STRUCTURE.md and AGENTS.md and instructed to answer questions
+  about the directory. Explorer chats are unassigned sessions: they appear in
+  the index Discussions list and open in Chat.
 
 
 ## Development

@@ -511,16 +511,23 @@ type AgentInfo struct {
 
 // ModelInfo is one available model as returned by GET /api/model.
 type ModelInfo struct {
-	ID         string `json:"id"`
-	ProviderID string `json:"providerID"`
-	Name       string `json:"name"`
-	Status     string `json:"status"`
-	Enabled    *bool  `json:"enabled,omitempty"`
+	ID         string         `json:"id"`
+	ProviderID string         `json:"providerID"`
+	Name       string         `json:"name"`
+	Status     string         `json:"status"`
+	Enabled    *bool          `json:"enabled,omitempty"`
+	Variants   []ModelVariant `json:"variants,omitempty"`
 	Limit      struct {
 		Context int `json:"context"`
 		Input   int `json:"input"`
 		Output  int `json:"output"`
 	} `json:"limit"`
+}
+
+// ModelVariant is one selectable settings profile advertised by a model.
+// The service applies the profile; lessmess only needs its public ID.
+type ModelVariant struct {
+	ID string `json:"id"`
 }
 
 // IsEnabled accepts responses from older services that did not emit enabled,

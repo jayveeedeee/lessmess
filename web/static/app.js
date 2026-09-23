@@ -5,31 +5,12 @@
 
   var page = document.body.getAttribute("data-page");
 
-  // --- effective settings (terminal auto-open gate) -------------------------
-
-  // Cached once per page load; gates terminal auto-open after session
-  // creation. Deliberate opens (clicking a session) are never gated.
-  var autoOpenTerminal = true;
-  fetch("/api/settings", { headers: { Accept: "application/json" } })
-    .then(function (r) { return r.ok ? r.json() : null; })
-    .then(function (j) {
-      if (j && j.effective && j.effective.session) {
-        autoOpenTerminal = j.effective.session.autoOpenTerminal !== false;
-      }
-    })
-    .catch(function () {});
-
-  function narrowSessionUI() {
-    return window.matchMedia && window.matchMedia("(max-width: 840px)").matches;
-  }
-
   function openPreferredSession(sessionID, title) {
-    if (narrowSessionUI()) openChat(sessionID, title);
-    else openTerminal(sessionID, title);
+    openChat(sessionID, title);
   }
 
   function maybeOpenSession(sessionID, title) {
-    if (autoOpenTerminal) openPreferredSession(sessionID, title);
+    openPreferredSession(sessionID, title);
   }
 
   function boardEl() { return document.getElementById("board"); }
@@ -77,10 +58,48 @@
     htmx.ajax("GET", location.pathname + location.search, { target: "#board", swap: "innerHTML", headers: { Accept: "text/html" } });
   }
 
+  document.addEventListener("change", function (e) {
+    var select = e.target.closest && e.target.closest("[data-task-status]");
+    if (!select) return;
+    var control = select.closest("[data-task-status-control]");
+    var message = control.querySelector(".task-detail-state-message");
+    var previous = control.dataset.status;
+    var evidence = "";
+    if (select.value === "Test") {
+      evidence = window.prompt("Verification evidence for Test (leave blank if already recorded):", "");
+      if (evidence === null) {
+        select.value = previous;
+        return;
+      }
+    }
+    select.disabled = true;
+    message.textContent = "Updating…";
+    message.classList.remove("is-error");
+    fetch("/changes/" + encodeURIComponent(control.dataset.change) + "/tasks/" + encodeURIComponent(control.dataset.task) + "/status", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json", "X-Lessmess-UI": "1" },
+      body: JSON.stringify({ status: select.value, evidence: evidence.trim() })
+    }).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (body) {
+        if (!r.ok) throw new Error(body.error || r.statusText);
+        return body;
+      });
+    }).then(function () {
+      control.dataset.status = select.value;
+      message.textContent = "Status updated.";
+      refreshBoard();
+    }).catch(function (err) {
+      select.value = previous;
+      message.textContent = err.message;
+      message.classList.add("is-error");
+    }).finally(function () {
+      select.disabled = false;
+    });
+  });
+
   document.addEventListener("htmx:afterSwap", function (e) {
     if (e.target && e.target.id === "board") {
       initSortable();
-      if (boardEl()) syncTerminalTasks(boardEl(), boardEl().dataset.change);
       if (chatOpen() && boardEl()) setChatTasks(boardEl(), boardEl().dataset.change);
       refreshSubs();
     }
@@ -118,27 +137,20 @@
     timer = setTimeout(function () {
       checkValidation();
       if (page === "board" && boardEl()) refreshBoard();
-      // While the terminal is open on the index, a full reload would
-      // destroy it — and the common cause of this event is the open
-      // discussion scaffolding a change right now. Follow the session
-      // to its new board instead of reloading.
+      // Keep an open Chat attached when a discussion scaffolds a change.
       else if (page === "index" && sessionOverlayOpen() && activeSessionID()) followSession();
       else if (page === "index") location.reload();
-      // Terminal task panel: re-mirror an open panel, and pick up a
-      // fresh binding (a discussion that just scaffolded a change —
-      // the scaffold writes changes/, which fired this event).
       if (sessionOverlayOpen()) {
-        if (terminalPanelChange) loadTerminalTasks(terminalPanelChange);
-        else if (!(page === "board" && boardEl()) && activeSessionID()) resolveTerminalPanel(activeSessionID());
+        if (sessionTasksChange) loadSessionTasks(sessionTasksChange);
+        else if (!(page === "board" && boardEl()) && activeSessionID()) resolveSessionTasks(activeSessionID());
       }
     }, 250);
   }
 
-  // followSession: the open terminal's session was likely just scaffolded
+  // followSession: the open Chat session was likely just scaffolded
   // into a change. Once the mapping says so, navigate to that change's
   // board with ?session= — autoOpenSession reopens the same session there
-  // with its task panel. Until it binds, skip the refresh entirely; the
-  // stale list self-heals on navigation or when the terminal closes.
+  // with its Work view. Until it binds, skip the refresh entirely.
   function followSession() {
     var sessionID = activeSessionID();
     fetch("/api/sessions/" + encodeURIComponent(sessionID) + "/change", { headers: { Accept: "application/json" } })
@@ -246,7 +258,7 @@
 
   // The header Chat button (every page) spawns a general codebase chat —
   // a free agent, not bound to any change — and opens the Chat overlay.
-  // A deliberate open, so autoOpenTerminal never gates it.
+  // A deliberate open of the newly created session.
   document.addEventListener("click", function (e) {
     var btn = e.target.closest("#chat-btn");
     if (!btn) return;
@@ -496,10 +508,6 @@
           chatBtn.className = "btn-ghost";
           chatBtn.textContent = "Chat";
           chatBtn.addEventListener("click", function () { openChat(s.session, s.title); });
-          var openBtn = document.createElement("button");
-          openBtn.className = "btn-ghost";
-          openBtn.textContent = "Terminal";
-          openBtn.addEventListener("click", function () { openTerminal(s.session, s.title); });
           var unBtn = document.createElement("button");
           unBtn.className = "btn-ghost";
           unBtn.textContent = "✕";
@@ -510,7 +518,6 @@
               .catch(function () { alert("Unlink failed"); });
           });
           actions.appendChild(chatBtn);
-          actions.appendChild(openBtn);
           actions.appendChild(unBtn);
           li.appendChild(title);
           li.appendChild(meta);
@@ -521,7 +528,7 @@
       .catch(function () {});
   }
 
-  // --- sessions panel + terminal ----------------------------------------------
+  // --- sessions panel ---------------------------------------------------------
 
   function changeID() {
     var b = boardEl();
@@ -590,10 +597,6 @@
         chatBtn.className = "btn-ghost";
         chatBtn.textContent = "Chat";
         chatBtn.addEventListener("click", function () { markOpened(s.session); openChat(s.session, s.title); });
-        var openBtn = document.createElement("button");
-        openBtn.className = "btn-ghost";
-        openBtn.textContent = "Terminal";
-        openBtn.addEventListener("click", function () { markOpened(s.session); openTerminal(s.session, s.title); });
         var unBtn = document.createElement("button");
         unBtn.className = "btn-ghost";
         unBtn.textContent = "✕";
@@ -604,7 +607,6 @@
             .catch(function () { alert("Unlink failed"); });
         });
         actions.appendChild(chatBtn);
-        actions.appendChild(openBtn);
         actions.appendChild(unBtn);
         li.appendChild(title);
         li.appendChild(meta);
@@ -651,7 +653,7 @@
     stray.forEach(function (s) { strip.appendChild(subChip(s)); });
   }
 
-  // subChip is one subagent session with explicit Chat and Terminal actions.
+  // subChip is one subagent session with a Chat action.
   // Dead sessions
   // (gone from the opencode service) render dimmed but stay openable.
   function subChip(s) {
@@ -674,12 +676,6 @@
       : "Session not found in the opencode service";
     talk.addEventListener("click", function () { markOpened(s.session); openChat(s.session, s.title); });
     chip.appendChild(talk);
-    var terminal = document.createElement("button");
-    terminal.type = "button";
-    terminal.className = "btn-ghost sub-talk";
-    terminal.textContent = "Terminal";
-    terminal.addEventListener("click", function () { markOpened(s.session); openTerminal(s.session, s.title); });
-    chip.appendChild(terminal);
     return chip;
   }
 
@@ -839,11 +835,14 @@
     request: null,
     mutation: false,
     snapshot: null,
+    pendingUserBoundary: null,
     drafts: {},
+    formStates: {},
     files: {},
     references: {},
     referenceCatalog: [],
     controls: null,
+    usage: null,
     skills: {},
     scrolls: {},
     restoreScroll: null,
@@ -913,6 +912,21 @@
     return panel.querySelector("[data-chat-view-scroll], .ttp-scroll") || panel;
   }
 
+  function currentChatView() {
+    return compactChatUI() ? (cstate.viewStack[cstate.viewStack.length - 1] || "chat") : "chat";
+  }
+
+  function syncChatHeader() {
+    var view = currentChatView();
+    var labels = { work: "Work", agents: "Child activity", controls: "Session controls" };
+    var title = document.getElementById("chat-title");
+    var state = document.getElementById("chat-session-state");
+    var close = document.querySelector(".chat-head [data-close-chat]");
+    if (title) title.textContent = labels[view] || cstate.title || "";
+    if (state) state.hidden = view !== "chat";
+    if (close) close.setAttribute("aria-label", view === "chat" ? "Close chat" : "Close " + labels[view].toLowerCase());
+  }
+
   function saveChatViewPosition(name) {
     if (!cstate.session) return;
     var scroller = chatViewScroller(name);
@@ -949,10 +963,12 @@
       document.getElementById("chat-tasks-btn").setAttribute("aria-expanded", String(document.getElementById("chat-tasks").classList.contains("open")));
       document.getElementById("chat-agents-btn").setAttribute("aria-expanded", String(document.getElementById("chat-agents").classList.contains("open")));
       document.getElementById("chat-controls-btn").setAttribute("aria-expanded", String(!document.getElementById("chat-controls-sheet").hidden));
+      syncChatHeader();
       return;
     }
     var active = cstate.viewStack[cstate.viewStack.length - 1] || "chat";
     win.dataset.chatView = active;
+    syncChatHeader();
     win.querySelectorAll("[data-chat-view-panel]").forEach(function (panel) {
       var selected = panel.dataset.chatViewPanel === active;
       panel.setAttribute("aria-hidden", String(!selected));
@@ -962,7 +978,7 @@
     if (focusView) {
       requestAnimationFrame(function () {
         var panel = chatViewPanel(active);
-        var target = panel && panel.querySelector("[data-chat-view-back], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href]");
+        var target = panel && panel.querySelector("button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href]");
         if (target) target.focus({ preventScroll: true });
       });
     }
@@ -1038,11 +1054,10 @@
   }
 
   function activeSessionID() {
-    if (chatOpen()) return cstate.session;
-    return terminalOpen() ? tstate.session : null;
+    return chatOpen() ? cstate.session : null;
   }
 
-  function sessionOverlayOpen() { return chatOpen() || terminalOpen(); }
+  function sessionOverlayOpen() { return chatOpen(); }
 
   function syncChatModalInert(detailOpen) {
     document.querySelectorAll("[data-chat-detail-inert-owned]").forEach(function (node) {
@@ -1080,13 +1095,14 @@
 
   function openChat(sessionID, title) {
     var opener = chatOpen() ? cstate.opener : document.activeElement;
-    closeTerminal(true);
     closeChat(true, true);
     cstate.opener = opener;
     cstate.session = sessionID;
     cstate.title = title || sessionID;
     cstate.snapshot = null;
+    cstate.pendingUserBoundary = null;
     cstate.controls = null;
+    cstate.usage = null;
     cstate.inbox = [];
     cstate.lifecycle = null;
     cstate.navigation = null;
@@ -1101,16 +1117,14 @@
     syncChatModalInert(false);
     syncChatViewport();
     resetChatViews();
-    document.getElementById("chat-title").textContent = cstate.title;
+    syncChatHeader();
     renderChatUsage(null);
     setChatHeaderState("Connecting", "connecting");
     var prompt = document.getElementById("chat-prompt");
     prompt.value = cstate.drafts[sessionID] || "";
     document.getElementById("chat-reference-picker").hidden = true;
-    document.getElementById("chat-reference-btn").setAttribute("aria-expanded", "false");
-    document.getElementById("chat-actions-sheet").hidden = true;
-    document.getElementById("chat-actions-backdrop").hidden = true;
-    document.getElementById("chat-actions-btn").setAttribute("aria-expanded", "false");
+    var referenceButton = document.getElementById("chat-reference-btn");
+    if (referenceButton) referenceButton.setAttribute("aria-expanded", "false");
     renderChatDraftFiles();
     renderChatSkillChips();
     closeChatControls();
@@ -1124,7 +1138,7 @@
     if (page === "board" && boardEl() && boardEl().dataset.change) {
       setChatTasks(boardEl(), boardEl().dataset.change);
     } else {
-      resolveTerminalPanel(sessionID);
+      resolveSessionTasks(sessionID);
     }
     pollChat(true);
     loadChatUsage(true);
@@ -1154,11 +1168,12 @@
     cstate.mutation = false;
     cstate.lifecycleAction = false;
     cstate.session = null;
+    cstate.pendingUserBoundary = null;
     var send = document.getElementById("chat-send-btn");
     var interrupt = document.getElementById("chat-interrupt-btn");
     if (send) send.disabled = false;
     if (interrupt) interrupt.disabled = false;
-    terminalPanelChange = null;
+    sessionTasksChange = null;
     var overlay = document.getElementById("chat-overlay");
     if (overlay) overlay.hidden = true;
     syncChatModalInert(false);
@@ -1178,7 +1193,11 @@
   function syncChatViewport() {
     var win = document.querySelector(".chat-window");
     if (!win || !window.visualViewport || !chatOpen()) return;
-    win.style.setProperty("--chat-viewport-height", window.visualViewport.height + "px");
+    var viewport = window.visualViewport;
+    win.style.setProperty("--chat-viewport-top", viewport.offsetTop + "px");
+    win.style.setProperty("--chat-viewport-left", viewport.offsetLeft + "px");
+    win.style.setProperty("--chat-viewport-width", viewport.width + "px");
+    win.style.setProperty("--chat-viewport-height", viewport.height + "px");
   }
 
   function scheduleChatPoll(delay) {
@@ -1208,6 +1227,7 @@
         var oldTop = transcript.scrollTop;
         var changed = cstate.snapshot !== html;
         if (changed) {
+          captureChatForms();
           var previousRoot = transcript.querySelector(".chat-snapshot");
           var historyPages = previousRoot ? Array.prototype.slice.call(previousRoot.querySelectorAll(":scope > .chat-history-page")) : [];
           var historyLoaded = previousRoot && previousRoot.dataset.historyLoaded === "true";
@@ -1218,6 +1238,8 @@
             openDetails[detail.dataset.chatExpandKey] = body ? body.innerHTML : null;
           });
           transcript.innerHTML = html;
+          settlePendingUserBoundary(transcript, sessionID);
+          restoreChatForms();
           var root = transcript.querySelector(".chat-snapshot");
           if (root && cstate.lifecycle) {
             var snapshotBusy = root.dataset.busy === "true";
@@ -1264,7 +1286,7 @@
             cstate.restoreScroll = null;
           } else if (nearBottom || initial) transcript.scrollTop = transcript.scrollHeight;
           else transcript.scrollTop = oldTop;
-          setChatStatus("Conversation updated");
+          setChatStatus("");
         } else {
           setChatStatus("");
         }
@@ -1289,6 +1311,31 @@
     if (cstate.request) cstate.request.abort();
     cstate.request = null;
     pollChat(true);
+  }
+
+  function settlePendingUserBoundary(transcript, sessionID) {
+    var boundary = cstate.pendingUserBoundary;
+    if (!boundary || boundary.session !== sessionID) return;
+    var users = transcript.querySelectorAll('[data-message-type="user"]');
+    var latestUser = users.length ? users[users.length - 1].dataset.message : "";
+    var running = transcript.querySelector(".chat-system-group.is-running");
+    var activityKey = running ? running.dataset.chatExpandKey : "";
+    if (latestUser !== boundary.user || (activityKey && activityKey !== boundary.activity)) {
+      cstate.pendingUserBoundary = null;
+      return;
+    }
+    if (!running) return;
+    running.classList.remove("is-running");
+    var summary = running.querySelector(":scope > summary");
+    if (!summary) return;
+    summary.removeAttribute("role");
+    summary.removeAttribute("aria-live");
+    var spinner = summary.querySelector(".spinner");
+    var announcement = summary.querySelector(".sr-only");
+    if (spinner) spinner.remove();
+    if (announcement) announcement.remove();
+    var label = summary.querySelector(":scope > span:last-child");
+    if (label) label.textContent = "System";
   }
 
   function loadOlderChat(control) {
@@ -1368,6 +1415,179 @@
     }
   }
 
+  function chatFormKey(form) {
+    return cstate.session + "/" + (form.dataset.formId || form.dataset.chatForm);
+  }
+
+  function collectChatFormAnswers(form) {
+    var answers = {};
+    form.querySelectorAll("[name]").forEach(function (field) {
+      var type = field.dataset.fieldType || "string";
+      if (type === "boolean") answers[field.name] = field.checked;
+      else if (type === "multiselect") {
+        if (Object.prototype.hasOwnProperty.call(answers, field.name)) return;
+        answers[field.name] = Array.prototype.filter.call(form.querySelectorAll('[name]'), function (option) {
+          return option.name === field.name && option.dataset.fieldType === "multiselect" && option.checked;
+        }).map(function (option) { return option.value; });
+      } else if (field.type === "radio") {
+        if (field.checked) answers[field.name] = field.value;
+        else if (!Object.prototype.hasOwnProperty.call(answers, field.name)) answers[field.name] = "";
+      } else if (type === "integer") {
+        answers[field.name] = field.value === "" ? null : parseInt(field.value, 10);
+      } else if (type === "number") {
+        answers[field.name] = field.value === "" ? null : Number(field.value);
+      } else {
+        answers[field.name] = field.value;
+      }
+    });
+    return answers;
+  }
+
+  function captureChatForm(form) {
+    var review = form.querySelector("[data-chat-form-review]");
+    var visible = form.querySelector("[data-chat-form-step]:not([hidden])");
+    var state = cstate.formStates[chatFormKey(form)] || {};
+    state.step = review && !review.hidden ? form.querySelectorAll("[data-chat-form-step]").length : Number(visible && visible.dataset.chatFormStep || 0);
+    state.answers = collectChatFormAnswers(form);
+    cstate.formStates[chatFormKey(form)] = state;
+    return state;
+  }
+
+  function captureChatForms() {
+    document.querySelectorAll("#chat-transcript form[data-form-id], #chat-transcript form[data-chat-form]").forEach(captureChatForm);
+  }
+
+  function restoreChatFormAnswers(form, answers) {
+    form.querySelectorAll("[name]").forEach(function (field) {
+      if (!Object.prototype.hasOwnProperty.call(answers, field.name)) return;
+      var answer = answers[field.name];
+      if (field.dataset.fieldType === "boolean") field.checked = !!answer;
+      else if (field.dataset.fieldType === "multiselect") field.checked = Array.isArray(answer) && answer.indexOf(field.value) >= 0;
+      else if (field.type === "radio") field.checked = answer === field.value;
+      else field.value = answer == null ? "" : String(answer);
+    });
+  }
+
+  function chatFormQuestion(step) {
+    var title = step.querySelector("legend");
+    return title ? title.childNodes[0].textContent.trim() : "Question";
+  }
+
+  function chatFormAnswerLabel(step, answers) {
+    var fields = step.querySelectorAll("[name]");
+    if (!fields.length) {
+      var external = step.querySelector('a[href]');
+      return external ? external.textContent.trim() : "Not answered";
+    }
+    var field = fields[0], answer = answers[field.name];
+    if (field.dataset.fieldType === "boolean") return answer ? "Yes" : "No";
+    if (field.dataset.fieldType === "multiselect" || field.type === "radio") {
+      var selected = Array.isArray(answer) ? answer : answer === "" ? [] : [answer];
+      var labels = Array.prototype.map.call(step.querySelectorAll(".chat-choice input"), function (option) {
+        if (selected.indexOf(option.value) < 0) return "";
+        var label = option.closest(".chat-choice");
+        var text = label && label.querySelector("strong");
+        return text ? text.textContent.trim() : option.value;
+      }).filter(Boolean);
+      return labels.length ? labels.join(", ") : "Not answered";
+    }
+    return answer === "" || answer == null ? "Not answered" : String(answer);
+  }
+
+  function renderChatFormReview(form) {
+    var list = form.querySelector("[data-chat-form-review] dl");
+    if (!list) return;
+    var answers = collectChatFormAnswers(form);
+    list.replaceChildren();
+    form.querySelectorAll("[data-chat-form-step]").forEach(function (step) {
+      var term = document.createElement("dt");
+      var detail = document.createElement("dd");
+      term.textContent = chatFormQuestion(step);
+      detail.textContent = chatFormAnswerLabel(step, answers);
+      list.append(term, detail);
+    });
+  }
+
+  function setChatFormError(form, message) {
+    var error = form.querySelector("[data-chat-form-error]");
+    if (!error) return;
+    error.textContent = message || "";
+    error.hidden = !message;
+  }
+
+  function showChatFormStep(form, index, focus) {
+    var steps = form.querySelectorAll("[data-chat-form-step]");
+    var review = form.querySelector("[data-chat-form-review]");
+    index = Math.max(0, Math.min(index, steps.length));
+    steps.forEach(function (step, i) { step.hidden = i !== index; });
+    review.hidden = index !== steps.length;
+    form.querySelector("[data-chat-form-prev]").hidden = index === 0;
+    form.querySelector("[data-chat-form-next]").hidden = index === steps.length;
+    form.querySelector("[data-chat-form-submit]").hidden = index !== steps.length;
+    form.querySelector("[data-chat-form-progress]").textContent = index === steps.length ? "Review" : "Question " + (index + 1) + " of " + steps.length;
+    form.dataset.chatFormActiveStep = String(index);
+    if (index === steps.length) renderChatFormReview(form);
+    var state = cstate.formStates[chatFormKey(form)] || {};
+    state.step = index;
+    cstate.formStates[chatFormKey(form)] = state;
+    if (focus) requestAnimationFrame(function () {
+      var target = index === steps.length ? review : steps[index].querySelector("input, a[href], button");
+      if (target) target.focus({ preventScroll: true });
+    });
+  }
+
+  function validateChatFormStep(form, step, report) {
+    var multi = step.querySelector('[data-chat-choice-required="true"][data-chat-choice-type="multiselect"]');
+    if (multi) {
+      var first = multi.querySelector("input");
+      var valid = !!multi.querySelector("input:checked");
+      if (first) first.setCustomValidity(valid ? "" : "Select at least one option.");
+    }
+    var invalid = Array.prototype.find.call(step.querySelectorAll("input"), function (field) { return !field.checkValidity(); });
+    if (!invalid) return true;
+    if (report !== false) {
+      invalid.reportValidity();
+      invalid.focus({ preventScroll: true });
+    }
+    return false;
+  }
+
+  function setChatFormSubmitting(form, status, message) {
+    var state = cstate.formStates[chatFormKey(form)] || {};
+    state.status = status;
+    state.error = status === "error" ? message : "";
+    cstate.formStates[chatFormKey(form)] = state;
+    form.querySelectorAll("[data-chat-form-prev], [data-chat-form-next], [data-chat-form-submit]").forEach(function (button) {
+      button.disabled = status === "submitting" || status === "submitted";
+    });
+    var submit = form.querySelector("[data-chat-form-submit]");
+    if (submit) submit.textContent = status === "submitting" ? "Submitting..." : status === "submitted" ? "Submitted" : "Submit";
+    setChatFormError(form, state.error);
+  }
+
+  function currentChatForm(formID) {
+    return Array.prototype.find.call(document.querySelectorAll("#chat-transcript form[data-form-id], #chat-transcript form[data-chat-form]"), function (form) {
+      return (form.dataset.formId || form.dataset.chatForm) === formID;
+    });
+  }
+
+  function restoreChatForms() {
+    var seen = {};
+    document.querySelectorAll("#chat-transcript form[data-form-id], #chat-transcript form[data-chat-form]").forEach(function (form) {
+      var key = chatFormKey(form);
+      seen[key] = true;
+      var state = cstate.formStates[key];
+      if (!state) return;
+      restoreChatFormAnswers(form, state.answers || {});
+      showChatFormStep(form, Number(state.step) || 0, false);
+      setChatFormSubmitting(form, state.status || "pending", state.error || "");
+    });
+    var prefix = cstate.session + "/";
+    Object.keys(cstate.formStates).forEach(function (key) {
+      if (key.indexOf(prefix) === 0 && !seen[key]) delete cstate.formStates[key];
+    });
+  }
+
   function chatBusy() {
     var root = document.querySelector("#chat-transcript .chat-snapshot");
     return root ? root.dataset.busy === "true" : !!(cstate.lifecycle && cstate.lifecycle.busy);
@@ -1381,8 +1601,6 @@
   }
 
   function updateChatDeliveryControls() {
-    var controls = document.getElementById("chat-delivery-controls");
-    if (!controls) return;
     var busy = chatBusy();
     if (cstate.lifecycle || document.querySelector("#chat-transcript .chat-snapshot")) {
       setChatHeaderState(busy ? "Working" : "Idle", busy ? "busy" : "idle");
@@ -1390,18 +1608,9 @@
     var cap = cstate.lifecycle && cstate.lifecycle.capabilities || {};
     var files = !!cap.promptDeliveryFiles;
     var skills = !!cap.promptDeliverySkills;
-    var available = !!cap.promptDelivery && !!cap.promptDeliveryID;
-    controls.hidden = !busy;
-    document.getElementById("chat-delivery-mode").disabled = !available;
-    document.getElementById("chat-delivery-note").textContent = !available
-      ? "Durable follow-ups are unavailable on this OpenCode service."
-      : files && skills ? "Choose queue for the next turn or steer the current turn."
-      : "Unsupported attachments, references, or skills remain in your draft until the session is idle.";
-    var addFile = document.querySelector(".chat-add-file");
-    if (addFile) addFile.classList.toggle("is-disabled", busy && !files);
-    if (addFile) addFile.disabled = busy && !files;
     document.getElementById("chat-file-input").disabled = busy && !files;
-    document.getElementById("chat-reference-btn").disabled = busy && !files;
+    var reference = document.getElementById("chat-reference-btn");
+    if (reference) reference.disabled = busy && !files;
     document.getElementById("chat-interrupt-btn").hidden = !busy;
     renderChatControlsAvailability();
   }
@@ -1789,10 +1998,15 @@
 
   function renderChatUsage(usage) {
     usage = usage || {};
+    cstate.usage = usage;
     var header = document.getElementById("chat-context-usage");
     var available = !!usage.contextAvailable && !!usage.contextLimit;
-    header.textContent = available ? "Context " + usage.percent + "%" : "Context unavailable";
+    var percent = Math.max(0, Number(usage.percent) || 0);
+    header.querySelector("span").textContent = available ? String(percent) : "–";
+    header.style.setProperty("--usage", String(available ? Math.min(100, percent) : 0));
     header.title = available ? conciseTokens(usage.estimatedContext) + " / " + conciseTokens(usage.contextLimit) : "Active context usage unavailable";
+    header.setAttribute("aria-label", available ? "Active context " + percent + " percent, " + header.title : header.title);
+    header.classList.toggle("unavailable", !available);
     header.classList.toggle("warning", available && !!usage.warning);
 
     var usageEl = document.getElementById("chat-usage");
@@ -1844,6 +2058,7 @@
     cstate.controls = data;
     fillChatSelect(document.getElementById("chat-agent-select"), data.agents || [], data.agent, "Choose agent");
     fillChatSelect(document.getElementById("chat-model-select"), data.models || [], data.model, "Choose model");
+    renderChatVariantSelect(data);
     fillChatSelect(document.getElementById("chat-command-select"), data.commands || [], "", "Choose command");
     renderChatUsage(data.usage);
     var list = document.getElementById("chat-skill-list");
@@ -1875,6 +2090,25 @@
     renderChatLifecycle();
     renderChatManagement();
     renderChatControlsAvailability();
+  }
+
+  function renderChatVariantSelect(data) {
+    var select = document.getElementById("chat-variant-select");
+    var model = (data.models || []).find(function (item) { return item.value === data.model; });
+    var variants = model && model.variants || [];
+    select.innerHTML = "";
+    var fallback = document.createElement("option");
+    fallback.value = "";
+    fallback.textContent = "Default";
+    select.appendChild(fallback);
+    variants.forEach(function (id) {
+      var option = document.createElement("option");
+      option.value = id;
+      option.textContent = id;
+      option.selected = id === data.variant;
+      select.appendChild(option);
+    });
+    select.disabled = variants.length === 0;
   }
 
   function lifecycleURL(path) {
@@ -1916,14 +2150,6 @@
     return button;
   }
 
-  function owningSessionLink(item) {
-    if (!item || !item.change) return null;
-    var link = document.createElement("a");
-    link.href = "/changes/" + encodeURIComponent(item.change) + (item.task ? "?task=" + encodeURIComponent(item.task) : "");
-    link.textContent = item.task ? "Return to " + item.task : "Return to change";
-    return link;
-  }
-
   function renderChatNavigation() {
     var bar = document.getElementById("chat-family-bar");
     var drawer = document.getElementById("chat-agents");
@@ -1939,20 +2165,12 @@
       closeChatAgents();
       return;
     }
-    (data.ancestors || []).forEach(function (item) {
+    var ancestors = data.ancestors || [];
+    ancestors.forEach(function (item, index) {
       appendNavigationButton(bar, item);
-      bar.appendChild(document.createTextNode("/"));
+      if (index < ancestors.length - 1) bar.appendChild(document.createTextNode("/"));
     });
-    var current = document.createElement("strong");
-    current.textContent = data.current.title || data.current.session;
-    bar.appendChild(current);
-    var meta = document.createElement("span");
-    meta.className = "chat-family-meta";
-    meta.textContent = navigationMeta(data.current);
-    bar.appendChild(meta);
-    var owner = owningSessionLink(data.current);
-    if (owner) bar.appendChild(owner);
-    bar.hidden = false;
+    bar.hidden = ancestors.length === 0;
 
     var descendants = data.descendants || [];
     toggle.hidden = descendants.length === 0;
@@ -1963,11 +2181,6 @@
     }
     var heading = document.createElement("div");
     heading.className = "chat-agents-head";
-    var back = document.createElement("button");
-    back.type = "button";
-    back.className = "chat-view-back btn-ghost";
-    back.dataset.chatViewBack = "";
-    back.textContent = "Back to Chat";
     var strong = document.createElement("strong");
     strong.textContent = "Child activity";
     var close = document.createElement("button");
@@ -1976,7 +2189,6 @@
     close.setAttribute("aria-label", "Close agent drawer");
     close.textContent = "✕";
     close.addEventListener("click", closeChatAgents);
-    heading.appendChild(back);
     heading.appendChild(strong);
     heading.appendChild(close);
     drawer.appendChild(heading);
@@ -2006,7 +2218,7 @@
         cstate.navigation = data;
         if (data.current && data.current.title) {
           cstate.title = data.current.title;
-          document.getElementById("chat-title").textContent = cstate.title;
+          syncChatHeader();
         }
         renderChatNavigation();
         return data;
@@ -2212,16 +2424,18 @@
       panel.appendChild(hint);
     }
 
-    var usage = cstate.controls && cstate.controls.usage || {};
+    var usage = cstate.usage || {};
     var pending = !!(cstate.session && cstate.compactPending[cstate.session]);
     var canCompact = !!(data && cap.compact && !data.busy && usage.contextAvailable && usage.contextLimit && !pending && !cstate.lifecycleAction);
     compact.disabled = !canCompact;
-    compact.textContent = pending ? "Compaction in progress..." : "Compact context";
+    compact.textContent = pending ? "Compacting..." : "Compact";
     if (pending) compactNote.textContent = "Progress and any failure appear asynchronously in the transcript.";
     else if (!cap.compact && data) compactNote.textContent = "Manual compaction is unavailable on this OpenCode service.";
     else if (data && data.busy) compactNote.textContent = "Wait for the active response to finish before compacting.";
     else if (!usage.contextAvailable || !usage.contextLimit) compactNote.textContent = "Active context usage is required before manual compaction.";
     else compactNote.textContent = "Active context: " + conciseTokens(usage.estimatedContext) + " / " + conciseTokens(usage.contextLimit) + " (" + (usage.percent || 0) + "%). Progress appears in the transcript.";
+    compact.title = compactNote.textContent;
+    compact.setAttribute("aria-label", "Compact context. " + compactNote.textContent);
   }
 
   function renderChatManagement() {
@@ -2457,7 +2671,7 @@
     focusChatPanel("work");
   }
 
-  function setChatTasks(src, change) {
+  function setChatTasks(src, change, task) {
     var panel = document.getElementById("chat-tasks");
     var toggle = document.getElementById("chat-tasks-btn");
     if (!panel || !toggle) return;
@@ -2465,7 +2679,8 @@
     panel.innerHTML = "";
     panel.hidden = !change;
     toggle.hidden = !change;
-    if (change) renderTaskPanel(panel, src, change);
+    if (task === undefined && src && src.matches && src.matches("#board")) task = src.dataset.task || "";
+    if (change) renderTaskPanel(panel, src, change, task || "");
   }
 
   function closeChatMore(returnFocus) {
@@ -2497,9 +2712,6 @@
     var prompt = document.getElementById("chat-prompt");
     var send = document.getElementById("chat-send-btn");
     var fileInput = document.getElementById("chat-file-input");
-    var actionsButton = document.getElementById("chat-actions-btn");
-    var actionsSheet = document.getElementById("chat-actions-sheet");
-    var actionsBackdrop = document.getElementById("chat-actions-backdrop");
     var moreButton = document.getElementById("chat-more-btn");
     var moreMenu = document.getElementById("chat-more-menu");
     var moreBackdrop = document.getElementById("chat-more-backdrop");
@@ -2509,54 +2721,22 @@
     function closeChatReferences(returnFocus) {
       if (referencePicker.hidden) return false;
       referencePicker.hidden = true;
-      referenceButton.setAttribute("aria-expanded", "false");
-      if (returnFocus !== false) actionsButton.focus({ preventScroll: true });
+      if (referenceButton) referenceButton.setAttribute("aria-expanded", "false");
+      if (returnFocus !== false) moreButton.focus({ preventScroll: true });
       return true;
     }
-
-    function closeChatActions(returnFocus) {
-      if (actionsSheet.hidden) return false;
-      actionsSheet.hidden = true;
-      actionsBackdrop.hidden = true;
-      actionsButton.setAttribute("aria-expanded", "false");
-      if (returnFocus !== false) actionsButton.focus({ preventScroll: true });
-      return true;
-    }
-
-    function openChatActions() {
-      closeChatMore(false);
-      closeChatReferences(false);
-      actionsSheet.hidden = false;
-      actionsBackdrop.hidden = false;
-      actionsButton.setAttribute("aria-expanded", "true");
-      var first = actionsSheet.querySelector("button:not([disabled])");
-      if (first) first.focus({ preventScroll: true });
-    }
-
-    actionsButton.addEventListener("click", function () {
-      if (!closeChatActions(true)) openChatActions();
-    });
-    actionsBackdrop.addEventListener("click", function () { closeChatActions(true); });
     document.getElementById("chat-reference-close").addEventListener("click", function () { closeChatReferences(true); });
     moreButton.addEventListener("click", function () {
       if (!closeChatMore(true)) {
-        closeChatActions(false);
         closeChatReferences(false);
         openChatMore();
       }
     });
     moreBackdrop.addEventListener("click", function () { closeChatMore(true); });
     moreMenu.addEventListener("click", function (e) {
-      var item = e.target.closest("[data-chat-more-target]");
+      var item = e.target.closest('[role="menuitem"]');
       if (!item) return;
-      var target = document.getElementById(item.dataset.chatMoreTarget);
       closeChatMore(false);
-      if (target && target.id === "chat-controls-btn") openChatControls(moreButton);
-      else if (target) target.click();
-    });
-    document.querySelector(".chat-add-file").addEventListener("click", function () {
-      closeChatActions(true);
-      fileInput.click();
     });
     prompt.addEventListener("input", function () {
       if (cstate.session) {
@@ -2603,9 +2783,17 @@
       if (busy) {
         if (!cstate.deliveryIDs[sessionID]) cstate.deliveryIDs[sessionID] = newChatMessageID();
         body.append("id", cstate.deliveryIDs[sessionID]);
-        body.append("delivery", document.getElementById("chat-delivery-mode").value);
+        body.append("delivery", "queue");
         request = deliverBusyPrompt(body, send);
       } else {
+        var userMarkers = document.querySelectorAll('#chat-transcript [data-message-type="user"]');
+        var activities = document.querySelectorAll("#chat-transcript .chat-system-group");
+        var activity = activities.length ? activities[activities.length - 1] : null;
+        cstate.pendingUserBoundary = {
+          session: sessionID,
+          user: userMarkers.length ? userMarkers[userMarkers.length - 1].dataset.message : "",
+          activity: activity ? activity.dataset.chatExpandKey : "",
+        };
         request = chatMutation("prompt", body, send);
       }
       request.then(function () {
@@ -2619,7 +2807,9 @@
           renderChatSkillChips();
           resizeChatPrompt();
         }
-      }).catch(function () {});
+      }).catch(function () {
+        if (cstate.pendingUserBoundary && cstate.pendingUserBoundary.session === sessionID) cstate.pendingUserBoundary = null;
+      });
     });
     fileInput.addEventListener("change", function () { addChatFiles(fileInput.files); fileInput.value = ""; });
     document.getElementById("chat-draft-files").addEventListener("click", function (e) {
@@ -2655,20 +2845,23 @@
       if (!button) return;
       mutateChatInbox(button.dataset.inboxCancel, "DELETE", null, button).catch(function () { loadChatInbox(false); });
     });
-    document.getElementById("chat-reference-btn").addEventListener("click", function (e) {
-      closeChatActions(false);
-      referencePicker.hidden = !referencePicker.hidden;
-      e.currentTarget.setAttribute("aria-expanded", String(!referencePicker.hidden));
-      if (!referencePicker.hidden) loadChatReferences().then(function () { document.getElementById("chat-reference-search").focus({ preventScroll: true }); });
-      else actionsButton.focus({ preventScroll: true });
-    });
-    document.getElementById("chat-skill-btn").addEventListener("click", function () {
-      closeChatActions(false);
-      openChatControls(actionsButton).then(function () {
-        var skill = document.querySelector("#chat-skill-list [data-attach-skill]");
-        (skill || document.getElementById("chat-controls-search")).focus({ preventScroll: true });
+    if (referenceButton) {
+      referenceButton.addEventListener("click", function (e) {
+        referencePicker.hidden = !referencePicker.hidden;
+        e.currentTarget.setAttribute("aria-expanded", String(!referencePicker.hidden));
+        if (!referencePicker.hidden) loadChatReferences().then(function () { document.getElementById("chat-reference-search").focus({ preventScroll: true }); });
+        else moreButton.focus({ preventScroll: true });
       });
-    });
+    }
+    var skillButton = document.getElementById("chat-skill-btn");
+    if (skillButton) {
+      skillButton.addEventListener("click", function () {
+        openChatControls(moreButton).then(function () {
+          var skill = document.querySelector("#chat-skill-list [data-attach-skill]");
+          (skill || document.getElementById("chat-controls-search")).focus({ preventScroll: true });
+        });
+      });
+    }
     document.getElementById("chat-reference-search").addEventListener("input", renderChatReferenceList);
     document.getElementById("chat-reference-list").addEventListener("change", function (e) {
       var input = e.target.closest("[data-chat-reference]");
@@ -2689,7 +2882,7 @@
     });
     document.getElementById("chat-controls-btn").addEventListener("click", function (e) {
       var sheet = document.getElementById("chat-controls-sheet");
-      if (sheet.hidden || compactChatUI()) openChatControls(e.currentTarget);
+      if (sheet.hidden || compactChatUI()) openChatControls(moreButton);
       else closeChatControls();
     });
     document.getElementById("chat-controls-close").addEventListener("click", closeChatControls);
@@ -2700,16 +2893,19 @@
     });
     document.getElementById("chat-compact-btn").addEventListener("click", function () {
       var data = cstate.lifecycle;
-      if (!data || data.busy || !data.capabilities.compact || !cstate.controls || !cstate.controls.usage.contextAvailable || !cstate.controls.usage.contextLimit) return;
+      var usage = cstate.usage || {};
+      if (!data || data.busy || !data.capabilities.compact || !usage.contextAvailable || !usage.contextLimit) return;
       if (!window.confirm("Compact this session's context now? The transcript remains available.")) return;
       runLifecycleAction("/compact", {
         delivery: "queue",
         confirmation: { sessionID: data.session.id, updated: data.session.updated }
       }, function () {
         cstate.compactPending[cstate.session] = true;
-        setChatStatus("Compaction queued. Progress will appear in the transcript.");
-        refreshChat();
-      }).catch(function () {});
+         setChatStatus("Compaction queued. Progress will appear in the transcript.");
+         refreshChat();
+      }).catch(function (err) {
+        setChatStatus("Compaction failed: " + err.message, true);
+      });
     });
     document.getElementById("chat-rename-btn").addEventListener("click", function (e) {
       var value = document.getElementById("chat-rename-title").value.trim();
@@ -2721,7 +2917,7 @@
         if (!cstate.lifecycle) return;
         cstate.lifecycle.session.title = value;
         cstate.title = value;
-        document.getElementById("chat-title").textContent = value;
+        syncChatHeader();
         setChatStatus("Session renamed. The persisted fallback title was updated.");
         return loadChatNavigation();
       }).catch(function (err) {
@@ -2815,7 +3011,11 @@
     });
     document.getElementById("chat-model-select").addEventListener("change", function (e) {
       var select = e.currentTarget, prior = cstate.controls && cstate.controls.model;
-      chatMutation("model", { model: select.value }, select).then(loadChatControls).catch(function () { select.value = prior || ""; });
+      chatMutation("model", { model: select.value, variant: "" }, select).then(loadChatControls).catch(function () { select.value = prior || ""; });
+    });
+    document.getElementById("chat-variant-select").addEventListener("change", function (e) {
+      var select = e.currentTarget, prior = cstate.controls && cstate.controls.variant;
+      chatMutation("model", { model: cstate.controls.model, variant: select.value }, select).then(loadChatControls).catch(function () { select.value = prior || ""; });
     });
     document.getElementById("chat-command-run").addEventListener("click", function (e) {
       var command = document.getElementById("chat-command-select").value;
@@ -2842,33 +3042,23 @@
     });
     document.getElementById("chat-controls-search").addEventListener("input", function (e) {
       var query = e.currentTarget.value.toLowerCase();
-      ["chat-agent-select", "chat-model-select", "chat-command-select"].forEach(function (id) {
+      ["chat-agent-select", "chat-model-select", "chat-variant-select", "chat-command-select"].forEach(function (id) {
         document.getElementById(id).querySelectorAll("option[data-search]").forEach(function (option) { option.hidden = !!query && option.dataset.search.indexOf(query) < 0; });
       });
       document.querySelectorAll("#chat-skill-list .chat-skill-row").forEach(function (row) { row.hidden = !!query && row.dataset.search.indexOf(query) < 0; });
     });
-    document.getElementById("chat-terminal-btn").addEventListener("click", function () {
-      var sid = cstate.session, title = cstate.title;
-      openTerminal(sid, title);
-    });
-    document.getElementById("terminal-chat-btn").addEventListener("click", function () {
-      if (tstate.session) openChat(tstate.session, document.getElementById("terminal-title").textContent);
-    });
     document.getElementById("chat-agents-btn").addEventListener("click", function (e) {
       var drawer = document.getElementById("chat-agents");
       if (drawer.classList.contains("open") && !compactChatUI()) closeChatAgents();
-      else openChatAgents(e.currentTarget);
+      else openChatAgents(moreButton);
     });
     document.getElementById("chat-agent-backdrop").addEventListener("click", closeChatAgents);
     document.getElementById("chat-tasks-btn").addEventListener("click", function (e) {
       var panel = document.getElementById("chat-tasks");
       if (panel.classList.contains("open") && !compactChatUI()) closeChatTasks();
-      else openChatTasks(e.currentTarget);
+      else openChatTasks(moreButton);
     });
     document.getElementById("chat-task-backdrop").addEventListener("click", closeChatTasks);
-    document.querySelector(".chat-window").addEventListener("click", function (e) {
-      if (e.target.closest("[data-chat-view-back]")) closeChatView();
-    });
     function menuKeyboard(menu, close) {
       menu.addEventListener("keydown", function (e) {
         var items = Array.prototype.filter.call(menu.querySelectorAll('[role="menuitem"]'), function (item) { return !item.disabled && !item.hidden; });
@@ -2882,12 +3072,10 @@
         if (items[index]) items[index].focus({ preventScroll: true });
       });
     }
-    menuKeyboard(actionsSheet, closeChatActions);
     menuKeyboard(moreMenu, closeChatMore);
 
     var compactQuery = window.matchMedia && window.matchMedia("(max-width: 840px)");
     if (compactQuery) compactQuery.addEventListener("change", function () {
-      closeChatActions(false);
       closeChatMore(false);
       closeChatReferences(false);
       closeChatTasks(false);
@@ -2918,7 +3106,7 @@
       if (e.key !== "Escape") return;
       var detail = document.getElementById("detail");
       if (detail && !detail.hidden) return;
-      if (closeChatMessageActions(true) || closeChatActions(true) || closeChatMore(true) || closeChatReferences(true)) {
+      if (closeChatMessageActions(true) || closeChatMore(true) || closeChatReferences(true)) {
         e.preventDefault();
         e.stopImmediatePropagation();
       }
@@ -2938,7 +3126,40 @@
     });
   })();
 
+  document.addEventListener("input", function (e) {
+    var form = e.target.closest && e.target.closest("#chat-transcript form[data-form-id], #chat-transcript form[data-chat-form]");
+    if (!form) return;
+    if (e.target.dataset.fieldType === "multiselect") e.target.setCustomValidity("");
+    var state = captureChatForm(form);
+    if (state.status === "error") state.status = "pending";
+    state.error = "";
+    setChatFormError(form, "");
+  });
+
+  document.addEventListener("change", function (e) {
+    var form = e.target.closest && e.target.closest("#chat-transcript form[data-form-id], #chat-transcript form[data-chat-form]");
+    if (form) captureChatForm(form);
+  });
+
   document.addEventListener("click", function (e) {
+    var formNav = e.target.closest("#chat-transcript [data-chat-form-prev], #chat-transcript [data-chat-form-next]");
+    if (formNav) {
+      var wizard = formNav.closest("form[data-form-id], form[data-chat-form]");
+      if (!wizard || formNav.disabled) return;
+      e.preventDefault();
+      var steps = wizard.querySelectorAll("[data-chat-form-step]");
+      var index = Number(wizard.dataset.chatFormActiveStep || 0);
+      if (formNav.hasAttribute("data-chat-form-next")) {
+        if (!validateChatFormStep(wizard, steps[index])) return;
+        index++;
+      } else {
+        index--;
+      }
+      setChatFormError(wizard, "");
+      showChatFormStep(wizard, index, true);
+      captureChatForm(wizard);
+      return;
+    }
     var menu = e.target.closest("#chat-transcript .chat-message-menu");
     if (menu) {
       if (e.target.closest("button")) closeChatMessageActions(false);
@@ -3044,9 +3265,11 @@
     if (copyMessage) {
       e.preventDefault();
       var message = copyMessage.closest("[data-chat-message-actions]");
-      var text = Array.prototype.map.call(message ? message.querySelectorAll(".chat-markdown") : [], function (part) {
-        return part.textContent.trim();
-      }).filter(Boolean).join("\n\n");
+      var sources = message ? message.querySelectorAll(".chat-markdown-source") : [];
+      var parts = sources.length ? sources : message ? message.querySelectorAll(".chat-markdown") : [];
+      var text = Array.prototype.map.call(parts, function (part) {
+        return part.textContent;
+      }).filter(function (part) { return part.trim(); }).join("\n\n").trim();
       if (!text || !navigator.clipboard) {
         setChatStatus("Could not copy message.", true);
         return;
@@ -3119,129 +3342,56 @@
     var form = e.target.closest("#chat-transcript form[data-form-id], #chat-transcript form[data-chat-form]");
     if (!form) return;
     e.preventDefault();
-    var answers = {};
-    form.querySelectorAll("[name]").forEach(function (field) {
-      var type = field.dataset.fieldType || "string";
-      if (type === "boolean") answers[field.name] = field.checked;
-      else if (type === "multiselect") {
-        answers[field.name] = Array.prototype.filter.call(field.options, function (o) { return o.selected; })
-          .map(function (o) { return o.value; });
-      } else if (type === "integer") {
-        answers[field.name] = field.value === "" ? null : parseInt(field.value, 10);
-      } else if (type === "number") {
-        answers[field.name] = field.value === "" ? null : Number(field.value);
-      } else {
-        answers[field.name] = field.value;
-      }
+    var steps = form.querySelectorAll("[data-chat-form-step]");
+    var activeIndex = Number(form.dataset.chatFormActiveStep || 0);
+    if (activeIndex < steps.length) {
+      if (!validateChatFormStep(form, steps[activeIndex])) return;
+      showChatFormStep(form, activeIndex + 1, true);
+      captureChatForm(form);
+      return;
+    }
+    var state = cstate.formStates[chatFormKey(form)] || {};
+    if (state.status === "submitting" || state.status === "submitted" || cstate.mutation) {
+      var duplicateMessage = "This form submission is already in progress.";
+      setChatFormError(form, duplicateMessage);
+      setChatStatus(duplicateMessage, true);
+      return;
+    }
+    var invalidIndex = -1;
+    Array.prototype.some.call(steps, function (step, index) {
+      if (validateChatFormStep(form, step, false)) return false;
+      invalidIndex = index;
+      return true;
     });
+    if (invalidIndex >= 0) {
+      showChatFormStep(form, invalidIndex, true);
+      validateChatFormStep(form, steps[invalidIndex], true);
+      setChatFormError(form, "Complete this question before submitting.");
+      return;
+    }
+    var formID = form.dataset.formId || form.dataset.chatForm;
+    var answers = collectChatFormAnswers(form);
+    captureChatForm(form);
+    setChatFormSubmitting(form, "submitting", "");
+    setChatStatus("Submitting...");
     chatMutation(
-      "forms/" + encodeURIComponent(form.dataset.formId || form.dataset.chatForm) + "/reply",
+      "forms/" + encodeURIComponent(formID) + "/reply",
       { answers: answers },
-      form.querySelector('[type="submit"]')
-    ).catch(function () {});
+      form.querySelector("[data-chat-form-submit]")
+    ).then(function () {
+      setChatFormSubmitting(currentChatForm(formID) || form, "submitted", "");
+      setChatStatus("Submitted");
+    }).catch(function (err) {
+      setChatFormSubmitting(currentChatForm(formID) || form, "error", err.message);
+      setChatStatus("Form submission failed: " + err.message, true);
+    });
   });
 
-  var tstate = { term: null, ws: null, ro: null, session: null };
-  // The change id the task panel currently shows for a non-board terminal
-  // (null on board pages, where the panel mirrors the live board DOM).
-  var terminalPanelChange = null;
+  // The change whose Work view was resolved for a Chat opened away from its
+  // board. On board pages the live board DOM remains authoritative.
+  var sessionTasksChange = null;
 
-  function openTerminal(sessionID, title) {
-    var fromChat = chatOpen();
-    closeChat(true, true);
-    closeTerminal(fromChat);
-    var overlay = document.getElementById("terminal-overlay");
-    overlay.hidden = false;
-    // The task panel serves any change-bound terminal: mirrored from the
-    // live board DOM on board pages, resolved via the session→change
-    // binding (and fed by a fetched board fragment) everywhere else.
-    var panel = terminalTasksEl();
-    var onBoard = page === "board" && boardEl() && boardEl().dataset.change;
-    if (panel) {
-      panel.hidden = true;
-      panel.innerHTML = "";
-      if (onBoard) {
-        panel.hidden = false;
-        syncTerminalTasks(boardEl(), boardEl().dataset.change);
-      } else {
-        resolveTerminalPanel(sessionID);
-      }
-    }
-    document.getElementById("terminal-title").textContent = title || "";
-    var status = document.getElementById("terminal-status");
-    status.hidden = true;
-    var container = document.getElementById("terminal-container");
-    container.innerHTML = "";
-
-    var term = new Terminal({
-      fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-      fontSize: 13,
-      cursorBlink: true,
-      theme: {
-        background: "#141414",
-        foreground: "#e8e6e3",
-        // Follow the accent palette; falls back to the legacy orange when
-        // the CSS variable is unavailable.
-        cursor: getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() || "#e8641f",
-        selectionBackground: "#3a3a3a",
-      },
-    });
-    var fit = new FitAddon.FitAddon();
-    term.loadAddon(fit);
-    term.open(container);
-    fit.fit();
-
-    var proto = location.protocol === "https:" ? "wss" : "ws";
-    var ws = new WebSocket(
-      proto + "://" + location.host + "/terminal/ws?session=" +
-        encodeURIComponent(sessionID) + "&cols=" + term.cols + "&rows=" + term.rows
-    );
-    ws.binaryType = "arraybuffer";
-    ws.onmessage = function (e) {
-      term.write(typeof e.data === "string" ? e.data : new Uint8Array(e.data));
-    };
-    ws.onclose = function () {
-      status.textContent = "disconnected — the opencode session persists; reopen to resume";
-      status.hidden = false;
-    };
-    term.onData(function (d) {
-      if (ws.readyState === 1) ws.send(d);
-    });
-
-    var ro = new ResizeObserver(function () {
-      fit.fit();
-      if (ws.readyState === 1) {
-        ws.send(JSON.stringify({ type: "resize", cols: term.cols, rows: term.rows }));
-      }
-    });
-    ro.observe(container);
-
-    tstate = { term: term, ws: ws, ro: ro, session: sessionID };
-  }
-
-  function closeTerminal(suppressRefresh) {
-    if (tstate.ro) tstate.ro.disconnect();
-    if (tstate.ws && tstate.ws.readyState <= 1) tstate.ws.close();
-    if (tstate.term) tstate.term.dispose();
-    tstate = { term: null, ws: null, ro: null, session: null };
-    terminalPanelChange = null;
-    var overlay = document.getElementById("terminal-overlay");
-    if (overlay) overlay.hidden = true;
-    var panel = terminalTasksEl();
-    if (panel) { panel.hidden = true; panel.innerHTML = ""; }
-    // On the index a refresh was deferred while the terminal was open
-    // (see followSession); now that a reload is safe again, catch up.
-    if (!suppressRefresh && page === "index") scheduleRefresh();
-  }
-
-  function terminalOpen() {
-    var ov = document.getElementById("terminal-overlay");
-    return ov && !ov.hidden;
-  }
-
-  // --- terminal task panel -------------------------------------------------
-
-  function terminalTasksEl() { return document.getElementById("terminal-tasks"); }
+  // --- Chat Work panel -----------------------------------------------------
 
   function esc(s) {
     return String(s).replace(/[&<>"]/g, function (c) {
@@ -3252,24 +3402,17 @@
   // Mirrors the statusClass template func in internal/server/render.go.
   function statusClass(s) { return s.toLowerCase().replace(/ /g, "-"); }
 
-  // The panel mirrors the board fragment DOM (.cards[data-status] /
-  // .card[data-task]): on board pages src is the live #board (live updates
-  // ride the existing SSE board refresh); elsewhere it is a fetched
-  // fragment, re-loaded on SSE events by the terminal hooks above.
-  function syncTerminalTasks(src, change) {
-    var panel = terminalTasksEl();
-    if (!panel || panel.hidden) return;
-    renderTaskPanel(panel, src, change);
-  }
-
-  function renderTaskPanel(panel, src, change) {
+  function renderTaskPanel(panel, src, change, task) {
     var chatWork = panel.id === "chat-tasks";
-    var html = '<div class="chat-view-head"><button type="button" class="chat-view-back btn-ghost" data-chat-view-back>Back to Chat</button><strong>Work</strong></div><div class="ttp-scroll" data-chat-view-scroll>';
+    var html = '<div class="ttp-scroll" data-chat-view-scroll>';
     if (chatWork && change) {
       html += '<a class="ttp-plan ttp-plan-first" data-work-document="plan" hx-get="/changes/' +
         encodeURIComponent(change) + '/plan" hx-target="#detail" hx-swap="innerHTML"><span><strong>Plan</strong><small>Read the change plan</small></span><span aria-hidden="true">&rsaquo;</span></a>';
     }
-    html += '<div class="ttp-head">Tasks</div>';
+    if (chatWork && task) {
+      html += '<div class="ttp-scope"><button type="button" data-work-root data-change="' + esc(change) + '">All tasks</button><span>Subtasks of <strong>' + esc(task) + '</strong></span></div>';
+    }
+    html += '<div class="ttp-head">' + (task ? "Subtasks" : "Tasks") + '</div>';
     var groups = 0;
     if (src) {
       src.querySelectorAll(".cards[data-status]").forEach(function (col) {
@@ -3284,10 +3427,12 @@
           var a = card.querySelector(".card-title");
           var href = a && a.getAttribute("hx-get");
           if (!href) return;
+          var sub = card.querySelector(".card-sub");
+          var marker = sub ? '<span class="ttp-subtask-marker" title="Has subtasks" aria-label="Has subtasks, ' + esc(sub.textContent.trim()) + '">' + esc(sub.textContent.trim().replace(/\s*✓\s*$/, "")) + '</span>' : "";
           html += '<a class="ttp-row"' + (chatWork ? ' data-work-document="task"' : '') + ' hx-get="' + esc(href) + '" hx-headers=\'{"Accept": "text/html"}\'' +
             ' hx-target="#detail" hx-swap="innerHTML"><span class="chip">' +
             esc(card.getAttribute("data-task") || "") + '</span><span class="ttp-row-title">' +
-            esc(a.textContent) + "</span></a>";
+            esc(a.textContent) + "</span>" + marker + "</a>";
         });
         html += "</div>";
       });
@@ -3295,7 +3440,7 @@
     if (!groups) html += '<div class="ttp-empty">No tasks yet.</div>';
     html += "</div>"; // .ttp-scroll
     // Fixed footer: open the change plan modal, same request as the board's
-    // Plan button (#detail stacks above the terminal).
+    // Plan button.
     if (change) {
       html += '<div class="ttp-foot"><a class="ttp-plan" hx-get="/changes/' +
         encodeURIComponent(change) + '/plan"' +
@@ -3305,39 +3450,36 @@
     if (window.htmx) htmx.process(panel); // wire hx-get on the new rows
   }
 
-  // Non-board terminals: resolve the session's change binding and, when
-  // bound, fill the panel from the change's board fragment.
-  function resolveTerminalPanel(sessionID) {
+  // Chats opened away from a board resolve the session's change binding and,
+  // when bound, fill Work from the change's board fragment.
+  function resolveSessionTasks(sessionID) {
     fetch("/api/sessions/" + encodeURIComponent(sessionID) + "/change", { headers: { Accept: "application/json" } })
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (j) {
         if (!j || !j.change) return;
         if (!sessionOverlayOpen() || activeSessionID() !== sessionID) return;
-        loadTerminalTasks(j.change);
+        loadSessionTasks(j.change);
       })
       .catch(function () {});
   }
 
-  function loadTerminalTasks(changeID) {
-    fetch("/changes/" + encodeURIComponent(changeID), { headers: { Accept: "text/html", "HX-Request": "true" } })
+  function loadSessionTasks(changeID, taskID) {
+    var url = "/changes/" + encodeURIComponent(changeID);
+    if (taskID) url += "?task=" + encodeURIComponent(taskID);
+    return fetch(url, { headers: { Accept: "text/html", "HX-Request": "true" } })
       .then(function (r) { return r.ok ? r.text() : null; })
       .then(function (html) {
-        if (html == null || !sessionOverlayOpen()) return;
+        if (html == null || !sessionOverlayOpen()) return false;
         var src = document.createElement("div");
         src.innerHTML = html;
-        terminalPanelChange = changeID;
-        if (terminalOpen()) {
-          var panel = terminalTasksEl();
-          if (!panel) return;
-          panel.hidden = false;
-          syncTerminalTasks(src, changeID);
-        }
-        if (chatOpen()) setChatTasks(src, changeID);
+        sessionTasksChange = changeID;
+        if (chatOpen()) setChatTasks(src, changeID, taskID || "");
+        return true;
       })
-      .catch(function () {});
+      .catch(function () { return false; });
   }
 
-  // Auto-open the terminal when arriving from the new-change-session flow
+  // Auto-open Chat when arriving from the new-change-session flow
   // (/changes/{id}?session={sid}).
   function autoOpenSession() {
     if (page !== "board") return;
@@ -3355,10 +3497,28 @@
   }
 
   document.addEventListener("click", function (e) {
-    if (e.target.closest("[data-close-terminal]")) { closeTerminal(); return; }
-    if (e.target.closest("[data-close-chat]")) { closeChat(); return; }
-    var ov = document.getElementById("terminal-overlay");
-    if (ov && !ov.hidden && e.target === ov) closeTerminal();
+    var subtasks = e.target.closest("[data-open-subtasks]");
+    if (subtasks) {
+      if (!chatOpen()) {
+        location.href = "/changes/" + encodeURIComponent(subtasks.dataset.change) + "?task=" + encodeURIComponent(subtasks.dataset.task);
+        return;
+      }
+      loadSessionTasks(subtasks.dataset.change, subtasks.dataset.task).then(function (loaded) {
+        if (!loaded) return;
+        closeDetail();
+        openChatTasks(document.getElementById("chat-tasks-btn"));
+      });
+      return;
+    }
+    var workRoot = e.target.closest("[data-work-root]");
+    if (workRoot) {
+      loadSessionTasks(workRoot.dataset.change, "");
+      return;
+    }
+    if (e.target.closest("[data-close-chat]")) {
+      if (!closeTopChatAuxiliary()) closeChat();
+      return;
+    }
     var chat = document.getElementById("chat-overlay");
     if (chat && !chat.hidden && e.target === chat) {
       if (!closeTopChatAuxiliary()) closeChat();
@@ -3525,12 +3685,16 @@
     if (d && !d.hidden) {
       if (!closeDetailContents(true)) closeDetail();
       return;
-    } // the detail modal stacks above the terminal
+    }
     if (chatOpen()) {
+      var requiredForm = document.querySelector('#chat-transcript form[data-chat-form] [required]');
+      if (compactChatUI() && requiredForm) {
+        e.preventDefault();
+        return;
+      }
       if (!closeTopChatAuxiliary()) closeChat();
       return;
     }
-    if (terminalOpen()) { closeTerminal(); return; }
     closeDetail();
   });
 
@@ -3932,7 +4096,6 @@
     }
 
     var BOOL_DEFAULTS = {
-      "session.autoOpenTerminal": true,
       "ui.showArchived": true,
       "docs.autoGardenerOnClose": true,
       "git.worktrees": false,
@@ -4179,8 +4342,7 @@
     showGroup(nav.querySelector('button[data-group="' + initial + '"]') ? initial : "session");
 
     // Per-setting Change button: start (or reuse) the settings discussion
-    // for exactly this setting. A deliberate click — always opens the
-    // terminal, the auto-open gate does not apply.
+    // for exactly this setting and open it in Chat.
     root.addEventListener("click", function (e) {
       var btn = e.target.closest(".settings-change");
       if (!btn || !root.contains(btn)) return;

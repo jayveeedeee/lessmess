@@ -426,11 +426,11 @@ func (s *Server) sessionDescendants(ctx context.Context, roots []string) []sessi
 	return out
 }
 
-// reconcileTaskSessions maps all unmapped descendants of this change's live
-// sessions. Hierarchy always comes from parentID; title parsing is retained
-// only as the documented fallback for assigning a newly discovered task.
-// Sessions already owned by another change are never moved, and their branch
-// is not used to claim otherwise-unmapped descendants.
+// reconcileTaskSessions maps unmapped descendants only when their title names
+// a task in this change. Other descendants are transient helpers and remain
+// available through Chat's authoritative Agents hierarchy without becoming
+// workflow sessions. Sessions already owned by another change are never moved,
+// and their branch is not used to claim otherwise-unmapped descendants.
 func (s *Server) reconcileTaskSessions(r *http.Request, c *store.Change) {
 	if s.oc == nil || s.mapErr != nil {
 		return
@@ -442,6 +442,9 @@ func (s *Server) reconcileTaskSessions(r *http.Request, c *store.Change) {
 	roots := make([]string, 0, len(bound))
 	owned := make(map[string]bool, len(bound))
 	for _, e := range bound {
+		if e.Parent != "" && e.Task == "" {
+			continue
+		}
 		roots = append(roots, e.Session)
 		owned[e.Session] = true
 	}
@@ -461,8 +464,8 @@ func (s *Server) reconcileTaskSessions(r *http.Request, c *store.Change) {
 		if !owned[sess.ParentID] {
 			continue
 		}
-		if change, _, mapped := s.sessions.entry(sess.ID); mapped {
-			if change == c.ID {
+		if change, entry, mapped := s.sessions.entry(sess.ID); mapped {
+			if change == c.ID && (entry.Parent == "" || entry.Task != "") {
 				owned[sess.ID] = true
 			}
 			continue
@@ -470,6 +473,9 @@ func (s *Server) reconcileTaskSessions(r *http.Request, c *store.Change) {
 		task := ""
 		if m := taskTitleRe.FindStringSubmatch(sess.Title); m != nil && knownTasks[m[1]] {
 			task = m[1]
+		}
+		if task == "" {
+			continue
 		}
 		fresh = append(fresh, SessionEntry{
 			Session: sess.ID,
@@ -502,7 +508,14 @@ func (s *Server) listChangeSessions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.reconcileTaskSessions(r, c)
-	writeJSON(w, http.StatusOK, map[string]any{"sessions": s.enrich(r, s.sessions.list(id))})
+	entries := s.sessions.list(id)
+	visible := entries[:0]
+	for _, entry := range entries {
+		if entry.Parent == "" || entry.Task != "" {
+			visible = append(visible, entry)
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"sessions": s.enrich(r, visible)})
 }
 
 // listDiscussions handles GET /api/discussions: unassigned (pre-scaffold) sessions.
@@ -536,8 +549,8 @@ func (s *Server) unlinkDiscussion(w http.ResponseWriter, r *http.Request) {
 }
 
 // sessionChange handles GET /api/sessions/{sessionID}/change: the change
-// the session is bound to (empty when unassigned). Drives the terminal
-// task panel on non-board pages.
+// the session is bound to (empty when unassigned). Drives Chat's Work view
+// when opened away from a board page.
 func (s *Server) sessionChange(w http.ResponseWriter, r *http.Request) {
 	if s.mapErr != nil {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "session mapping unreadable: " + s.mapErr.Error()})

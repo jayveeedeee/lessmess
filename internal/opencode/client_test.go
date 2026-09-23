@@ -158,7 +158,7 @@ func TestListAgentsAndModels(t *testing.T) {
 			// Real shape: top-level {location, data:[...]} — do() unwraps data.
 			w.Write([]byte(`{"location":{"directory":"/r"},"data":[{"id":"build","name":"Build","description":"d","mode":"primary","hidden":false},{"id":"general","name":"General","mode":"subagent"}]}`))
 		case "/api/model":
-			w.Write([]byte(`{"location":{"directory":"/r"},"data":[{"id":"accounts/f/m1","providerID":"prov","name":"M1"}]}`))
+			w.Write([]byte(`{"location":{"directory":"/r"},"data":[{"id":"accounts/f/m1","providerID":"prov","name":"M1","variants":[{"id":"low"},{"id":"high","settings":{"reasoning":"high"}}]}]}`))
 		case "/api/model/default":
 			w.Write([]byte(`{"location":{"directory":"/r"},"data":{"id":"accounts/f/m1","providerID":"prov","name":"M1"}}`))
 		default:
@@ -171,7 +171,7 @@ func TestListAgentsAndModels(t *testing.T) {
 		t.Fatalf("agents = %v, %v", agents, err)
 	}
 	models, err := c.ListModels(ctx)
-	if err != nil || len(models) != 1 || models[0].ProviderID != "prov" || models[0].Name != "M1" {
+	if err != nil || len(models) != 1 || models[0].ProviderID != "prov" || models[0].Name != "M1" || len(models[0].Variants) != 2 || models[0].Variants[1].ID != "high" {
 		t.Fatalf("models = %v, %v", models, err)
 	}
 	def, err := c.DefaultModel(ctx)
@@ -325,7 +325,7 @@ func TestSessionControlContractsAndSkillCapability(t *testing.T) {
 	if err := c.SwitchAgent(ctx, "ses_1", "build"); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.SwitchModel(ctx, "ses_1", ModelRef{ProviderID: "p", ID: "m"}); err != nil {
+	if err := c.SwitchModel(ctx, "ses_1", ModelRef{ProviderID: "p", ID: "m", Variant: "high"}); err != nil {
 		t.Fatal(err)
 	}
 	if err := c.RunCommand(ctx, "ses_1", "review", "now"); err != nil {
@@ -345,7 +345,7 @@ func TestSessionControlContractsAndSkillCapability(t *testing.T) {
 		t.Errorf("agent = %#v", seen)
 	}
 	model := seen["/api/session/ses_1/model"]["model"].(map[string]any)
-	if model["providerID"] != "p" || model["id"] != "m" {
+	if model["providerID"] != "p" || model["id"] != "m" || model["variant"] != "high" {
 		t.Errorf("model = %#v", model)
 	}
 	if seen["/api/session/ses_1/command"]["arguments"] != "now" {

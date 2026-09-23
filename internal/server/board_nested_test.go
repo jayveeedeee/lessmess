@@ -55,8 +55,8 @@ func TestNestedTaskDetail(t *testing.T) {
 	if !strings.Contains(w.Body.String(), "FIX-00.00") {
 		t.Error("HTML missing child ID")
 	}
-	if !strings.Contains(w.Body.String(), "status-test") {
-		t.Error("HTML missing governing-ledger status pill")
+	if !strings.Contains(w.Body.String(), `<option value="Test" selected>Test</option>`) {
+		t.Error("HTML missing governing-ledger status selection")
 	}
 
 	req2, _ := http.NewRequest("GET", "/changes/2026-09-10-0/tasks/00-first/tasks/00-child-one.md", nil)

@@ -6,7 +6,7 @@ package server
 // offers a Re-check button that simply re-fetches this endpoint. The
 // checks never try to fix anything themselves (no auto-starting services).
 // Probes go through package-level function vars so tests can fake them
-// (same pattern as Server.SpawnCommand).
+// so tests can exercise unavailable-tool paths deterministically.
 
 import (
 	"context"

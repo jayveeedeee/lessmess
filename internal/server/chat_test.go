@@ -13,6 +13,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"lessmess/internal/opencode"
 )
 
 func chatFake(t *testing.T, mutate func(*http.Request, map[string]any)) *Server {
@@ -29,7 +31,7 @@ func chatFake(t *testing.T, mutate func(*http.Request, map[string]any)) *Server 
 		case r.Method == http.MethodGet && r.URL.Path == "/api/session/ses_chat/permission":
 			w.Write([]byte(`{"data":[{"id":"per_1","sessionID":"ses_chat","action":"read","resources":["/repo/<secret>"],"message":"Allow read?"}]}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/session/ses_chat/form":
-			w.Write([]byte(`{"data":[{"id":"frm_1","sessionID":"ses_chat","title":"Choose","fields":[{"key":"name","type":"string","title":"Name","required":true,"default":"Ada"},{"key":"count","type":"integer","default":2},{"key":"confirm","type":"boolean","default":true},{"key":"targets","type":"multiselect","options":[{"value":"a","label":"A"}],"default":["a"]},{"key":"docs","type":"external","url":"https://example.test"}]}]}`))
+			w.Write([]byte(`{"data":[{"id":"frm_1","sessionID":"ses_chat","title":"Choose","fields":[{"key":"name","type":"string","title":"Name","required":true,"default":"Ada"},{"key":"environment","type":"string","title":"Environment","options":[{"value":"prod","label":"Production","description":"Customer-facing systems"}],"default":"prod"},{"key":"count","type":"integer","default":2},{"key":"confirm","type":"boolean","default":true},{"key":"targets","type":"multiselect","required":true,"options":[{"value":"a","label":"A","description":"First target"}],"default":["a"]},{"key":"docs","type":"external","url":"https://example.test"}]}]}`))
 		default:
 			var body map[string]any
 			if r.Body != nil {
@@ -63,11 +65,16 @@ func TestChatSnapshotRendersSafeAuthoritativeState(t *testing.T) {
 	for _, want := range []string{
 		`data-session="ses_chat"`, `data-busy="true"`, `data-message="msg_user"`,
 		`data-chat-load-older`, `data-cursor="older-token"`,
-		"<strong>phone</strong>", "Reasoning", "read", "completed", "data-chat-detail-url",
+		"<strong>phone</strong>",
 		"Reference: note.txt", "/api/sessions/ses_chat/chat/messages/msg_user/files/0", "Download",
 		`data-permission="per_1"`, "Allow read?", `data-chat-form="frm_1"`,
 		`name="name"`, `value="Ada"`, `data-field-type="integer"`, "https://example.test",
-		"Unsupported message part:", "future-message", "chat-flow-reasoning", "chat-flow-tool", "chat-flow-unknown",
+		`class="chat-choice-list" role="radiogroup"`, `type="radio" data-field-type="string"`, "Customer-facing systems",
+		`type="checkbox" data-field-type="multiselect"`, "First target",
+		`data-chat-form-step="0"`, `data-chat-form-step="1" hidden`, `data-chat-form-review hidden`,
+		`data-chat-form-progress role="status"`, `data-chat-form-prev hidden`, `data-chat-form-next`, `data-chat-form-submit hidden`,
+		`aria-label="Form navigation"`, `novalidate`, `Review your answers`,
+		"Unsupported message part:", "future-message", "chat-flow-unknown",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("snapshot missing %q:\n%s", want, body)
@@ -76,9 +83,26 @@ func TestChatSnapshotRendersSafeAuthoritativeState(t *testing.T) {
 	if strings.Contains(body, "<img src=x") {
 		t.Fatalf("unknown part type rendered as markup: %s", body)
 	}
+	if strings.Count(body, `data-chat-form-step=`) != 6 {
+		t.Fatalf("snapshot did not render exactly one wizard step per field: %s", body)
+	}
+	if strings.Contains(body, `<select name="environment"`) || strings.Contains(body, `<select name="targets"`) {
+		t.Fatalf("choice questions regressed to native selects: %s", body)
+	}
 	for _, want := range []string{`data-chat-message-actions`, `class="chat-message-menu"`, `data-chat-copy-message`, `data-chat-fork="msg_user"`, `data-chat-revert="msg_user"`, `aria-haspopup="menu"`, `aria-expanded="false"`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("snapshot missing contextual message action %q: %s", want, body)
+		}
+	}
+	if strings.Count(body, `data-chat-message-actions`) != 2 || strings.Count(body, `class="chat-message-menu"`) != 2 || strings.Count(body, `data-chat-copy-message`) != 2 {
+		t.Fatalf("snapshot did not render user actions and assistant copy action: %s", body)
+	}
+	if strings.Contains(body, `data-chat-fork="msg_assistant"`) || strings.Contains(body, `data-chat-revert="msg_assistant"`) {
+		t.Fatalf("snapshot rendered lifecycle actions for an assistant message: %s", body)
+	}
+	for _, source := range []string{`class="chat-markdown-source" hidden>working</span>`, `class="chat-markdown-source" hidden>hello **phone**</span>`} {
+		if !strings.Contains(body, source) {
+			t.Errorf("snapshot missing raw Markdown source %q: %s", source, body)
 		}
 	}
 	if strings.Contains(body, "<header>Assistant</header>") {
@@ -95,6 +119,9 @@ func TestChatSnapshotRendersSafeAuthoritativeState(t *testing.T) {
 	}
 	if strings.Contains(body, "result") {
 		t.Fatalf("snapshot eagerly included tool output: %s", body)
+	}
+	if strings.Contains(body, `class="chat-system-group`) || strings.Contains(body, "Reasoning") {
+		t.Fatalf("pending interaction retained stale System activity: %s", body)
 	}
 	if strings.Count(body, `data-message="msg_assistant"`) != 1 {
 		t.Fatalf("split assistant emitted duplicate source markers: %s", body)
@@ -119,7 +146,7 @@ func TestChatSnapshotGroupsConsecutiveActivityAcrossMessages(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("code = %d body = %s", w.Code, body)
 	}
-	if strings.Count(body, `class="chat-system-group"`) != 1 {
+	if strings.Count(body, `class="chat-system-group`) != 1 {
 		t.Fatalf("activity was not one group: %s", body)
 	}
 	for _, want := range []string{
@@ -139,6 +166,81 @@ func TestChatSnapshotGroupsConsecutiveActivityAcrossMessages(t *testing.T) {
 	}
 	if !(strings.Index(body, "Reasoning") < strings.Index(body, ">read<") && strings.Index(body, ">read<") < strings.Index(body, ">Shell<")) {
 		t.Fatalf("activity order changed: %s", body)
+	}
+}
+
+func TestChatSnapshotDoesNotReactivatePreviousActivity(t *testing.T) {
+	s := mappingServer(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/session/ses_new_turn/message":
+			w.Write([]byte(`{"data":[{"id":"msg_user","type":"user","content":[{"type":"text","text":"new question"}],"time":{"created":2}},{"id":"msg_old","type":"assistant","content":[{"type":"reasoning","text":"old thought"}],"time":{"created":1}}],"cursor":{}}`))
+		case "/api/session/active":
+			w.Write([]byte(`{"data":{"ses_new_turn":{"type":"running"}}}`))
+		case "/api/session/ses_new_turn/permission", "/api/session/ses_new_turn/form":
+			w.Write([]byte(`{"data":[]}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+	w := do(t, s.Handler(), "GET", "/api/sessions/ses_new_turn/chat", "")
+	body := w.Body.String()
+	if w.Code != http.StatusOK {
+		t.Fatalf("code = %d body = %s", w.Code, body)
+	}
+	if strings.Contains(body, "old thought") || !strings.Contains(body, "new question") {
+		t.Fatalf("snapshot retained previous-turn activity or lost the new turn: %s", body)
+	}
+	for _, stale := range []string{`class="chat-system-group is-running"`, `class="spinner"`, "Thinking"} {
+		if strings.Contains(body, stale) {
+			t.Errorf("previous activity was reactivated by the new user turn %q: %s", stale, body)
+		}
+	}
+}
+
+func TestChatSnapshotDoesNotReactivateCompletedLatestActivity(t *testing.T) {
+	s := mappingServer(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/session/ses_settled/message":
+			w.Write([]byte(`{"data":[{"id":"msg_done","type":"assistant","content":[{"type":"tool","id":"tool_1","name":"read","state":{"status":"completed","input":{}}}],"time":{"created":1,"completed":2}}],"cursor":{}}`))
+		case "/api/session/active":
+			w.Write([]byte(`{"data":{"ses_settled":{"type":"running"}}}`))
+		case "/api/session/ses_settled/permission", "/api/session/ses_settled/form":
+			w.Write([]byte(`{"data":[]}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+	body := do(t, s.Handler(), "GET", "/api/sessions/ses_settled/chat", "").Body.String()
+	for _, stale := range []string{`class="chat-system-group`, `class="spinner"`, "Running read"} {
+		if strings.Contains(body, stale) {
+			t.Errorf("completed activity was reactivated by session status %q: %s", stale, body)
+		}
+	}
+}
+
+func TestChatSnapshotHidesRunningActivityWhileWaitingForForm(t *testing.T) {
+	s := mappingServer(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/session/ses_wait/message":
+			w.Write([]byte(`{"data":[{"id":"msg_tool","type":"assistant","content":[{"type":"tool","id":"tool_1","name":"question","state":{"status":"running","input":{}}}],"time":{"created":1}}],"cursor":{}}`))
+		case "/api/session/active":
+			w.Write([]byte(`{"data":{"ses_wait":{"type":"running"}}}`))
+		case "/api/session/ses_wait/permission":
+			w.Write([]byte(`{"data":[]}`))
+		case "/api/session/ses_wait/form":
+			w.Write([]byte(`{"data":[{"id":"frm_wait","sessionID":"ses_wait","title":"Choose","fields":[{"key":"choice","type":"string","options":[{"value":"a","label":"A"}]}]}]}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+	body := do(t, s.Handler(), "GET", "/api/sessions/ses_wait/chat", "").Body.String()
+	if !strings.Contains(body, `data-chat-form="frm_wait"`) {
+		t.Fatalf("snapshot lost pending form: %s", body)
+	}
+	for _, stale := range []string{`class="chat-system-group`, `class="spinner"`, "Running question"} {
+		if strings.Contains(body, stale) {
+			t.Errorf("pending form was obscured by activity %q: %s", stale, body)
+		}
 	}
 }
 
@@ -221,16 +323,56 @@ func TestChatExpansionJavaScriptContract(t *testing.T) {
 		`function openChatMessageActions(message, focusMenu)`,
 		`function closeChatMessageActions(returnFocus)`,
 		`[data-chat-copy-message]`,
+		`message.querySelectorAll(".chat-markdown-source")`,
 		`navigator.clipboard.writeText(text)`,
+		`option.dataset.fieldType === "multiselect" && option.checked`,
+		`field.type === "radio"`,
+		`data-chat-choice-required="true"`,
 	} {
 		if !strings.Contains(js, want) {
 			t.Errorf("expansion/history contract missing %q", want)
 		}
 	}
 	css := do(t, s.Handler(), "GET", "/static/app.css", "").Body.String()
-	for _, want := range []string{`.chat-message-menu {`, `position: absolute`, `.chat-message-menu[hidden] { display: none; }`} {
+	for _, want := range []string{`.chat-message-menu {`, `position: absolute`, `.chat-message-menu[hidden] { display: none; }`, `.chat-choice {`, `.chat-choice:has(input:checked)::before { content: "✓"; }`, `clip: rect(0, 0, 0, 0)`} {
 		if !strings.Contains(css, want) {
 			t.Errorf("contextual message action CSS missing %q", want)
+		}
+	}
+}
+
+func TestChatFormWizardControllerContract(t *testing.T) {
+	s := mappingServer(t, nil)
+	js := do(t, s.Handler(), "GET", "/static/app.js", "").Body.String()
+	for _, want := range []string{
+		`function collectChatFormAnswers(form)`, `parseInt(field.value, 10)`, `Number(field.value)`,
+		`function validateChatFormStep(form, step, report)`, `Select at least one option.`,
+		`document.addEventListener("click"`, `[data-chat-form-prev], #chat-transcript [data-chat-form-next]`,
+		`function captureChatForms()`, `function restoreChatForms()`, `cstate.formStates`,
+		`captureChatForms();`, `restoreChatForms();`, `state.answers = collectChatFormAnswers(form)`,
+		`state.status === "submitting" || state.status === "submitted" || cstate.mutation`,
+		`setChatFormSubmitting(form, "submitting", "")`, `setChatFormSubmitting(currentChatForm(formID) || form, "submitted", "")`,
+		`setChatFormSubmitting(currentChatForm(formID) || form, "error", err.message)`, `Form submission failed: `,
+		`var formID = form.dataset.formId || form.dataset.chatForm`, `"forms/" + encodeURIComponent(formID) + "/reply"`,
+		`{ answers: answers }`, `compactChatUI() && requiredForm`,
+	} {
+		if !strings.Contains(js, want) {
+			t.Errorf("chat form wizard controller missing %q", want)
+		}
+	}
+	if strings.Count(js, `"forms/" + encodeURIComponent(formID) + "/reply"`) != 1 {
+		t.Errorf("form reply path is not centralized to one submit call")
+	}
+
+	css := do(t, s.Handler(), "GET", "/static/app.css", "").Body.String()
+	for _, want := range []string{
+		`.chat-choice input {`, `position: absolute`, `opacity: 0`, `.chat-choice::before`,
+		`.chat-choice:has(input:focus-visible)`, `min-height: 44px`,
+		`.chat-form-body { min-height: 0; overflow-y: auto`, `.chat-form-nav {`,
+		`height: var(--chat-viewport-height, 100dvh)`, `env(safe-area-inset-bottom)`,
+	} {
+		if !strings.Contains(css, want) {
+			t.Errorf("chat form wizard CSS missing %q", want)
 		}
 	}
 }
@@ -494,18 +636,19 @@ func TestChatMapsOpenCodeErrors(t *testing.T) {
 
 func TestChatControlsSwitchCommandSkillAndRedaction(t *testing.T) {
 	var switchedAgent, switchedModel, command, activated bool
+	var switchedVariant string
 	s := mappingServer(t, func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/api/agent":
 			w.Write([]byte(`{"data":[{"id":"build","name":"Build","mode":"primary"},{"id":"hidden","name":"Hidden","mode":"primary","hidden":true}]}`))
 		case "/api/model":
-			w.Write([]byte(`{"data":[{"id":"m1","providerID":"p","name":"Enabled","enabled":true,"limit":{"context":1000,"output":100}},{"id":"m2","providerID":"p","name":"Disabled","enabled":false,"limit":{"context":1000,"output":100}}]}`))
+			w.Write([]byte(`{"data":[{"id":"m1","providerID":"p","name":"Enabled","enabled":true,"variants":[{"id":"low"},{"id":"high","settings":{"reasoning":"high"}}],"limit":{"context":1000,"output":100}},{"id":"m2","providerID":"p","name":"Disabled","enabled":false,"limit":{"context":1000,"output":100}}]}`))
 		case "/api/command":
 			w.Write([]byte(`{"data":[{"name":"review","description":"Review changes","template":"secret template"}]}`))
 		case "/api/skill":
 			w.Write([]byte(`{"data":[{"id":"safe","name":"Safe skill","description":"Useful","location":"/secret/skill.md","content":"secret content"}]}`))
 		case "/api/session/ses_chat":
-			w.Write([]byte(`{"data":{"id":"ses_chat","agent":"build","model":{"providerID":"p","id":"m1"},"tokens":{"input":700,"output":100,"reasoning":50,"cache":{"read":9,"write":2}},"location":{"directory":"/repo"},"time":{"created":1,"updated":2}}}`))
+			w.Write([]byte(`{"data":{"id":"ses_chat","agent":"build","model":{"providerID":"p","id":"m1","variant":"high"},"tokens":{"input":700,"output":100,"reasoning":50,"cache":{"read":9,"write":2}},"location":{"directory":"/repo"},"time":{"created":1,"updated":2}}}`))
 		case "/api/session/ses_chat/context":
 			w.Write([]byte(`{"data":[{"id":"msg_old","type":"assistant","tokens":{"input":10,"output":1,"reasoning":0,"cache":{"read":2,"write":0}}},{"id":"msg_user","type":"user"},{"id":"msg_latest","type":"assistant","tokens":{"input":700,"output":100,"reasoning":50,"cache":{"read":9,"write":2}}}]}`))
 		case "/openapi.json":
@@ -515,6 +658,13 @@ func TestChatControlsSwitchCommandSkillAndRedaction(t *testing.T) {
 			w.WriteHeader(http.StatusNoContent)
 		case "/api/session/ses_chat/model":
 			switchedModel = true
+			var body struct {
+				Model opencode.ModelRef `json:"model"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatal(err)
+			}
+			switchedVariant = body.Model.Variant
 			w.WriteHeader(http.StatusNoContent)
 		case "/api/session/ses_chat/command":
 			command = true
@@ -537,7 +687,7 @@ func TestChatControlsSwitchCommandSkillAndRedaction(t *testing.T) {
 			t.Fatalf("controls leaked %q: %s", forbidden, body)
 		}
 	}
-	for _, want := range []string{`"agent":"build"`, `"model":"p/m1"`, `"contextAvailable":true`, `"estimatedContext":861`, `"percent":86`, `"warning":true`, `"standaloneSkill":true`} {
+	for _, want := range []string{`"agent":"build"`, `"model":"p/m1"`, `"variant":"high"`, `"variants":["low","high"]`, `"contextAvailable":true`, `"estimatedContext":861`, `"percent":86`, `"warning":true`, `"standaloneSkill":true`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("controls missing %q: %s", want, body)
 		}
@@ -546,7 +696,7 @@ func TestChatControlsSwitchCommandSkillAndRedaction(t *testing.T) {
 		path, body string
 		code       int
 	}{
-		{"agent", `{"agent":"build"}`, 204}, {"model", `{"model":"p/m1"}`, 204},
+		{"agent", `{"agent":"build"}`, 204}, {"model", `{"model":"p/m1","variant":"high"}`, 204},
 		{"command", `{"command":"review","arguments":"now"}`, 202}, {"skill", `{"skill":"safe"}`, 204},
 	} {
 		w = do(t, s.Handler(), "POST", "/api/sessions/ses_chat/chat/"+call.path, call.body)
@@ -554,8 +704,12 @@ func TestChatControlsSwitchCommandSkillAndRedaction(t *testing.T) {
 			t.Errorf("%s = %d %s", call.path, w.Code, w.Body.String())
 		}
 	}
-	if !switchedAgent || !switchedModel || !command || !activated {
+	if !switchedAgent || !switchedModel || switchedVariant != "high" || !command || !activated {
 		t.Fatalf("mutations = %v %v %v %v", switchedAgent, switchedModel, command, activated)
+	}
+	w = do(t, s.Handler(), "POST", "/api/sessions/ses_chat/chat/model", `{"model":"p/m1","variant":"gone"}`)
+	if w.Code != http.StatusUnprocessableEntity || !strings.Contains(w.Body.String(), "variant") {
+		t.Fatalf("invalid variant = %d %s", w.Code, w.Body.String())
 	}
 }
 

@@ -1,7 +1,7 @@
 <!-- tasktracker:begin -->
 # Structure: internal
 
-<!-- tasktracker-meta: refreshed=2026-09-21 source=2026-09-21-8235b tree=6e216e246791 -->
+<!-- tasktracker-meta: refreshed=2026-09-23 source=manual tree=e5bb049529f1 -->
 
 Core Go packages behind the tasktracker binary: workflow model, store, HTTP server, docs management, opencode client, and terminal sessions.
 
@@ -15,5 +15,4 @@ Core Go packages behind the tasktracker binary: workflow model, store, HTTP serv
 | `opencode/` | Minimal Go client for the opencode background service HTTP API. |
 | `server/` | HTTP server over the store: HTML pages, JSON endpoints, SSE updates, session mapping, PTY terminal, and the docs refresh queue |
 | `store/` | In-memory model of the changes/ tree with watching, validation, and safe atomic writes. |
-| `terminal/` | Manages in-process PTYs running interactive TUI sessions bridged to browser WebSockets. |
 <!-- tasktracker:end -->

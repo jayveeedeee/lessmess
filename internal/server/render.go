@@ -82,7 +82,7 @@ func mustParse(files ...string) *template.Template {
 // own fixed versions.
 func assetsVersion() string {
 	h := fnv.New32a()
-	for _, name := range []string{"static/app.css", "static/app.js", "static/xterm.min.css", "static/xterm.min.js", "static/xterm-addon-fit.min.js"} {
+	for _, name := range []string{"static/app.css", "static/app.js"} {
 		if b, err := fs.ReadFile(web.FS, name); err == nil {
 			h.Write(b)
 		}
@@ -298,10 +298,15 @@ func columnsFromNodes(nodes []*store.TaskNode) []tmplColumn {
 }
 
 type taskView struct {
-	Task   *model.TaskFile
-	Status string
-	Body   string
-	Doc    string // change-relative href, for in-modal link resolution
+	Task     *model.TaskFile
+	Change   string
+	Status   string
+	Statuses []string
+	HasSub   bool
+	SubDone  int
+	SubTotal int
+	Body     string
+	Doc      string // change-relative href, for in-modal link resolution
 }
 
 type planView struct {

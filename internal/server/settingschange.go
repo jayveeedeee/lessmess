@@ -74,8 +74,6 @@ func settingsFieldValue(e EffectiveSettings, field string) (string, bool) {
 		return e.Session.Agent, true
 	case "session.model":
 		return e.Session.Model, true
-	case "session.autoOpenTerminal":
-		return strconv.FormatBool(e.Session.AutoOpenTerminal), true
 	case "prompts.discussion":
 		return e.Prompts.Discussion, true
 	case "prompts.change":

@@ -270,14 +270,6 @@ func TestChangeSessionsSpawnIntoWorktree(t *testing.T) {
 	if len(cap.creates) < 2 || createDirectory(t, cap.creates[len(cap.creates)-1]) != wt {
 		t.Errorf("commit session create = %v, want directory %q", cap.creates, wt)
 	}
-
-	// Terminal cwd follows the bound session's change; unknown stays main.
-	if got := s.terminalDir("ses_cap"); got != wt {
-		t.Errorf("terminalDir(bound) = %q, want %q", got, wt)
-	}
-	if got := s.terminalDir("ses_unknown"); got != s.st.Dir {
-		t.Errorf("terminalDir(unbound) = %q, want the main tree", got)
-	}
 }
 
 func TestChangeSessionMainTreeWithoutWorktree(t *testing.T) {
