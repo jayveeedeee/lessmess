@@ -5,7 +5,7 @@
   "prefix": "UI",
   "branch": "main",
   "status": {
-    "value": "Planned",
+    "value": "In progress",
     "derived": true
   },
   "created": "2026-09-24",
@@ -16,48 +16,54 @@
       "seq": 0,
       "title": "Give the chat Work panel its own JSON task feed",
       "file": "tasks/00-give-the-chat-work-panel-its-own-json-ta.md",
-      "status": "Not started",
-      "updated": "2026-09-24"
+      "status": "Test",
+      "updated": "2026-09-24",
+      "notes": "New GET /changes/{id}/tasks[?task=] JSON endpoint (internal/server/server.go: tasksFeed/tasksFeedRow views, root or one-container scope, subtask rollups, detail hrefs). app.js rewritten off board DOM: renderTaskPanel renders the feed grouped by mirrored model.TaskStatusOrder with rollup markers + scope row; loadSessionTasks fetches the JSON feed; setChatTasks(feed) reshaped; SSE refresh keeps scope via sessionTasksTask; board afterSwap/openChat paths re-pull the feed. Tests: TestTasksFeedRoot/Scope/Errors pass; TestChatCompactWorkUIContract re-pinned to the feed mechanism; go vet ./... clean; go test ./... all packages ok. Live check: built binary served this repo on 127.0.0.1:9099 — /changes/2026-09-24-ic3l8/tasks returned all six UI tasks with hrefs, ?task=UI-00 returned scope metadata with empty children, and the embedded app.js carries the new /tasks fetch; no board-fragment request remains on the Work panel path."
     },
     {
       "id": "UI-01",
       "seq": 1,
       "title": "Add a Sessions sheet to the chat options menu with change actions",
       "file": "tasks/01-add-a-sessions-sheet-to-the-chat-options.md",
-      "status": "Not started",
-      "updated": "2026-09-24"
+      "status": "Test",
+      "updated": "2026-09-24",
+      "notes": "Sessions quick action (#chat-sessions-btn, hidden until change-bound like Plan/Tasks — gated in setChatTasks) opens #chat-sessions-sheet, a full data-chat-view panel wired through the view machinery: syncChatView/closeChatView/closeTopChatAuxiliary/requestChatAuxiliary/compactQuery all sessions-aware; header and location labels include Sessions. Sheet renders change sessions (switch via markOpened+openChat, unlink DELETE, New session POST, live-dim, from-badges, task chips), the spawn-change handoff flow (picker from GET /handoffs, POST /spawn-change, opens the spawned session), and the change-actions footer: overall pill, worktree pills (branch/dirty/missing/PR/review link into #detail) from the change JSON, Commit with commit-status poll, Close change with open-task confirm (root tasks from the new feed; server gate stays authoritative), Reopen, Remove worktree (server 422/409 surfaced). All board-change actions parameterized by resolved change (sheetChange()), no longer reading the board. New TestChatSessionsSheetContract pins shell/script/CSS; TestExpandableLocationBreadcrumbContract and TestChatAccessibilityContract label pins extended for sessions. go vet clean; go test ./... all ok. Live check on rebuilt binary: page carries the sheet shell (3 markers), embedded app.js has loadSessionsSheet, /changes/{id}/sessions returns the bound session, change JSON carries overall+worktree for the footer. Revision on user review: the spawn-change handoff picker was removed from the Sessions sheet (button, form, error element, initSheetSpawnChange, spawn CSS overrides). The flow stays agent-driven: POST /changes/{id}/spawn-change and GET /changes/{id}/handoffs remain live API endpoints taught by the workflow prime — deliberate parity with the API-only POST /changes form. Sessions sheet now carries: session list (switch/new/unlink, task chips, from-badges, live dimming), New session, and the change-actions footer (Commit + status poll, Close/Reopen with open-task confirm, worktree pills/remove/review). TestChatSessionsSheetContract updated: spawn shell/script pins removed and a negative pin asserts the spawn UI stays gone. go vet clean; go test ./... all ok; node --check clean; build OK; restarted server serves the sheet without any chat-spawn markup (0 matches)."
     },
     {
       "id": "UI-02",
       "seq": 2,
       "title": "Add Resume session to the breadcrumb location menu",
       "file": "tasks/02-add-resume-session-to-the-breadcrumb-loc.md",
-      "status": "Not started",
-      "updated": "2026-09-24"
+      "status": "Test",
+      "updated": "2026-09-24",
+      "notes": "Shared resume helper resumeChangeSession(change): continue last-opened session (tt-last-session:\u003cchange\u003e validated against the live list, via new markOpenedFor), else newest created, else create+open via createChangeSessionFor; opening the already-active session is a no-op. Breadcrumb dropdown gains a .location-resume action row at the bottom whenever the trail carries a change crumb; label flips Resume/Start session from the sessions payload (updateResumeLabel on menu open). Change crumb model per plan: locationBaseTrail serves the change crumb from sessionStorage context (tt-change-context, set on board pages, in loadSessionTasks with the real change title, and by resume) whenever no chat is open or the open session is bound to that change — so the change name is the current location for bound sessions and the re-entry point when the chat closes, while unbound discussions keep Changes / Chat. activateLocation treats the change crumb as enter-in-place: bound chat open returns to the main chat view (back chevron from panels), otherwise resumes the session; the Changes crumb keeps its / navigation. Contract test extended (resumeChangeSession, data-resume-change, updateResumeLabel, setChangeContext, tt-change-context, markOpenedFor pins) and passes. go vet clean; go test ./... all ok; node --check on app.js clean; rebuilt binary embeds the wiring (7 marker matches in served app.js). Revision on user review: with a plan/task document open above Chat, breadcrumb activation was a no-op behind the modal — the change-crumb branch reset chat views but never closed #detail, so the conversation was unreachable except via the Changes crumb (which reloads and kills the chat). Fix: activateLocation closes an open detail modal first on the change-crumb path (and the back chevron that targets it); closeDetail restores the pre-open trail and refocuses the opener, landing the user back in the conversation. The modal back chevron and Escape keep working. Contract test pins the fix (Back-from-a-doc close-first marker in the change branch). Also removed the visit-persisted change context (tt-change-context/sessionStorage) per the stale-breadcrumb report: the change crumb now exists only while that change session is open, so returning to Changes shows just Changes. go vet clean; go test ./... all ok; node --check clean; build OK; restarted server serves the fixed app.js (marker verified)."
     },
     {
       "id": "UI-03",
       "seq": 3,
       "title": "Redesign the changes list as mobile cards with tap-to-resume",
       "file": "tasks/03-redesign-the-changes-list-as-mobile-card.md",
-      "status": "Not started",
-      "updated": "2026-09-24"
+      "status": "Test",
+      "updated": "2026-09-24",
+      "notes": "index.html replaces the 7-column table with .change-card anchors showing exactly name, status pill, x/y task count (Complete/Tasks), and updated date — no visible ID/prefix, no per-row Plan button. Cards carry data-change plus the sort keys (data-tasks, data-status-rank via statusRank, data-updated, data-title). Sorting moved to a compact #change-sort select (five fixed orders) persisting col:dir in tt-index-sort; corrupt/unknown values fail open to newest-first. Tap-to-resume: plain left clicks on a card call resumeChangeSession (modified clicks keep link semantics; href still deep-links to /changes/{id}). In-place SSE refresh: scheduleRefresh on the index now calls refreshChangeCards() (GET / JSON -\u003e buildChangeCard DOM -\u003e re-apply sort) instead of location.reload(), so an open chat is never interrupted; scaffold-follow behavior unchanged. CSS: table block replaced by card styles (stacked on mobile, auto-fill grid ≥841px) plus the .change-sort control. TestIndexSortableMarkup rewritten to pin the new contract (sort select, card keys/fields, legacy table absent). go vet clean; go test ./... all ok; node --check clean. Live check on rebuilt binary: served index has 238 card/sort markers, zero legacy table markers; index JSON carries id/title/status/updated/tasks/complete for the refresh path."
     },
     {
       "id": "UI-04",
       "seq": 4,
       "title": "Remove the kanban board and reroute /changes/{id}",
       "file": "tasks/04-remove-the-kanban-board-and-reroute-chan.md",
-      "status": "Not started",
-      "updated": "2026-09-24"
+      "status": "Test",
+      "updated": "2026-09-24",
+      "notes": "Board removed end to end. Deleted web/templates/board.html and the boardFragment define; renderer dropped its board template set; layout.html board-page conditionals removed (location nav, #detail, active states now index-only). Server: GET /changes/{id} HTML and HX requests 302 to /?change=\u003cid\u003e preserving ?session= (task param intentionally dropped — subtask scope lives in the Work panel); JSON boardResponse survives unchanged for API clients; POST /changes HX-Redirect now targets /?change=\u003cid\u003e. Client: initSortable, refreshBoard, the board afterSwap handler, boardSessions/task-scoped resume keys, board sessions panel/spawn/continue/lifecycle functions and countOpenTasks all removed; openChat always resolves the change binding via the JSON feed; task status changes refresh the Work feed in place. Decompose rehomed to the task detail modal (data-decompose, POST /expand, 409 lands on subtasks); sub-task deep opens resume first then scope the panel. Index honors ?change=\u003cid\u003e[\u0026session=] via initChangeDeepLink (context seeded, exact session reconnected); followSession targets the new deep link. SortableJS unvendored (file, script tag, VENDOR.md, TestStaticAssets) and board-only CSS blocks removed; sessions sheet reuses the shared worktree pill styles with data-review coloring restored. Tests: TestBoardHTML/TestBoardFragmentHX rewritten as redirect pins; TestBoardLifecycleButtons superseded by TestChatSessionsSheetContract; TestNestedBoardMarkup now pins Decompose/View-subtasks mutual exclusion in the task modal; TestBoardDrillDown pins the HTML redirect plus JSON scope; TestFormEncodedCreateChangeRedirect and TestWorktreeStripOnBoard updated (worktree assertions moved to the JSON payload the sheet renders). go vet clean; go test ./... all ok. Live: HTML/HX/session deep links all 302 to the right targets, JSON API intact, /static/Sortable.min.js 404, tasks feed 200."
     },
     {
       "id": "UI-05",
       "seq": 5,
       "title": "Responsive polish pass across all pages",
       "file": "tasks/05-responsive-polish-pass-across-all-pages.md",
-      "status": "Not started",
-      "updated": "2026-09-24"
+      "status": "Test",
+      "updated": "2026-09-24",
+      "notes": "CSS-only polish pass, no functional changes. New ≤640px block: centered dialogs (generic .modal incl. task/plan/review/ledger detail host, commit window, notifications window) become near-full-screen sheets (100dvh minus header minus margin) with sticky modal heads and contained overscroll; safe-area-inset-bottom padding on #detail/#commit-modal/#notif-modal. Changes page: .change-sort becomes a full-width 44px control, card padding increased, section-head buttons floored at 44px. Explorer (detail buttons, 720px stacking pre-existing), settings (section nav), setup (wizard buttons), and the opencode status page get the 44px interactive-row floor; header topnav items floored at 44px. Already-covered surfaces verified rather than changed: the composer/options control (44px box landed with aw36x MAC-76), chat sheets including the new Sessions sheet (safe-area padding + 44px rows added in UI-01), detail modal full-screen below 840px (pre-existing), explorer stacking below 720px, header density below 480px. Desktop ≥1200px untouched: card grid is the only new wide-layout element. go vet clean; go test ./... all ok; build OK; braces balanced (765/765). Visual confirmation at 390×844 across pages remains for user acceptance."
     }
   ]
 }

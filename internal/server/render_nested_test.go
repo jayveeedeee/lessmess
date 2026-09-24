@@ -10,43 +10,26 @@ func TestNestedBoardMarkup(t *testing.T) {
 	s := nestedBoardServer(t)
 	h := s.Handler()
 
-	// Root board: expand affordance on plain tasks, rollup badge on the
-	// decomposed one. No header progress pill, no status select.
-	w := htmlGet(t, h, "/changes/2026-09-10-0", false)
-	body := w.Body.String()
-	for _, want := range []string{
-		`data-expand="FIX-01"`,
-		`class="card-sub"`,
-		`1/2 ✓`,
-	} {
-		if !strings.Contains(body, want) {
-			t.Errorf("root board missing %q", want)
-		}
-	}
-	if strings.Contains(body, `pill progress`) || strings.Contains(body, `id="overall-status"`) {
-		t.Error("root board must not render the header progress pill or a status select")
-	}
+	// The kanban is gone; subtask scope and decomposition live in the task
+	// detail modal and the chat Work panel. A decomposed task shows the
+	// View-subtasks control, a plain one offers Decompose.
 	parentDetail := htmlGet(t, h, "/changes/2026-09-10-0/tasks/00-first.md", false).Body.String()
 	for _, want := range []string{`data-open-subtasks`, `data-task="FIX-00"`, `View subtasks`, `1/2`} {
 		if !strings.Contains(parentDetail, want) {
 			t.Errorf("decomposed task detail missing %q", want)
 		}
 	}
-
-	// Drill-down: breadcrumb and scoped board marker.
-	w = htmlGet(t, h, "/changes/2026-09-10-0?task=FIX-00", false)
-	body = w.Body.String()
-	if !strings.Contains(body, `>Fixture change</a>`) {
-		t.Fatalf("task-board root breadcrumb did not use the change title: %s", body)
+	if strings.Contains(parentDetail, `data-decompose`) {
+		t.Error("decomposed task must not offer Decompose")
 	}
-	for _, want := range []string{
-		`class="crumbs"`,
-		`href="/changes/2026-09-10-0"`,
-		`data-task="FIX-00"`,
-	} {
-		if !strings.Contains(body, want) {
-			t.Errorf("drill-down board missing %q", want)
+	plainDetail := htmlGet(t, h, "/changes/2026-09-10-0/tasks/01-second.md", false).Body.String()
+	for _, want := range []string{`data-decompose`, `data-change="2026-09-10-0"`, `Decompose`} {
+		if !strings.Contains(plainDetail, want) {
+			t.Errorf("plain task detail missing %q", want)
 		}
+	}
+	if strings.Contains(plainDetail, `data-open-subtasks`) {
+		t.Error("plain task must not offer View subtasks")
 	}
 }
 

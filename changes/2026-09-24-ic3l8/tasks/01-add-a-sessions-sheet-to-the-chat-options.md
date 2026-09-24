@@ -38,12 +38,13 @@ new quick action in that grid.
     `#board-subs` strip). Tapping a session switches to it (`openChat` + `markOpened`).
   - "New session" button (`POST /changes/{id}/sessions`) and unlink action (DELETE, with confirm)
     per row.
-  - Spawn change: the handoff picker flow (`GET /changes/{id}/handoffs`, `POST
-    /changes/{id}/spawn-change` with title/prefix) moved over intact, errors surfaced inline.
   - Change actions footer: Commit (`POST /changes/{id}/commit` + `commit-status` poll),
     Close change / Reopen (client-side confirm reusing the open-task warning before posting),
     worktree pills (branch, uncommitted, missing, PR link, review link opening `#detail`), and
     Remove worktree (refused while dirty — show the server error).
+- Revised on user review: the spawn-change handoff picker was built into the sheet and then
+  removed — the flow stays agent-driven via `POST /changes/{id}/spawn-change` (the workflow
+  prime teaches it), with no UI affordance.
 - Works on narrow viewports first: full-width sheet, ≥44px rows.
 
 ## Verification

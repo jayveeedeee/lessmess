@@ -1,0 +1,71 @@
+{
+  "version": 1,
+  "id": "2026-09-24-0zyrp",
+  "title": "Multi-project serving with project switcher",
+  "prefix": "MP",
+  "branch": "main",
+  "status": {
+    "value": "Planned",
+    "derived": true
+  },
+  "created": "2026-09-24",
+  "updated": "2026-09-24",
+  "tasks": [
+    {
+      "id": "MP-00",
+      "seq": 0,
+      "title": "Global project registry package",
+      "file": "tasks/00-global-project-registry-package.md",
+      "status": "Not started",
+      "updated": "2026-09-24"
+    },
+    {
+      "id": "MP-01",
+      "seq": 1,
+      "title": "Multi-project serve mode",
+      "file": "tasks/01-multi-project-serve-mode.md",
+      "status": "Not started",
+      "updated": "2026-09-24"
+    },
+    {
+      "id": "MP-02",
+      "seq": 2,
+      "title": "Server-side base-path plumbing",
+      "file": "tasks/02-server-side-base-path-plumbing.md",
+      "status": "Not started",
+      "updated": "2026-09-24"
+    },
+    {
+      "id": "MP-03",
+      "seq": 3,
+      "title": "Client-side base-path plumbing",
+      "file": "tasks/03-client-side-base-path-plumbing.md",
+      "status": "Not started",
+      "updated": "2026-09-24"
+    },
+    {
+      "id": "MP-04",
+      "seq": 4,
+      "title": "Projects landing page and registry API",
+      "file": "tasks/04-projects-landing-page-and-registry-api.md",
+      "status": "Not started",
+      "updated": "2026-09-24"
+    },
+    {
+      "id": "MP-05",
+      "seq": 5,
+      "title": "Header project switcher",
+      "file": "tasks/05-header-project-switcher.md",
+      "status": "Not started",
+      "updated": "2026-09-24"
+    },
+    {
+      "id": "MP-06",
+      "seq": 6,
+      "title": "Integration verification and docs",
+      "file": "tasks/06-integration-verification-and-docs.md",
+      "status": "Not started",
+      "updated": "2026-09-24"
+    }
+  ]
+}

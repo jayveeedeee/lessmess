@@ -21,7 +21,7 @@ func TestProjectNameInChrome(t *testing.T) {
 	writeProjectName(t, dir, "Atlas")
 	h := New(st).Handler()
 
-	for _, path := range []string{"/", "/settings", "/explorer", "/changes/2026-09-10-0", "/setup"} {
+	for _, path := range []string{"/", "/settings", "/explorer", "/setup"} {
 		w := htmlGet(t, h, path, false)
 		if w.Code != 200 {
 			t.Fatalf("%s: code = %d", path, w.Code)

@@ -1,10 +1,10 @@
 # lessmess
 
-A single-binary kanban server for the change-management workflow. Workflow
+A single-binary workflow server with a mobile-first, chat-first web UI. Workflow
 state — changes, tasks, statuses, dependencies, decision logs — lives in a
 tool-owned JSON store under `.lessmess/workflow/` (committed alongside the
 code); narrative documents (plans, task prose) stay markdown under
-`changes/`. The board visualizes the state, every mutation goes through
+`changes/`. The web UI visualizes the state, every mutation goes through
 deterministic, rule-enforcing endpoints, and agent sessions receive their
 instructions and the current state injected at spawn — nothing hand-edits
 a table, and no stale instruction copies live in repositories.
@@ -21,7 +21,7 @@ Node toolchain required.
 ## Usage
 
 ```sh
-# Start the board (http://127.0.0.1:8080)
+# Start the server (http://127.0.0.1:8080)
 lessmess serve [--host 127.0.0.1] [--port 8080] [--dir .]
 
 # Check the workflow state against the validation contract
@@ -57,11 +57,11 @@ changes/<id>/                  # narrative markdown, committed
 - The rest of `.lessmess/` (sessions, settings, queues) stays personal and
   gitignored; only `workflow/` is committed, via a `.gitignore` negation.
 - **Never edit the JSON by hand.** All mutations go through the store's
-  atomic writes, exposed as HTTP endpoints (used by the board and by
+  atomic writes, exposed as HTTP endpoints (used by the web UI and by
   agents): task create/status/update/reorder, decomposition, decision log.
   The workflow rules are enforced there — `Test` transitions require
   recorded verification evidence, and `Done` is user-gated (agent calls
-  are refused; the board is the user's hands).
+  are refused; the UI is the user's hands).
 - Derived change statuses (`Planned` / `In progress` / `Blocked`) are
   recomputed from the task tree on every change and converge automatically;
   `Done` and `Cancelled` are user-set.
@@ -111,7 +111,7 @@ Setup API (for the wizard and other clients): `GET /setup`,
 `POST /api/setup/docs-seed`, `GET /api/setup/docs-seed-status`,
 `POST /api/setup/complete`, `POST /api/setup/dismiss`.
 
-### The board
+### The web interface
 
 - **Top menu** — Changes and Explorer are always visible in the header; the
   active route is highlighted. On the right, **Chat** spawns a general
@@ -123,16 +123,25 @@ Setup API (for the wizard and other clients): `GET /setup`,
   the index Discussions list, and open in Chat.
   For directory-scoped, docs-grounded Q&A there is the explorer's per-
   directory chat (see below).
-- **`/`** — change list, built from the workflow index plus each change's
-  state, newest change first.
-- **`/changes/<id>`** — kanban board with six columns (`Not started`,
-  `In progress`, `Blocked`, `Test`, `Done`, `Cancelled`); cards are the
-  change's tasks in priority order. Agents stop at `Test` once verification
-  passes; `Done` is user-gated — the user drags the card there or explicitly
-  accepts, which is enforced server-side (agent-side `Done` calls are
-  refused with guidance).
-- **Drag a card** between columns or reorder within one: writes the task's
-  status and position to the change's JSON state atomically.
+- **`/`** — change cards, built from the workflow index plus each change's
+  state, newest change first. Each card shows exactly the change's name,
+  status, `done/total` task count, and updated date; tapping it enters the
+  change (opens its session in Chat) without a page load.
+- **Breadcrumb location menu** — the header's location control lists the
+  trail (Changes / change / panel or document) with a back chevron. When a
+  change context exists, a **Resume session** action sits at the bottom:
+  one click continues the session you last used for that change, or starts
+  a new one when it has none.
+- **Tasks without a board** — the chat's Work panel lists a change's tasks
+  grouped by status (fed by `GET /changes/<id>/tasks`); task rows open a
+  detail modal with the status select (agents stop at `Test` once
+  verification passes; `Done` is user-gated and enforced server-side) and
+  the **Decompose** action that expands a task into a sub plan. Old
+  `/changes/<id>` links redirect into this flow.
+- **Sessions sheet** — the composer's options open a change-scoped sheet:
+  switch/new/unlink the change's sessions, spawn a new change from a
+  handoff artifact, and the change-level actions (Commit, Close change /
+  Reopen, worktree info and removal).
 - **New change session**: creates the change (state + prose skeleton) and a
   primed planning session; tasks are created through the API by the session's
   agent.
@@ -143,8 +152,8 @@ Setup API (for the wizard and other clients): `GET /setup`,
   (**Close change**), and new open work on a closed change flips it back
   to `In progress`.
 - **Live updates**: the server watches the workflow store and the prose
-  trees with fsnotify; external edits appear on the board via SSE without
-  a restart or reload.
+  trees with fsnotify; external edits refresh the change cards in place via
+  SSE without a restart, a reload, or interrupting an open chat.
 - **Validation banner**: any breach of the workflow validation rules is
   shown in a banner and refuses writes to the affected state.
 
@@ -157,14 +166,12 @@ task keeps its prose file and gains a container directory
 the JSON state (`parent` + dotted IDs); there are no per-container ledger
 files.
 
-- **⤢ Expand** on a card creates the container (the user-instructed
-  decomposition action). Agents propose decompositions when work reveals
-  complexity but never expand unprompted.
-- **Drill down**: the `x/y ✓` badge on a decomposed card opens that task's
-  sub-board (`/changes/<id>?task=<id>`) — the same kanban scoped to its
-  children, with a breadcrumb back up. Chat Work carries the same progress as
-  a quiet row marker; opening the task exposes **View subtasks**, which swaps
-  Work to the child list without leaving Chat and provides an All tasks return.
+- **Decompose** in the task detail modal creates the container (the
+  user-instructed decomposition action). Agents propose decompositions when
+  work reveals complexity but never expand unprompted.
+- **Subtask scope**: opening a decomposed task exposes **View subtasks**,
+  which swaps the chat Work panel to the child list without leaving Chat and
+  provides an All tasks return; rollup markers show `done/total` per task.
 - **Progress is display-only**: badges on decomposed cards are computed from
   that task's descendants (`Test` + `Done` count as complete, `Cancelled`
   leaves the denominator). Nothing is ever written by rollup — each status
@@ -173,8 +180,8 @@ files.
   task in the whole tree to be `Test` or `Done`.
 - **Sessions**: every decomposed task gets one auto-spawned, task-scoped
   opencode session (best-effort, exactly once — unlinking never respawns;
-  the sub-board's Start/Continue button is the manual retry). Sub-boards
-  list the sessions bound to that task; delegation with dotted title
+  the Sessions sheet's New session is the manual retry). The sheet lists
+  the sessions bound to each task; delegation with dotted title
   prefixes (`EXC-00.01: …`) attaches subagent sessions at any depth.
 
 ## Instruction injection
@@ -191,7 +198,7 @@ repository-file updates and can never go stale in downstream repos.
   changes; a discussion session never sees task rules.
 - **The current state is injected too**: change and task primes carry a
   deterministic view of the change's state (the same generated markdown the
-  board's Ledger modal shows), so agents never parse state files.
+  ledger modal shows), so agents never parse state files.
 - **Auditability**: every spawn logs and records the injected module IDs
   (`.lessmess/sessions.json`), and `GET /workflow/instructions` serves the
   module manifest.
@@ -256,8 +263,9 @@ the main tree and from other changes:
   agent is warned which files the new worktree will not contain.
 - **During the change**, every session bound to the change (change session,
   task subagents, commit sessions) works inside the
-  worktree. The board shows the branch, worktree health (active / uncommitted
-  / missing), PR link, and review state on the change page.
+  worktree. The chat Sessions sheet shows the branch, worktree health
+  (active / uncommitted / missing), PR link, and review state for the
+  change.
 - **Close is gated**: it refuses while the worktree has uncommitted *code*
   (the change's own `changes/<id>/` metadata — status flips, the review file
   — is exempt), then pushes the branch, opens a PR with the plan as its body,
@@ -270,9 +278,10 @@ the main tree and from other changes:
 - **The reviewer session stays** after finishing: it is bound to the change,
   shows up in the Sessions list, and you can open it in Chat to ask
   follow-up questions — it remembers its own review. The review text is also
-  readable on the board via the **Review** button next to the PR link.
+  readable via the **Review** button in the Sessions sheet next to the PR
+  link.
 - **Reopen** reattaches the existing worktree. **Remove worktree** is a
-  manual board action (refused while the worktree is dirty); branches and
+  manual sheet action (refused while the worktree is dirty); branches and
   commits are never deleted by lessmess, and nothing is removed
   automatically.
 
@@ -308,46 +317,45 @@ lessmess connects to it automatically (discovery via
 `~/.config/opencode/service.json` — never sent to the browser; all service
 calls are made server-side).
 
-- **Sessions panel** on each board: create, list, open, and unlink multiple
+- **Sessions sheet** in Chat: create, list, open, and unlink multiple
   opencode sessions per change. Mappings persist in
   `.lessmess/sessions.json` (gitignored tooling state).
 - **Subagent sessions per task**: a change session may delegate a task to an
   opencode subagent. When it titles the subagent's description `TSK-NN: …`
-  (the change prompt teaches this), the board attaches the subagent session
-  to that task card with a **Chat** button, opening that child conversation
-  subagent directly, including after it has finished. Unbound subagent
-  sessions surface on the board header; bindings live in
+  (the change prompt teaches this), the Sessions sheet attaches the subagent
+  session to that task with a task chip, opening that child conversation
+  subagent directly, including after it has finished. All bound sessions —
+  subagent or not — appear in the sheet; bindings live in
   `.lessmess/sessions.json` (`task`/`parent` fields), never in `changes/`.
   `POST /changes/{id}/task-sessions` binds a subagent session explicitly.
-- **Continue session** button on each board: one click opens the session you
-  last used for that change, or starts a new one when the change has none.
+- **Resume session** (breadcrumb menu and change cards): one click opens
+  the session you last used for that change, or starts a new one when the
+  change has none.
 - **Chat**: every mapped session opens in a structured, responsive Chat view.
   It renders the authoritative OpenCode transcript, reasoning, tool
   progress/results, errors, permission requests, and structured forms; users
   can send prompts or interrupt work without a PTY. The view polls only while
   visible, restores drafts, preserves a reader's scroll position, and exposes
   change tasks as a full-width Work view on compact screens.
-- **Work panel**: desktop Chat views opened on a change board show a
-  lessmess-native panel on the right mirroring the board's tasks grouped by
-  status. It updates live as tasks change (no page reload), clicking a row
-  opens the task detail above Chat, and a fixed Plan button at the bottom opens
-  the change plan. Chat turns the panel into an on-demand full-width view
-  at phone widths. Unassigned sessions keep the full-width conversation view.
+- **Work panel**: Chat on a change-bound session shows a lessmess-native
+  panel with the change's tasks grouped by status, fed by the tasks JSON
+  feed. It updates live as tasks change (no page reload), clicking a row
+  opens the task detail above Chat, and a fixed Plan button at the bottom
+  opens the change plan. Compact screens turn the panel into an on-demand
+  full-width view. Unassigned sessions keep the full-width conversation view.
 - **New change session** (index page): scaffolds a change, creates and
-  primes an opencode session, and opens the board with Chat attached. The
-  agent works the `changes/` workflow; the board updates live.
-- **Sortable change list** (index page): click a column header (Change,
-  Title, Prefix, Status, Tasks, Updated) to sort the table; click again to
-  flip direction. Status sorts in board workflow order, and your chosen
-  sort is remembered across reloads. Without a selection the list stays
-  newest-first.
+  primes an opencode session, and enters the change with Chat attached. The
+  agent works the `changes/` workflow; the Work panel updates live.
+- **Compact sort control** (index page): newest/oldest, status (workflow
+  order), most tasks, or title; your chosen sort is remembered across
+  reloads. Without a selection the list stays newest-first.
 - **Commit all** (index page, next to New change session): one click commits
   every uncommitted change in the repository. The button is disabled when
   the working tree is clean and hidden outside git repositories. It opens a
   confirmation modal listing the uncommitted files plus a diffstat (fetched
   live from `GET /api/git/status`); confirming spawns an opencode session
   (`POST /api/git/commit`) that writes the commit message and commits — the
-  same rails as the board's per-change Commit: commit only, never push. The
+  same rails as the Sessions sheet's per-change Commit: commit only, never push. The
   session appears under Discussions as "repo — git commit".
 
 ### Mobile Chat capability matrix
@@ -542,5 +550,5 @@ internal/docs/      repo docs: coverage config, tree walk, STRUCTURE.md generati
 web/                embedded templates and static assets (see web/static/VENDOR.md)
 ```
 
-Vendored frontend assets (htmx, SortableJS) are pinned with checksums in
+Vendored frontend assets (htmx) are pinned with checksums in
 [`web/static/VENDOR.md`](web/static/VENDOR.md).

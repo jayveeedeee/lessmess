@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -71,6 +72,7 @@ func New(st *store.Store) *Server {
 	mux.HandleFunc("GET /changes/{id}/review", s.reviewDetail)
 	mux.HandleFunc("GET /changes/{id}/ledger", s.ledgerDetail)
 	mux.HandleFunc("GET /changes/{id}/tasks/{file...}", s.taskDetail)
+	mux.HandleFunc("GET /changes/{id}/tasks", s.listTasksFeed)
 	mux.HandleFunc("POST /changes/{id}/tasks", s.createTask)
 	mux.HandleFunc("POST /changes/{id}/tasks/{task}/status", s.setTaskStatus)
 	mux.HandleFunc("POST /changes/{id}/tasks/{task}/update", s.updateTask)
@@ -373,8 +375,20 @@ func (s *Server) board(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
-	// Drill-down: ?task=<id> renders that task's sub-board (its children
-	// in the kanban); absent renders the change's root board.
+	// HTML requests (full page or htmx fragment) redirect into the
+	// chat-first flow: the index page enters the change's context and
+	// resumes its session. ?task= drill-down scope lives in the chat Work
+	// panel now, so the parameter is dropped on the way. The JSON API
+	// below survives unchanged for API clients.
+	if wantsHTML(r) || isHX(r) {
+		target := "/?change=" + url.QueryEscape(id)
+		if sid := r.URL.Query().Get("session"); sid != "" {
+			target += "&session=" + url.QueryEscape(sid)
+		}
+		http.Redirect(w, r, target, http.StatusFound)
+		return
+	}
+	// Drill-down task ID for the JSON shape (root scope when absent).
 	taskID := strings.TrimSpace(r.URL.Query().Get("task"))
 	var view boardView
 	if taskID != "" {
@@ -395,14 +409,6 @@ func (s *Server) board(w http.ResponseWriter, r *http.Request) {
 	if s.oc != nil && s.mapErr == nil {
 		go s.autospawnChange(c, 1)
 	}
-	if wantsHTML(r) {
-		if isHX(r) {
-			s.rend.render(w, s.rend.partial, "boardFragment", view)
-		} else {
-			s.rend.render(w, s.rend.board, "layout", pageData{Title: id, Page: "board", Data: view})
-		}
-		return
-	}
 	resp := boardResponse{ID: id, Task: view.Task}
 	if c.Err != nil || c.State == nil {
 		resp.Error = fmt.Sprintf("state unreadable: %v", c.Err)
@@ -416,6 +422,98 @@ func (s *Server) board(w http.ResponseWriter, r *http.Request) {
 	}
 	resp.Worktree = view.Worktree
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// tasksFeedRow is one Work-panel row: the task's authoritative state plus
+// the display-only subtask rollup and the detail href — the JSON shape of
+// what the kanban cardView carried to the template.
+type tasksFeedRow struct {
+	ID       string `json:"id"`
+	Title    string `json:"title"`
+	Status   string `json:"status"`
+	Path     string `json:"path"` // detail route value under /changes/{id}/tasks/
+	Href     string `json:"href"` // absolute detail URL for hx-get
+	HasSub   bool   `json:"hasSub"`
+	SubDone  int    `json:"subDone"`
+	SubTotal int    `json:"subTotal"`
+	Updated  string `json:"updated"`
+}
+
+// tasksFeed is the JSON payload behind the chat Work panel: one scope's
+// tasks (the change root or one container's children) plus scope
+// metadata; the client groups rows by status.
+type tasksFeed struct {
+	Change     string         `json:"change"`
+	Title      string         `json:"title"`
+	Scope      string         `json:"scope,omitempty"`
+	ScopeTitle string         `json:"scopeTitle,omitempty"`
+	Overall    string         `json:"overall"`
+	Tasks      []tasksFeedRow `json:"tasks"`
+}
+
+// tasksFeedRowOf converts one node into a Work-panel row.
+func tasksFeedRowOf(base string, n *store.TaskNode) tasksFeedRow {
+	row := tasksFeedRow{
+		ID:     n.ID,
+		Title:  n.ID,
+		Status: string(n.NodeStatus()),
+		Path:   strings.TrimPrefix(n.Href, "tasks/"),
+		Href:   base + "/tasks/" + strings.TrimPrefix(n.Href, "tasks/"),
+	}
+	if n.Task != nil {
+		if n.Task.Title != "" {
+			row.Title = n.Task.Title
+		}
+		row.Updated = n.Task.Updated
+	}
+	if n.HasContainer() {
+		st := n.SubtreeStats()
+		row.HasSub = true
+		row.SubDone, row.SubTotal = st.Complete, st.Total
+	}
+	return row
+}
+
+// listTasksFeed handles GET /changes/{id}/tasks[?task=]: the JSON feed the
+// chat Work panel renders, so the panel no longer mirrors board HTML.
+// Without ?task= the scope is the change's root tasks; with it, that
+// container's children.
+func (s *Server) listTasksFeed(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	c, err := s.st.Change(id)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	feed := tasksFeed{Change: id, Title: id, Tasks: []tasksFeedRow{}}
+	var nodes []*store.TaskNode
+	if taskID := strings.TrimSpace(r.URL.Query().Get("task")); taskID != "" {
+		n := c.Node(taskID)
+		if n == nil {
+			writeErr(w, store.ErrNotFound)
+			return
+		}
+		feed.Scope = n.ID
+		feed.ScopeTitle = n.ID
+		if n.Task != nil && n.Task.Title != "" {
+			feed.ScopeTitle = n.Task.Title
+		}
+		nodes = n.Children
+	} else {
+		nodes = c.Roots
+	}
+	if c.Err != nil || c.State == nil {
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": fmt.Sprintf("state unreadable: %v", c.Err)})
+		return
+	}
+	if c.State.Title != "" {
+		feed.Title = c.State.Title
+	}
+	feed.Overall = string(c.Overall())
+	for _, n := range nodes {
+		feed.Tasks = append(feed.Tasks, tasksFeedRowOf("/changes/"+id, n))
+	}
+	writeJSON(w, http.StatusOK, feed)
 }
 
 // expandTask handles POST /changes/{id}/expand: decompose a task into a
@@ -666,7 +764,7 @@ func (s *Server) createChange(w http.ResponseWriter, r *http.Request) {
 	}
 	slog.Info("create change", "id", id)
 	if isHX(r) {
-		w.Header().Set("HX-Redirect", "/changes/"+id)
+		w.Header().Set("HX-Redirect", "/?change="+url.QueryEscape(id))
 		w.WriteHeader(http.StatusOK)
 		return
 	}

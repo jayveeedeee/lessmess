@@ -9,7 +9,6 @@ import (
 	"strings"
 	"testing"
 
-	"lessmess/internal/model"
 )
 
 func htmlGet(t *testing.T, h http.Handler, path string, hx bool) *httptest.ResponseRecorder {
@@ -66,14 +65,14 @@ func TestIndexHTML(t *testing.T) {
 func TestExpandableLocationBreadcrumbContract(t *testing.T) {
 	st, _ := fixtureStore(t)
 	h := New(st).Handler()
-	page := htmlGet(t, h, "/changes/2026-09-10-0", false).Body.String()
-	for _, want := range []string{`id="app-header" class="has-location"`, `id="location-nav"`, `data-change-title="Fixture change"`, `id="location-back"`, `class="location-back-icon"`, `id="location-toggle"`, `aria-controls="location-menu"`, `id="location-current">Fixture change`, `id="location-menu"`, `id="location-trail"`, `class="location-actions"`} {
+	page := htmlGet(t, h, "/", false).Body.String()
+	for _, want := range []string{`id="app-header" class="has-location"`, `id="location-nav"`, `id="location-back"`, `class="location-back-icon"`, `id="location-toggle"`, `aria-controls="location-menu"`, `id="location-current">Changes`, `id="location-menu"`, `id="location-trail"`, `class="location-actions"`} {
 		if !strings.Contains(page, want) {
 			t.Errorf("location breadcrumb markup missing %q", want)
 		}
 	}
 	js := do(t, h, "GET", "/static/app.js", "").Body.String()
-	for _, want := range []string{`function locationBaseTrail()`, `function syncLocationFromChat()`, `function activateLocation(index)`, `function setDetailLocation(url, parentTrail)`, `current.textContent = locationTrail[locationTrail.length - 1].label`, `back.setAttribute("aria-label", parent ? "Back to " + parent.label`, `activateLocation(locationTrail.length - 2)`, `trail.push({ kind: "chat", label: "Chat" })`, `labels = { work: "Work", agents: "Agents", controls: "Controls" }`, `sibling.id !== "app-header"`, `child.id !== "app-header"`} {
+	for _, want := range []string{`function locationBaseTrail()`, `function syncLocationFromChat()`, `function activateLocation(index)`, `function setDetailLocation(url, parentTrail)`, `current.textContent = locationTrail[locationTrail.length - 1].label`, `back.setAttribute("aria-label", parent ? "Back to " + parent.label`, `activateLocation(locationTrail.length - 2)`, `trail.push({ kind: "chat", label: "Chat" })`, `labels = { work: "Work", agents: "Agents", controls: "Controls", sessions: "Sessions" }`, `sibling.id !== "app-header"`, `child.id !== "app-header"`, `function resumeChangeSession(change)`, `if (chatOpen() && sessionTasksChange) {`, `markOpenedFor(change, s.session)`, `// Back from a doc: close the modal first so the conversation is`} {
 		if !strings.Contains(js, want) {
 			t.Errorf("location breadcrumb controller missing %q", want)
 		}
@@ -93,24 +92,29 @@ func TestIndexSortableMarkup(t *testing.T) {
 		t.Fatalf("code = %d", w.Code)
 	}
 	body := w.Body.String()
-	// Six sortable data-column headers, each a sort button with an indicator.
-	for _, col := range []string{"id", "title", "prefix", "status", "tasks", "updated"} {
-		if !strings.Contains(body, `data-sort-col="`+col+`"`) {
-			t.Errorf("index HTML missing sort button for column %q", col)
+	// Compact sort control with the five fixed orders.
+	if !strings.Contains(body, `id="change-sort"`) {
+		t.Error("index HTML missing the change sort control")
+	}
+	for _, option := range []string{"updated:desc", "updated:asc", "status:asc", "tasks:desc", "title:asc"} {
+		if !strings.Contains(body, `value="`+option+`"`) {
+			t.Errorf("sort control missing option %q", option)
 		}
 	}
-	if got := strings.Count(body, `class="sort-btn"`); got != 6 {
-		t.Errorf("sort button count = %d, want 6", got)
-	}
-	// Rows carry machine-readable sort keys.
-	for _, attr := range []string{"data-tasks=", "data-status-rank=", "data-updated="} {
+	// Cards carry the machine-readable sort keys and change identity; the
+	// visible fields are exactly name, status, task count, and date.
+	for _, attr := range []string{"data-change=", "data-tasks=", "data-status-rank=", "data-updated=", "data-title="} {
 		if !strings.Contains(body, attr) {
-			t.Errorf("index rows missing %q sort key", attr)
+			t.Errorf("change cards missing %q sort key", attr)
 		}
 	}
-	// The Plan button column stays a plain header (not sortable).
-	if strings.Contains(body, `data-sort-col="plan"`) {
-		t.Error("plan column unexpectedly sortable")
+	for _, field := range []string{`class="change-card-name"`, `class="change-card-count"`, `class="change-card-date"`, `status-`} {
+		if !strings.Contains(body, field) {
+			t.Errorf("change cards missing field %q", field)
+		}
+	}
+	if strings.Contains(body, "change-table") || strings.Contains(body, "sort-btn") {
+		t.Error("index still renders the legacy sortable table")
 	}
 }
 
@@ -233,36 +237,41 @@ func TestSetupPageHTML(t *testing.T) {
 	}
 }
 
+// The board page is gone: HTML requests redirect into the chat-first flow
+// (the index enters the change context and resumes its session), keeping
+// ?session= so deep links reconnect the exact session. HX requests get
+// the same redirect — there is no board fragment anymore.
 func TestBoardHTML(t *testing.T) {
 	st, _ := fixtureStore(t)
-	w := htmlGet(t, New(st).Handler(), "/changes/2026-09-10-0", false)
-	if w.Code != 200 {
-		t.Fatalf("code = %d", w.Code)
+	h := New(st).Handler()
+	w := htmlGet(t, h, "/changes/2026-09-10-0", false)
+	if w.Code != http.StatusFound {
+		t.Fatalf("code = %d, want 302", w.Code)
 	}
-	body := w.Body.String()
-	if !strings.Contains(body, "<h2>Fixture change</h2>") || strings.Contains(body, "<h2>2026-09-10-0</h2>") {
-		t.Fatalf("board header did not use the change title: %s", body)
+	if loc := w.Header().Get("Location"); loc != "/?change=2026-09-10-0" {
+		t.Errorf("redirect location = %q", loc)
 	}
-	for _, want := range []string{"Not started", "In progress", "Blocked", "Test", "Done", "Cancelled",
-		"First", "Second", "data-task=\"FIX-00\"", `data-change="2026-09-10-0"`,
-		`sessions-btn`, `sessions-panel`,
-		`chat-overlay`, `chat-transcript`, `chat-composer`, `chat-send-btn`,
-		`chat-file-input`, `chat-draft-files`, `chat-reference-picker`, `chat-reference-list`,
-		`chat-controls-btn`, `chat-controls-sheet`, `chat-controls-search`, `chat-agent-select`, `chat-model-select`, `chat-variant-select`,
-		`chat-command-select`, `chat-command-args`, `chat-skill-list`, `chat-skill-chips`, `chat-usage`} {
-		if !strings.Contains(body, want) {
-			t.Errorf("board HTML missing %q", want)
-		}
+
+	// Deep link with a session reopens that exact session.
+	w = htmlGet(t, h, "/changes/2026-09-10-0?session=ses_x", false)
+	if w.Code != http.StatusFound {
+		t.Fatalf("session deep link code = %d", w.Code)
 	}
-	if strings.Count(body, `id="detail"`) != 1 || strings.Index(body, `id="detail"`) < strings.Index(body, `</main>`) {
-		t.Errorf("detail host must appear once as a body-level overlay after main")
+	if loc := w.Header().Get("Location"); loc != "/?change=2026-09-10-0&session=ses_x" {
+		t.Errorf("session redirect location = %q", loc)
+	}
+
+	// HX fragment requests redirect too (no board fragment exists).
+	w = htmlGet(t, h, "/changes/2026-09-10-0", true)
+	if w.Code != http.StatusFound {
+		t.Fatalf("HX code = %d, want 302", w.Code)
 	}
 }
 
 func TestChatInboxUIContract(t *testing.T) {
 	st, _ := fixtureStore(t)
 	h := New(st).Handler()
-	page := htmlGet(t, h, "/changes/2026-09-10-0", false).Body.String()
+	page := htmlGet(t, h, "/", false).Body.String()
 	for _, want := range []string{`id="chat-inbox"`, `id="chat-composer"`} {
 		if !strings.Contains(page, want) {
 			t.Errorf("chat page missing %q", want)
@@ -287,7 +296,7 @@ func TestChatInboxUIContract(t *testing.T) {
 func TestChatComposerUIContract(t *testing.T) {
 	st, _ := fixtureStore(t)
 	h := New(st).Handler()
-	page := htmlGet(t, h, "/changes/2026-09-10-0", false).Body.String()
+	page := htmlGet(t, h, "/", false).Body.String()
 	for _, want := range []string{
 		`id="chat-prompt" rows="2"`, `id="chat-send-btn" type="submit" class="btn-accent chat-action-button" data-action="send"`, `aria-label="Send message"`, `class="chat-action-icon"`,
 		`id="chat-more-btn"`, `aria-label="Chat options, active context usage unavailable"`, `aria-haspopup="menu"`, `aria-expanded="false"`, `aria-controls="chat-more-menu"`, `class="chat-more-glyph" aria-hidden="true"></span>`, `class="chat-more-label">Close</span>`,
@@ -355,7 +364,7 @@ func TestChatComposerUIContract(t *testing.T) {
 func TestChatNavigationUIContract(t *testing.T) {
 	st, _ := fixtureStore(t)
 	h := New(st).Handler()
-	page := htmlGet(t, h, "/changes/2026-09-10-0", false).Body.String()
+	page := htmlGet(t, h, "/", false).Body.String()
 	for _, want := range []string{`id="chat-agents-btn"`, `id="chat-family-bar"`, `id="chat-agents"`, `id="chat-agent-backdrop"`, `aria-label="Child agent activity"`} {
 		if !strings.Contains(page, want) {
 			t.Errorf("chat navigation missing %q", want)
@@ -388,7 +397,7 @@ func TestChatNavigationUIContract(t *testing.T) {
 func TestChatCompactViewStackUIContract(t *testing.T) {
 	st, _ := fixtureStore(t)
 	h := New(st).Handler()
-	page := htmlGet(t, h, "/changes/2026-09-10-0", false).Body.String()
+	page := htmlGet(t, h, "/", false).Body.String()
 	for _, want := range []string{
 		`interactive-widget=resizes-content`,
 		`data-chat-view="chat"`, `data-chat-view-panel="chat"`,
@@ -431,7 +440,7 @@ func TestChatCompactViewStackUIContract(t *testing.T) {
 func TestChatFormComposerHostContract(t *testing.T) {
 	st, _ := fixtureStore(t)
 	h := New(st).Handler()
-	page := htmlGet(t, h, "/changes/2026-09-10-0", false).Body.String()
+	page := htmlGet(t, h, "/", false).Body.String()
 	for _, want := range []string{`id="chat-composer-shell" class="chat-composer"`, `id="chat-form-host" class="chat-form-host" hidden`, `id="chat-composer" class="chat-composer-form"`} {
 		if !strings.Contains(page, want) {
 			t.Errorf("composer form host missing %q", want)
@@ -479,7 +488,7 @@ func TestChatDesktopAuxiliaryPanelUIContract(t *testing.T) {
 func TestChatComposerNavigationUIContract(t *testing.T) {
 	st, _ := fixtureStore(t)
 	h := New(st).Handler()
-	page := htmlGet(t, h, "/changes/2026-09-10-0", false).Body.String()
+	page := htmlGet(t, h, "/", false).Body.String()
 	for _, want := range []string{
 		`class="modal-close chat-back" data-close-chat aria-label="Back"><span class="back-chevron"`,
 		`class="chat-heading"`, `id="chat-session-state"`, `role="status"`,
@@ -550,7 +559,7 @@ func TestChatComposerNavigationUIContract(t *testing.T) {
 func TestChatAccessibilityContract(t *testing.T) {
 	st, _ := fixtureStore(t)
 	h := New(st).Handler()
-	page := htmlGet(t, h, "/changes/2026-09-10-0", false).Body.String()
+	page := htmlGet(t, h, "/", false).Body.String()
 	for _, want := range []string{
 		`class="chat-window" role="dialog" aria-labelledby="chat-title"`,
 		`id="chat-agents"`, `aria-label="Child agent activity" aria-hidden="true" inert`,
@@ -574,7 +583,7 @@ func TestChatAccessibilityContract(t *testing.T) {
 		`drafts: {}`, `files: {}`, `references: {}`, `skills: {}`, `scrolls: {}`, `viewScrolls: {}`,
 		`cstate.drafts[sessionID] || ""`, `cstate.files[cstate.session]`, `cstate.references[cstate.session]`, `cstate.skills[cstate.session]`,
 		`panel.setAttribute("aria-hidden", String(!selected))`, `panel.inert = !selected`,
-		`var labels = { work: "Work", agents: "Child activity", controls: "Session controls" }`,
+		`var labels = { work: "Work", agents: "Child activity", controls: "Session controls", sessions: "Sessions" }`,
 		`if (!closeTopChatAuxiliary()) closeChat()`, `state.hidden = view !== "chat"`,
 		`function closeChatReferences(returnFocus)`, `function menuKeyboard(menu, close)`,
 		`e.key !== "ArrowDown"`, `e.key !== "Tab" || !chatOpen()`,
@@ -634,7 +643,7 @@ func TestChatAccessibilityContract(t *testing.T) {
 func TestChatCompactWorkUIContract(t *testing.T) {
 	st, _ := fixtureStore(t)
 	h := New(st).Handler()
-	page := htmlGet(t, h, "/changes/2026-09-10-0", false).Body.String()
+	page := htmlGet(t, h, "/", false).Body.String()
 	for _, want := range []string{
 		`id="chat-plan-btn"`, `id="chat-tasks-btn"`, `aria-controls="chat-tasks"`, `<span>Tasks</span></button>`,
 		`id="chat-tasks"`, `data-chat-view-panel="work"`, `aria-label="Work"`,
@@ -646,10 +655,12 @@ func TestChatCompactWorkUIContract(t *testing.T) {
 
 	asset := do(t, h, "GET", "/static/app.js", "").Body.String()
 	for _, want := range []string{
-		`if (!change) closeChatTasks()`, `panel.hidden = !change`, `toggle.hidden = !change`, `plan.hidden = !change`, `plan.setAttribute("hx-get", planURL)`,
-		`function openChatTasks(opener)`, `openChatView("work", opener)`, `var chatWork = panel.id === "chat-tasks"`,
+		`closeChatTasks();`, `panel.hidden = !change`, `toggle.hidden = !change`, `plan.hidden = !change`, `plan.setAttribute("hx-get", planURL)`,
+		`function openChatTasks(opener)`, `openChatView("work", opener)`,
+		`function renderTaskPanel(panel, feed)`, `"/changes/" + encodeURIComponent(changeID) + "/tasks"`,
+		`(feed.tasks || []).forEach`, `TASK_STATUS_ORDER.forEach(group)`, `row.href`, `feed.scope`,
 		`ttp-plan ttp-plan-first`, `data-work-document="plan"`, `data-work-document="task"`,
-		`src.querySelectorAll(".cards[data-status]")`, `cards.length`, `ttp-subtask-marker`,
+		`ttp-subtask-marker`,
 		`data-open-subtasks`, `data-work-root`, `loadSessionTasks(subtasks.dataset.change, subtasks.dataset.task)`,
 		`cstate.viewStack[cstate.viewStack.length - 1] === "work"`, `cstate.detailOpener = opener`,
 	} {
@@ -670,10 +681,57 @@ func TestChatCompactWorkUIContract(t *testing.T) {
 	}
 }
 
+func TestChatSessionsSheetContract(t *testing.T) {
+	st, _ := fixtureStore(t)
+	h := New(st).Handler()
+	page := htmlGet(t, h, "/", false).Body.String()
+	for _, want := range []string{
+		`id="chat-sessions-btn"`, `aria-controls="chat-sessions-sheet"`, `<span>Sessions</span></button>`,
+		`id="chat-sessions-sheet"`, `data-chat-view-panel="sessions"`, `id="chat-sessions-list"`,
+		`id="chat-session-new-btn"`,
+		`id="chat-change-commit-btn"`, `id="chat-change-close-btn"`, `id="chat-change-reopen-btn"`,
+		`id="chat-change-worktree-remove"`, `id="chat-sessions-worktree"`, `id="chat-sessions-overall"`,
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("sessions sheet shell missing %q", want)
+		}
+	}
+
+	asset := do(t, h, "GET", "/static/app.js", "").Body.String()
+	for _, want := range []string{
+		`function openChatSessions(opener)`, `function closeChatSessions(returnFocus)`,
+		`function loadSessionsSheet()`, `function fetchSessionsFor(change, cb)`,
+		`function sheetChange()`, `function postLifecycleFor(change, action)`,
+		`pollSheetCommitStatus(change, j.session, 0)`, `initSessionsSheet();`,
+		`sessionsBtn.hidden = !change`, `requestChatAuxiliary("sessions")`,
+		`"/changes/" + encodeURIComponent(change) + "/worktree/remove"`,
+	} {
+		if !strings.Contains(asset, want) {
+			t.Errorf("sessions sheet script missing %q", want)
+		}
+	}
+
+	css := do(t, h, "GET", "/static/app.css", "").Body.String()
+	for _, want := range []string{
+		`.chat-sessions-sheet[hidden] { display: none; }`, `.session-switch`,
+		`.chat-window[data-chat-view="sessions"] [data-chat-view-panel="sessions"]`,
+	} {
+		if !strings.Contains(css, want) {
+			t.Errorf("sessions sheet CSS missing %q", want)
+		}
+	}
+
+	// Spawning a change from a handoff artifact is agent-driven
+	// (POST /changes/{id}/spawn-change): no UI affordance.
+	if strings.Contains(page, `chat-spawn-change-form`) || strings.Contains(asset, `/spawn-change`) {
+		t.Error("sessions sheet resurrected the spawn-change UI")
+	}
+}
+
 func TestChatManagementUIContract(t *testing.T) {
 	st, _ := fixtureStore(t)
 	h := New(st).Handler()
-	page := htmlGet(t, h, "/changes/2026-09-10-0", false).Body.String()
+	page := htmlGet(t, h, "/", false).Body.String()
 	for _, want := range []string{`id="chat-rename-title"`, `id="chat-export-btn"`, `id="chat-unlink-btn"`, `id="chat-delete-preview-btn"`, "The OpenCode session and all conversation data remain"} {
 		if !strings.Contains(page, want) {
 			t.Errorf("chat management missing %q", want)
@@ -690,52 +748,18 @@ func TestChatManagementUIContract(t *testing.T) {
 	}
 }
 
-func TestBoardLifecycleButtons(t *testing.T) {
-	st, _ := fixtureStore(t)
-	h := New(st).Handler()
-	w := htmlGet(t, h, "/changes/2026-09-10-0", false)
-	body := w.Body.String()
-	if !strings.Contains(body, `id="close-change-btn"`) || strings.Contains(body, `id="reopen-btn"`) {
-		t.Errorf("In progress board should show Close change only")
-	}
-	if !strings.Contains(body, `id="commit-btn"`) {
-		t.Errorf("missing Commit button")
-	}
-	// No manual status control anywhere: the pill is derived from tasks.
-	if strings.Contains(body, `id="overall-status"`) {
-		t.Errorf("board must not render a status select")
-	}
-	if strings.Contains(body, `pill progress`) {
-		t.Errorf("board must not render the progress pill")
-	}
-
-	// After closing, the board offers Reopen instead and drops the select.
-	if err := st.SetChangeStatus("2026-09-10-0", model.OverallDone); err != nil {
-		t.Fatal(err)
-	}
-	w = htmlGet(t, h, "/changes/2026-09-10-0", false)
-	body = w.Body.String()
-	if !strings.Contains(body, `id="reopen-btn"`) || strings.Contains(body, `id="close-change-btn"`) {
-		t.Errorf("Done board should show Reopen only")
-	}
-	if strings.Contains(body, `id="overall-status"`) {
-		t.Errorf("Done board must not render a status select")
-	}
-}
+// Lifecycle and session controls moved into the chat Sessions sheet; the
+// board page that carried them is gone. TestChatSessionsSheetContract
+// pins the replacement surface.
 
 func TestBoardFragmentHX(t *testing.T) {
 	st, _ := fixtureStore(t)
 	w := htmlGet(t, New(st).Handler(), "/changes/2026-09-10-0", true)
-	if w.Code != 200 {
-		t.Fatalf("code = %d", w.Code)
+	if w.Code != http.StatusFound {
+		t.Fatalf("code = %d, want 302", w.Code)
 	}
-	body := w.Body.String()
-	// Fragment only: cards, but no full page chrome.
-	if !strings.Contains(body, "data-task=\"FIX-00\"") {
-		t.Error("fragment missing card")
-	}
-	if strings.Contains(body, "<html") {
-		t.Error("fragment should not be a full page")
+	if loc := w.Header().Get("Location"); loc != "/?change=2026-09-10-0" {
+		t.Errorf("redirect location = %q", loc)
 	}
 }
 
@@ -861,7 +885,7 @@ func TestMarkdownHeadingIDs(t *testing.T) {
 func TestStaticAssets(t *testing.T) {
 	st, _ := fixtureStore(t)
 	h := New(st).Handler()
-	for _, p := range []string{"/static/htmx.min.js", "/static/Sortable.min.js", "/static/app.js", "/static/app.css"} {
+	for _, p := range []string{"/static/htmx.min.js", "/static/app.js", "/static/app.css"} {
 		r := httptest.NewRequest("GET", p, nil)
 		w := httptest.NewRecorder()
 		h.ServeHTTP(w, r)
@@ -899,7 +923,7 @@ func TestFormEncodedCreateChangeRedirect(t *testing.T) {
 		t.Fatalf("code = %d body = %s", w.Code, w.Body)
 	}
 	redir := w.Header().Get("HX-Redirect")
-	if !strings.HasPrefix(redir, "/changes/") {
+	if !strings.HasPrefix(redir, "/?change=") {
 		t.Fatalf("HX-Redirect = %q", redir)
 	}
 }

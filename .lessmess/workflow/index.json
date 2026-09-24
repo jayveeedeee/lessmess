@@ -290,6 +290,13 @@
       "prefix": "UI",
       "branch": "main",
       "created": "2026-09-24"
+    },
+    {
+      "id": "2026-09-24-0zyrp",
+      "title": "Multi-project serving with project switcher",
+      "prefix": "MP",
+      "branch": "main",
+      "created": "2026-09-24"
     }
   ]
 }

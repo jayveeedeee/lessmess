@@ -516,40 +516,54 @@ func doHTML(t *testing.T, h http.Handler, path string) *httptest.ResponseRecorde
 	return w
 }
 
+// The board page is gone; the worktree strip is client-rendered in the
+// chat Sessions sheet from the change JSON's worktree field.
 func TestWorktreeStripOnBoard(t *testing.T) {
 	s := gitFixtureServer(t, true, true)
 	s.SetOpencode(nil)
 	id, wt := scaffoldWorktreeChange(t, s)
 	commitWorktreeAll(t, wt)
 
-	// Active state: branch + remove button, no flags.
-	w := doHTML(t, s.Handler(), "/changes/"+id)
-	if w.Code != 200 {
-		t.Fatalf("board: %d", w.Code)
-	}
-	for _, want := range []string{"worktree-strip", "change/" + id, "worktree-remove-btn"} {
-		if !strings.Contains(w.Body.String(), want) {
-			t.Errorf("board HTML missing %q", want)
+	fetchJSON := func(path string) map[string]any {
+		r := httptest.NewRequest("GET", path, nil)
+		r.Header.Set("Accept", "application/json")
+		w := httptest.NewRecorder()
+		s.Handler().ServeHTTP(w, r)
+		if w.Code != 200 {
+			t.Fatalf("%s: code = %d", path, w.Code)
 		}
-	}
-	if strings.Contains(w.Body.String(), "worktree missing") {
-		t.Error("active worktree rendered as missing")
-	}
-
-	// A change without a worktree entry renders no strip.
-	w = doHTML(t, s.Handler(), "/changes/2026-09-10-0")
-	if strings.Contains(w.Body.String(), "worktree-strip") {
-		t.Error("main-tree change rendered a worktree strip")
+		var m map[string]any
+		if err := json.Unmarshal(w.Body.Bytes(), &m); err != nil {
+			t.Fatal(err)
+		}
+		return m
 	}
 
-	// Stale state (worktree deleted by hand) renders the missing flag and
-	// the cleanup stays available.
+	// Active state: the JSON carries branch + state for the sheet pills.
+	m := fetchJSON("/changes/" + id)
+	wtField, ok := m["worktree"].(map[string]any)
+	if !ok {
+		t.Fatal("worktree change JSON missing worktree field")
+	}
+	if wtField["Branch"] != "change/"+id {
+		t.Errorf("worktree branch = %v", wtField["Branch"])
+	}
+	if wtField["State"] != "active" {
+		t.Errorf("worktree state = %v", wtField["State"])
+	}
+
+	// A change without a worktree entry carries none.
+	if m := fetchJSON("/changes/2026-09-10-0"); m["worktree"] != nil {
+		t.Error("main-tree change JSON carried a worktree field")
+	}
+
+	// Stale state (worktree deleted by hand) reports missing.
 	if err := os.RemoveAll(wt); err != nil {
 		t.Fatal(err)
 	}
-	w = doHTML(t, s.Handler(), "/changes/"+id)
-	if !strings.Contains(w.Body.String(), "worktree missing") {
-		t.Error("stale worktree not flagged as missing")
+	m = fetchJSON("/changes/" + id)
+	if wt := m["worktree"].(map[string]any); wt["State"] != "missing" {
+		t.Errorf("stale worktree state = %v, want missing", wt["State"])
 	}
 }
 

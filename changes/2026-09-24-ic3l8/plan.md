@@ -45,13 +45,17 @@ composer's ⋮ options menu.
   rollups — no board DOM dependency.
 - **Sessions quick action + sheet**: a "Sessions" quick action joins the composer's quick-action
   grid (gated on change-bound sessions like Plan/Tasks) and opens a Sessions sheet: session list
-  (switch/new/unlink, subagent + spawned-from badges), the spawn-change handoff flow, and the
-  change actions footer: Commit, Close/Reopen (open-task confirm), worktree pills/remove/review.
-- **Breadcrumb dropdown**: a "Resume session" action pinned at the bottom whenever a change context
-  exists, sharing the same resume helper as the cards; the change crumb persists for the visit.
-  For change-bound sessions the change name replaces the "Chat" crumb as the current location
-  (`Changes / <Change Name>`); panel and document crumbs stack above it, and "Chat" survives only
-  for unbound discussion sessions.
+  (switch/new/unlink, subagent + spawned-from badges) and the change actions footer: Commit,
+  Close/Reopen (open-task confirm), worktree pills/remove/review. Spawning a change from a
+  handoff artifact stays agent-driven via `POST /changes/{id}/spawn-change` — the UI affordance
+  was built and then removed on user review (no UI for it).
+- **Breadcrumb dropdown**: the trail shows the change (by name) only while that change's session
+  is open in Chat — it is the current location (`Changes / <Change Name>`), panel and document
+  crumbs stack above it, and "Chat" survives only for unbound discussion sessions. There is no
+  persisted change state: closing the chat or returning to the list leaves just `Changes`, and
+  re-entry is the change cards (both resume via the shared helper). (Two earlier iterations were
+  removed on review: a standalone "Resume session" row, then a visit-persisted crumb — both read
+  as stale, always-present state.)
 - **Responsive sweep**: full-screen modals, ≥44px touch targets, safe-area insets, explorer /
   settings / setup / opencode-page polish at phone widths; desktop functionally untouched.
 

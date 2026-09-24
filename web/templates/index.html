@@ -27,35 +27,28 @@
       <button type="submit" class="btn-accent">New change session</button>
     </form>
   </div>
-  <table class="change-table-wrap change-table">
-    <thead>
-      <tr>
-        <th data-col="id"><button type="button" class="sort-btn" data-sort-col="id">Change<span class="sort-ind" aria-hidden="true"></span></button></th>
-        <th data-col="title"><button type="button" class="sort-btn" data-sort-col="title">Title<span class="sort-ind" aria-hidden="true"></span></button></th>
-        <th data-col="prefix"><button type="button" class="sort-btn" data-sort-col="prefix">Prefix<span class="sort-ind" aria-hidden="true"></span></button></th>
-        <th data-col="status"><button type="button" class="sort-btn" data-sort-col="status">Status<span class="sort-ind" aria-hidden="true"></span></button></th>
-        <th data-col="tasks"><button type="button" class="sort-btn" data-sort-col="tasks">Tasks<span class="sort-ind" aria-hidden="true"></span></button></th>
-        <th data-col="updated"><button type="button" class="sort-btn" data-sort-col="updated">Updated<span class="sort-ind" aria-hidden="true"></span></button></th>
-        <th></th>
-      </tr>
-    </thead>
-    <tbody>
-      {{range .Data.Changes}}
-      <tr data-tasks="{{.Tasks}}" data-status-rank="{{.Status | statusRank}}" data-updated="{{.Updated}}">
-        <td data-col="id"><a href="/changes/{{.ID}}">{{.ID}}</a></td>
-        <td data-col="title">{{.Title}}</td>
-        <td data-col="prefix">{{.Prefix}}</td>
-        <td data-col="status"><span class="pill status-{{.Status | statusClass}}">{{.Status}}</span></td>
-        <td data-col="tasks">{{.Tasks}}</td>
-        <td data-col="updated">{{.Updated}}</td>
-        <td><button type="button" class="btn-ghost"
-                hx-get="/changes/{{.ID}}/plan"
-                hx-target="#detail"
-                hx-swap="innerHTML">Plan</button></td>
-      </tr>
-      {{end}}
-    </tbody>
-  </table>
+  <label class="sr-only" for="change-sort">Sort changes</label>
+  <select id="change-sort" class="change-sort">
+    <option value="updated:desc">Newest first</option>
+    <option value="updated:asc">Oldest first</option>
+    <option value="status:asc">By status</option>
+    <option value="tasks:desc">Most tasks</option>
+    <option value="title:asc">By title</option>
+  </select>
+  <div id="change-cards" class="change-cards">
+    {{range .Data.Changes}}
+    <a class="change-card" href="/changes/{{.ID}}" data-change="{{.ID}}"
+       data-tasks="{{.Tasks}}" data-status-rank="{{.Status | statusRank}}" data-updated="{{.Updated}}"
+       data-title="{{.Title}}">
+      <span class="change-card-name">{{.Title}}</span>
+      <span class="change-card-meta">
+        <span class="pill status-{{.Status | statusClass}}">{{.Status}}</span>
+        <span class="change-card-count">{{.Complete}}/{{.Tasks}}</span>
+        <span class="change-card-date">{{.Updated}}</span>
+      </span>
+    </a>
+    {{end}}
+  </div>
 </section>
 <section class="changes discussions">
   <div class="section-head">

@@ -124,43 +124,53 @@ func TestBoardDrillDown(t *testing.T) {
 	s := nestedBoardServer(t)
 	h := s.Handler()
 
+	// HTML drill-down redirects into the chat-first flow (scope lives in
+	// the Work panel).
 	req, _ := http.NewRequest("GET", "/changes/2026-09-10-0?task=FIX-00", nil)
 	req.Header.Set("Accept", "text/html")
 	w := doReq(t, h, req)
-	if w.Code != 200 {
+	if w.Code != http.StatusFound {
 		t.Fatalf("HTML code = %d body = %s", w.Code, w.Body)
 	}
-	body := w.Body.String()
-	for _, want := range []string{"Child One", "Child Two", "FIX-00.00", "data-task=\"FIX-00.00\""} {
-		if !strings.Contains(body, want) {
-			t.Errorf("drill-down HTML missing %q", want)
-		}
-	}
-	// Root-board tasks do not leak into the drill-down.
-	if strings.Contains(body, ">Second<") {
-		t.Error("drill-down shows root-level task Second")
+	if loc := w.Header().Get("Location"); loc != "/?change=2026-09-10-0" {
+		t.Errorf("redirect location = %q", loc)
 	}
 
-	reqJSON, _ := http.NewRequest("GET", "/changes/2026-09-10-0?task=FIX-00", nil)
-	reqJSON.Header.Set("Accept", "application/json")
-	w2 := doReq(t, h, reqJSON)
+	// The JSON API keeps the drill-down scope for API clients.
+	req2, _ := http.NewRequest("GET", "/changes/2026-09-10-0?task=FIX-00", nil)
+	req2.Header.Set("Accept", "application/json")
+	w2 := doReq(t, h, req2)
+	if w2.Code != 200 {
+		t.Fatalf("JSON code = %d", w2.Code)
+	}
 	var resp struct {
+		ID      string `json:"id"`
 		Task    string `json:"task"`
+		Overall string `json:"overall"`
 		Columns []struct {
 			Status string `json:"status"`
 			Count  int    `json:"count"`
 		} `json:"columns"`
+		Tasks []model.TaskState `json:"tasks"`
 	}
-	json.Unmarshal(w2.Body.Bytes(), &resp)
+	if err := json.Unmarshal(w2.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
 	if resp.Task != "FIX-00" {
-		t.Errorf("task = %q", resp.Task)
+		t.Errorf("json task = %q", resp.Task)
 	}
+	// Root-board tasks do not leak into the drill-down columns (the JSON
+	// Tasks field stays root-level by contract; the scope is the columns).
 	for _, col := range resp.Columns {
+		if col.Status == "Test" && col.Count != 1 {
+			t.Errorf("Test column count = %d, want 1", col.Count)
+		}
 		if col.Status == "Not started" && col.Count != 1 {
 			t.Errorf("Not started count = %d, want 1", col.Count)
 		}
 	}
 
+	// Unknown drill-down scope stays a 404 on the JSON API.
 	if w := do(t, h, "GET", "/changes/2026-09-10-0?task=FIX-99", ""); w.Code != 404 {
 		t.Errorf("unknown drill-down code = %d", w.Code)
 	}

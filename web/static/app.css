@@ -290,7 +290,7 @@ h3 { margin: 0; font-size: 0.82rem; font-weight: 600; }
   padding: 0.1rem 0.38rem;
 }
 
-.section-head, .board-head {
+.section-head {
   display: flex;
   align-items: center;
   gap: 0.9rem;
@@ -306,23 +306,29 @@ h3 { margin: 0; font-size: 0.82rem; font-weight: 600; }
   flex-wrap: wrap;
   margin: -0.5rem 0 0.9rem;
 }
-.worktree-strip .wt-branch {
+.worktree-strip .wt-branch,
+.chat-sessions-worktree .wt-branch {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   background: var(--surface-3);
   color: var(--text);
 }
-.worktree-strip .wt-flag {
+.worktree-strip .wt-flag,
+.chat-sessions-worktree .wt-flag {
   background: var(--st-blocked-bg);
   color: var(--st-blocked-fg);
 }
-.worktree-strip .wt-pr {
+.worktree-strip .wt-pr,
+.chat-sessions-worktree .wt-pr {
   text-decoration: none;
   background: var(--st-test-bg);
   color: var(--st-test-fg);
 }
-.worktree-strip .wt-review[data-review="done"] { background: var(--st-done-bg); color: var(--st-done-fg); }
-.worktree-strip .wt-review[data-review="pending"] { background: var(--st-in-progress-bg); color: var(--st-in-progress-fg); }
-.worktree-strip .wt-review[data-review="failed"] { background: var(--st-blocked-bg); color: var(--st-blocked-fg); }
+.worktree-strip .wt-review[data-review="done"],
+.chat-sessions-worktree .wt-review[data-review="done"] { background: var(--st-done-bg); color: var(--st-done-fg); }
+.worktree-strip .wt-review[data-review="pending"],
+.chat-sessions-worktree .wt-review[data-review="pending"] { background: var(--st-in-progress-bg); color: var(--st-in-progress-fg); }
+.worktree-strip .wt-review[data-review="failed"],
+.chat-sessions-worktree .wt-review[data-review="failed"] { background: var(--st-blocked-bg); color: var(--st-blocked-fg); }
 
 .inline-form { display: flex; gap: 0.5rem; align-items: center; margin-left: auto; }
 input[type="text"] {
@@ -391,167 +397,56 @@ button:disabled {
 
 /* --- index (change list) --------------------------------------------------- */
 
-.change-table-wrap {
+.change-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.change-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.8rem 0.9rem;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 2px;
-  overflow: hidden;
   box-shadow: var(--shadow-sm);
-}
-.change-table { width: 100%; border-collapse: collapse; }
-.change-table th {
-  text-align: left;
-  padding: 0.65rem 1rem;
-  color: var(--muted);
-  font-size: 0.7rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  border-bottom: 1px solid var(--border);
-}
-.change-table td { padding: 0.7rem 1rem; border-bottom: 1px solid var(--border); font-size: 0.88rem; }
-.change-table thead .sort-btn {
-  appearance: none;
-  background: none;
-  border: none;
-  padding: 0;
-  margin: 0;
-  font: inherit;
   color: inherit;
-  text-transform: inherit;
-  letter-spacing: inherit;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-}
-.change-table thead .sort-btn:hover { color: var(--accent); }
-.change-table thead .sort-btn:focus-visible { outline: 1px solid var(--accent); outline-offset: 2px; }
-.change-table thead .sort-ind::after { content: "↕"; opacity: 0.35; font-size: 0.75em; }
-.change-table thead .sort-btn.sort-asc .sort-ind::after { content: "↑"; opacity: 1; color: var(--accent); }
-.change-table thead .sort-btn.sort-desc .sort-ind::after { content: "↓"; opacity: 1; color: var(--accent); }
-.change-table tbody tr:last-child td { border-bottom: none; }
-.change-table tbody tr { transition: background-color 0.1s ease; }
-.change-table tbody tr:hover { background: var(--surface-2); }
-.change-table a { color: var(--text); text-decoration: none; font-weight: 600; }
-.change-table a:hover { color: var(--accent); text-decoration: none; }
-
-/* --- board ----------------------------------------------------------------- */
-
-.board {
-  display: flex;
-  gap: 0.85rem;
-  align-items: stretch;
-  overflow-x: auto;
-  padding-bottom: 0.5rem;
-}
-
-/* Full-height board: columns stretch to the viewport bottom (board page
-   only; other pages scroll normally). */
-body[data-page="board"] {
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
-  overflow: hidden;
-}
-body[data-page="board"] main {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-body[data-page="board"] .board {
-  flex: 1;
-  min-height: 0;
-}
-
-.column {
-  background: var(--surface);
-  border-radius: 2px;
-  padding: 0.75rem;
-  min-width: 250px;
-  flex: 1 1 0;
-  display: flex;
-  flex-direction: column;
-}
-.column > h3 {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-  padding: 0.15rem 0.25rem 0.7rem;
-}
-.column .count {
-  color: var(--muted);
-  font-weight: 500;
-  font-size: 0.75rem;
-  background: var(--surface-2);
-  border-radius: 3px;
-  min-width: 1.4rem;
-  text-align: center;
-  padding: 0.08rem 0.4rem;
-}
-.cards {
-  display: flex;
-  flex-direction: column;
-  gap: 0.55rem;
-  flex: 1;
-  min-height: 3.5rem;
-  margin-top: 0.65rem; /* clearance under the column header */
-  overflow-y: auto;
-  scrollbar-width: thin;
-}
-.cards:empty::after {
-  content: "Drop tasks here";
-  display: block;
-  border: 1.5px dashed var(--border);
-  border-radius: 2px;
-  color: var(--muted);
-  font-size: 0.78rem;
-  text-align: center;
-  padding: 1rem 0.5rem;
-}
-
-.card {
-  background: var(--surface-2);
-  border-radius: 2px;
-  padding: 0.95rem 0.75rem 0.65rem; /* extra clearance at the card's top */
-  cursor: grab;
-  box-shadow: var(--shadow-sm), inset 0 0 0 1px transparent;
-  transition: box-shadow 0.12s ease;
-}
-.card:hover {
-  /* no transform: a translateY lift made the first card's top edge slide
-     under the column header on hover */
-  box-shadow: var(--shadow-md), inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent);
-}
-.card:active { cursor: grabbing; }
-.card-title {
-  color: var(--text);
   text-decoration: none;
-  font-size: 0.8rem;
-  line-height: 1.35;
-  display: block;
+  cursor: pointer;
+  transition: border-color 0.12s ease;
 }
-.card:hover .card-title { color: var(--accent); }
-.card-meta {
+.change-card:hover { border-color: var(--accent); }
+.change-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.change-card-name {
+  font-size: 0.95rem;
+  font-weight: 650;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.change-card-meta {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  margin-top: 0.5rem;
-  font-size: 0.72rem;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  font-size: 0.78rem;
   color: var(--muted);
 }
-
-.sortable-ghost {
-  opacity: 0.35;
-  box-shadow: none;
+.change-card-count { font-variant-numeric: tabular-nums; }
+.change-sort {
+  min-height: 42px;
+  margin: 0 0 0.7rem;
+  padding: 0.35rem 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.82rem;
 }
-.sortable-drag {
-  cursor: grabbing;
-  box-shadow: var(--shadow-lg);
-  transform: rotate(1.5deg);
-  opacity: 0.95;
+@media (min-width: 841px) {
+  .change-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 0.7rem; }
 }
 
 /* --- task detail modal ------------------------------------------------------ */
@@ -799,40 +694,47 @@ body[data-page="board"] .board {
   font-size: 0.88rem;
 }
 
-/* --- sessions panel --------------------------------------------------------- */
-
-.sessions-panel {
-  background: var(--surface);
-  border-radius: 2px;
-  padding: 0.75rem 1rem 1rem;
-  margin-bottom: 1rem;
-}
-.sessions-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 0.6rem;
-}
-.sessions-head-actions { display: flex; gap: 0.35rem; }
-.spawn-form {
-  display: flex;
-  gap: 0.5rem;
-  align-items: center;
-  margin-bottom: 0.6rem;
-}
-.spawn-form input, .spawn-form select { min-width: 0; }
-.spawn-form #spawn-title { flex: 1; }
-.spawn-error {
-  color: var(--danger, #b3261e);
-  font-size: 0.78rem;
-  margin: 0 0 0.5rem;
-}
 .spawn-badge {
   color: var(--muted);
   font-size: 0.7rem;
   white-space: nowrap;
 }
 .sessions-head h3 { font-size: 0.82rem; font-weight: 650; margin: 0; }
+
+/* --- Sessions quick-action sheet (change-scoped chat surface) --- */
+
+.chat-sessions-sheet {
+  flex: 0 0 clamp(240px, 25vw, 320px);
+  min-width: 240px;
+  max-width: 320px;
+  padding: 0.8rem;
+  overflow-y: auto;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+}
+.chat-sessions-sheet[hidden] { display: none; }
+.chat-sessions-sheet .ttp-scroll { flex: 1; }
+.chat-sessions-new { margin-top: 0.7rem; width: 100%; min-height: 42px; }
+.chat-sessions-overall { display: inline-block; margin: 0.25rem 0 0.7rem; font-size: 0.78rem; font-weight: 650; }
+.chat-sessions-worktree { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem; margin: 0.6rem 0 0.2rem; }
+.chat-sessions-sheet .session-item { align-items: stretch; padding: 0.3rem 0.5rem; }
+.session-switch {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.15rem;
+  padding: 0.3rem 0.2rem;
+  min-height: 44px;
+  background: none;
+  border: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.session-switch:hover .session-title { color: var(--accent); }
+.session-dead { opacity: 0.55; }
+.session-dead-note { color: var(--muted); font-size: 0.7rem; }
 .sessions-list {
   list-style: none;
   margin: 0;
@@ -1795,6 +1697,7 @@ body[data-page="board"] .board {
   .chat-window[data-chat-view="chat"] [data-chat-view-panel="chat"],
   .chat-window[data-chat-view="agents"] [data-chat-view-panel="agents"],
   .chat-window[data-chat-view="controls"] [data-chat-view-panel="controls"],
+  .chat-window[data-chat-view="sessions"] [data-chat-view-panel="sessions"],
   .chat-window[data-chat-view="work"] [data-chat-view-panel="work"] { display: flex; }
   .chat-tasks {
     position: absolute;
@@ -1850,6 +1753,23 @@ body[data-page="board"] .board {
     border-top: 0;
     border-radius: 0;
   }
+  .chat-sessions-sheet {
+    position: absolute;
+    z-index: 5;
+    inset: 0;
+    width: 100%;
+    max-width: none;
+    min-width: 0;
+    max-height: none;
+    padding-bottom: calc(0.8rem + env(safe-area-inset-bottom));
+    border-left: 0;
+    border-top: 0;
+    border-radius: 0;
+  }
+  .chat-sessions-sheet .chat-controls-head { display: none; }
+  .chat-sessions-sheet button,
+  .chat-sessions-sheet input,
+  .chat-sessions-sheet select { min-height: 44px; }
   .chat-controls-head { display: none; }
   .session-item { flex-wrap: wrap; }
   .session-title { min-width: 55%; }
@@ -2405,100 +2325,6 @@ body[data-page="setup"] main {
 
 /* --- subagent session chips (2026-09-15-2) -------------------------------- */
 
-/* Strip under the board header for subagent sessions with no task binding */
-.board-subs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
-  padding: 0.35rem 0 0.6rem;
-}
-
-/* Per-task chip row inside a task card */
-.card-subs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.35rem;
-  margin-top: 0.55rem;
-}
-
-.sub-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  max-width: 100%;
-  padding: 0.15rem 0.2rem 0.15rem 0.45rem;
-  background: var(--surface-3, var(--surface-2));
-  border-radius: 2px;
-  box-shadow: var(--shadow-sm);
-  font-size: 0.78rem;
-}
-
-.sub-dot {
-  flex: none;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--accent);
-}
-
-.sub-dead .sub-dot { background: color-mix(in srgb, currentColor 35%, transparent); }
-.sub-dead .sub-label { opacity: 0.55; }
-
-.sub-label {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.sub-talk {
-  font-size: 0.72rem;
-  padding: 0.05rem 0.4rem;
-}
-
-/* --- nested task boards (sub plans) ------------------------------------ */
-
-.card-row {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 0.35rem;
-}
-
-.card-row .card-title {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* Rollup badge on decomposed tasks: computed, display-only progress. */
-.card-sub {
-  flex-shrink: 0;
-  font-size: 0.72rem;
-  font-variant-numeric: tabular-nums;
-  padding: 0.05rem 0.4rem;
-  border-radius: 999px;
-  border: 1px solid var(--line);
-  color: var(--fg-dim, inherit);
-  text-decoration: none;
-}
-.card-sub:hover { border-color: var(--accent); color: var(--accent); }
-
-/* Expand affordance on plain tasks: the user-instructed decompose action. */
-.card-expand {
-  flex-shrink: 0;
-  border: none;
-  background: none;
-  color: var(--fg-dim, inherit);
-  font-size: 0.85rem;
-  line-height: 1;
-  padding: 0.1rem 0.25rem;
-  border-radius: 4px;
-  cursor: pointer;
-}
-.card-expand:hover { color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
-
 /* Change-level progress pill beside the status pill. */
 .pill.progress {
   font-variant-numeric: tabular-nums;
@@ -2506,22 +2332,59 @@ body[data-page="setup"] main {
   color: var(--fg-dim, inherit);
 }
 
-/* Drill-down breadcrumb replaces the change <h2> on sub-boards. */
-.crumbs {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0.3rem;
-  font-size: 0.9rem;
-  min-width: 0;
-}
-.crumbs a { color: var(--fg-dim, inherit); text-decoration: none; }
-.crumbs a:hover { color: var(--accent); text-decoration: underline; }
-.crumb-sep { color: var(--line); }
-.crumb-here {
-  font-weight: 600;
-  max-width: 22rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+
+/* --- mobile polish (≤640px): full-width sheets, safe areas, thumb targets --- */
+
+@media (max-width: 640px) {
+  /* Centered dialogs become near-full-screen sheets with sticky headers. */
+  .modal {
+    width: 100%;
+    max-height: none;
+    height: calc(100dvh - var(--app-header-height) - 1.5rem);
+    margin: 0.75rem;
+    border-radius: 6px;
+  }
+  .modal-head {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: var(--surface);
+  }
+  .modal-body {
+    overscroll-behavior: contain;
+  }
+  #notif-modal .notif-window,
+  #commit-modal .commit-window {
+    width: 100%;
+    height: calc(100dvh - var(--app-header-height) - 1.5rem);
+    max-height: none;
+    margin: 0.75rem;
+  }
+  #notif-list,
+  #commit-file-list {
+    overscroll-behavior: contain;
+  }
+  #notif-modal,
+  #commit-modal,
+  #detail {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  /* Change list: the sort control becomes a full-width primary target and
+     card text gets a little more room. */
+  .change-sort { width: 100%; min-height: 44px; }
+  .change-card { padding: 0.9rem 0.8rem; }
+  .section-head .btn-ghost,
+  .section-head .btn-accent { min-height: 44px; }
+
+  /* Explorer, settings, and setup already stack below their breakpoints;
+     give their interactive rows the same 44px floor. */
+  .explorer-detail button,
+  .settings-nav button,
+  .setup-wizard button,
+  .oc-status-head button { min-height: 44px; }
+
+  /* Header actions stay reachable with a thumb. */
+  body:not([data-page="setup"]) > header .topnav a,
+  body:not([data-page="setup"]) > header .topnav button { min-height: 44px; }
 }

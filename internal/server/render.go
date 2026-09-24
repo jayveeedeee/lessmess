@@ -57,7 +57,6 @@ var templateFuncs = template.FuncMap{
 
 type renderer struct {
 	index    *template.Template
-	board    *template.Template
 	partial  *template.Template
 	explorer *template.Template
 	settings *template.Template
@@ -93,7 +92,6 @@ func assetsVersion() string {
 func newRenderer() *renderer {
 	return &renderer{
 		index:    mustParse("templates/layout.html", "templates/index.html"),
-		board:    mustParse("templates/layout.html", "templates/board.html", "templates/partials.html"),
 		partial:  mustParse("templates/partials.html", "templates/explorer.html"),
 		explorer: mustParse("templates/layout.html", "templates/explorer.html"),
 		settings: mustParse("templates/layout.html", "templates/settings.html"),

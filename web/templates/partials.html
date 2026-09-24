@@ -1,24 +1,3 @@
-{{define "boardFragment"}}
-{{range .Columns}}
-<div class="column">
-  <h3><span class="pill status-{{.Status | statusClass}}">{{.Status}}</span> <span class="count">{{len .Tasks}}</span></h3>
-  <div class="cards" data-status="{{.Status}}">{{range .Tasks}}
-    <div class="card" data-task="{{.ID}}">
-      <div class="card-row">
-        <a class="card-title"
-           hx-get="{{$.BoardURL}}/tasks/{{.Path}}"
-           hx-headers='{"Accept": "text/html"}'
-           hx-target="#detail"
-           hx-swap="innerHTML">{{.Title}}</a>
-        {{if .HasSub}}<a class="card-sub" href="{{$.BoardURL}}?task={{.ID}}" title="Open sub-board">{{.SubDone}}/{{.SubTotal}} ✓</a>
-        {{else}}<button type="button" class="card-expand" data-expand="{{.ID}}" title="Expand into a sub plan">⤢</button>{{end}}
-      </div>
-      <div class="card-meta"><span class="chip">{{.ID}}</span><span>{{.Updated}}</span></div>
-    </div>{{end}}</div>
-</div>
-{{end}}
-{{end}}
-
 {{define "chatSnapshot"}}
 <div class="chat-snapshot" data-session="{{.SessionID}}" data-busy="{{.Busy}}" data-page="{{if .History}}history{{else}}latest{{end}}">
   {{if .OlderCursor}}<div class="chat-history-control"><button type="button" class="btn-ghost" data-chat-load-older data-cursor="{{.OlderCursor}}">Load older messages</button></div>{{end}}
@@ -164,7 +143,8 @@
   </div>
   <div class="task-detail-state" data-task-status-control data-change="{{.Change}}" data-task="{{.Task.ID}}" data-status="{{.Status}}">
     <label for="task-status-{{.Task.ID}}"><span>Status</span><span class="task-detail-select"><select id="task-status-{{.Task.ID}}" data-task-status>{{range .Statuses}}<option value="{{.}}"{{if eq . $.Status}} selected{{end}}>{{.}}</option>{{end}}</select></span></label>
-    {{if .HasSub}}<button type="button" class="task-detail-subtasks" data-open-subtasks data-change="{{.Change}}" data-task="{{.Task.ID}}">View subtasks <span>{{.SubDone}}/{{.SubTotal}}</span></button>{{end}}
+    {{if .HasSub}}<button type="button" class="task-detail-subtasks" data-open-subtasks data-change="{{.Change}}" data-task="{{.Task.ID}}">View subtasks <span>{{.SubDone}}/{{.SubTotal}}</span></button>
+    {{else}}<button type="button" class="task-detail-subtasks" data-decompose data-change="{{.Change}}" data-task="{{.Task.ID}}" title="Decompose into a sub plan (creates the container)">Decompose</button>{{end}}
     <span class="task-detail-state-message" role="status" aria-live="polite"></span>
   </div>
   <div class="modal-panes">

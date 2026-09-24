@@ -24,30 +24,35 @@ context exists — chat open or closed.
 
 - Extract that continue/start logic into a shared helper `resumeChangeSession(changeID)` (UI-03's
   card tap reuses it).
-- `renderLocationTrail` appends a distinct "Resume session" action row at the bottom of
-  `#location-menu` when the trail contains a change item; label flips "Resume session"/"Start
-  session" from the sessions payload. Activating it runs the helper and closes the menu.
-- The change crumb persists in the trail for the browser session once a change context is entered
-  (entering = resuming a change's session or opening its chat), so the dropdown stays the
-  re-entry point after the chat closes; picking another change switches the crumb.
+- ~~A separate "Resume session" row~~ Revised during review: the row showed
+  permanently once any change context existed (persisted per visit) and duplicated the crumb's
+  action, so it was removed. The change crumb itself doubles as the resume affordance — tooltip
+  "Resume session", accent-tinted — and activating it enters the change
+  (continues its session) from anywhere, including while it is the current location.
+- Revised on user review (second iteration): no persisted change state. The change crumb exists
+  only while that change's session is open in Chat — closing the chat or returning to the list
+  leaves just `Changes`, and re-entry is the change cards. (An earlier sessionStorage-backed
+  "persists for the visit" crumb read as stale, always-selected state in the breadcrumbs.)
 - Drop the "Chat" crumb for change-bound sessions: the trail reads `Changes / <Change Name>` with
   the change as the current location (aria-current and the `#location-current` toggle label) —
   being in the chat IS being in the change. Panel and detail crumbs (Work / Agents / Runtime /
   document titles) stack on top of the change crumb as today and remain the way back; activating
   the change crumb resumes the session in place (a no-op menu close while its chat is open).
   Unbound discussion chats keep `Changes / Chat`, where "Chat" remains the current location.
-- With the board gone (UI-04), activating the change crumb stops navigating: it enters the change
-  in place via `resumeChangeSession` (chat overlay opens on its session) and closes the menu —
-  same behavior as tapping a change card. The `Changes` crumb keeps its `/` navigation; the
-  change item loses its `/changes/<id>` href. Deep links to `/changes/<id>` still work through
-  UI-04's redirect to `/?change=<id>`, which runs this same resume flow after load.
+- Activating the change crumb while its chat is open returns to the main chat view (closing
+  panels); the `Changes` crumb keeps its `/` navigation. Deep links to `/changes/<id>` work
+  through UI-04's redirect to `/?change=<id>`, which resumes the change after load.
+- Revised on user review: with a plan/task document open above Chat, breadcrumb activation
+  (change crumb or the back chevron) closes the document first — back means back to the
+  conversation, not a no-op behind the modal.
 - Keyboard/AT: the action is a real button, focus returns to the toggle on close (existing
   pattern).
 
 ## Verification
 
 - Fresh index page: no Resume row. After entering a change (chat open or closed): row present at
-  the bottom; label says Start when the change has no sessions, Resume otherwise.
+  the dropdown shows the change crumb (accent-tinted, "Resume session" tooltip) whenever a change
+  context exists; activating it resumes or creates the session.
 - Resume continues the last-opened session (per `tt-last-session:<change>`), falls back to newest
   after localStorage is cleared, and creates + opens one when none exist.
 - Menu closes and focus lands sensibly after activation; Escape still closes without acting.
@@ -56,4 +61,6 @@ context exists — chat open or closed.
 - In a change-bound chat the toggle label and current crumb show the change name (not "Chat");
   Work/Runtime panel crumbs stack above it and return to the main view; an unbound discussion
   still shows `Changes / Chat`.
+- After closing the chat or navigating back, the breadcrumb reads just `Changes` — no stale
+  change crumb, no persisted selection across reloads.
 - `go vet ./... && go test ./...` pass.

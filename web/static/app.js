@@ -1,5 +1,6 @@
-// lessmess board UI glue: SortableJS drag-and-drop, SSE live refresh,
-// htmx form follow-ups, validation banner.
+// lessmess UI glue: chat-first change work (cards list, chat overlay with
+// Work/Sessions/Runtime panels), SSE live refresh, htmx form follow-ups,
+// validation banner.
 (function () {
   "use strict";
 
@@ -13,17 +14,28 @@
     openPreferredSession(sessionID, title);
   }
 
-  function boardEl() { return document.getElementById("board"); }
-
   var locationTrail = [];
   var detailReturnTrail = null;
+
+  // Title of the change bound to the open session ("" when none). Set when
+  // the Work feed resolves; purely in-memory — leaving the change (closing
+  // its chat, navigating away) drops the breadcrumb crumb with it.
+  var activeChangeTitle = "";
 
   function locationBaseTrail() {
     var nav = document.getElementById("location-nav");
     if (!nav) return [];
     var trail = [{ kind: "changes", label: "Changes", url: "/" }];
-    if (nav.dataset.change) {
-      trail.push({ kind: "change", label: nav.dataset.changeTitle || nav.dataset.change, url: "/changes/" + encodeURIComponent(nav.dataset.change) });
+    // The change crumb exists only while a change-bound session is open —
+    // it IS the current location then (no "Chat" crumb). Closing the chat
+    // or returning to the list leaves just Changes; re-entry is the cards.
+    if (chatOpen() && sessionTasksChange) {
+      trail.push({
+        kind: "change",
+        label: activeChangeTitle || sessionTasksChange,
+        url: "/changes/" + encodeURIComponent(sessionTasksChange),
+        change: sessionTasksChange,
+      });
     }
     return trail;
   }
@@ -76,9 +88,11 @@
     var controls = document.getElementById("chat-controls-sheet");
     var agents = document.getElementById("chat-agents");
     var work = document.getElementById("chat-tasks");
+    var sessions = document.getElementById("chat-sessions-sheet");
     if (controls && !controls.hidden) return "controls";
     if (agents && agents.classList.contains("open")) return "agents";
     if (work && work.classList.contains("open")) return "work";
+    if (sessions && !sessions.hidden) return "sessions";
     return "chat";
   }
 
@@ -90,9 +104,13 @@
       return;
     }
     var trail = locationBaseTrail();
-    trail.push({ kind: "chat", label: "Chat" });
+    // A change-bound session lives IN the change: the change crumb (last
+    // of the base trail) is the current location, so no "Chat" crumb.
+    // Unbound discussion chats hang off the bare Changes list.
+    var bound = sessionTasksChange && trail[trail.length - 1].kind === "change";
+    if (!bound) trail.push({ kind: "chat", label: "Chat" });
     var view = activeChatLocationView();
-    var labels = { work: "Work", agents: "Agents", controls: "Controls" };
+    var labels = { work: "Work", agents: "Agents", controls: "Controls", sessions: "Sessions" };
     if (view !== "chat") trail.push({ kind: view, label: labels[view] });
     setLocationTrail(trail);
   }
@@ -128,9 +146,32 @@
 
   function activateLocation(index) {
     var item = locationTrail[index];
-    if (!item || index === locationTrail.length - 1) { closeLocationMenu(true); return; }
+    if (!item) { closeLocationMenu(true); return; }
+    var detail = document.getElementById("detail");
+    // The change crumb is the change itself: activating it enters the
+    // change in place (resumes its session) — even when it is the current
+    // location, since with the chat closed the crumb is the re-entry
+    // point. With the change's chat open it returns to the main view.
+    if (item.kind === "change") {
+      closeLocationMenu(false);
+      if (chatOpen() && sessionTasksChange && sessionTasksChange === item.change) {
+        // Back from a doc: close the modal first so the conversation is
+        // reachable again (the trail re-syncs from closeDetail).
+        if (detail && !detail.hidden) closeDetail();
+        closeChatTasks(false);
+        closeChatAgents(false);
+        closeChatControls(false);
+        closeChatSessions(false);
+        resetChatViews();
+        syncLocationFromChat();
+        return;
+      }
+      resumeChangeSession(item.change);
+      return;
+    }
+    if (index === locationTrail.length - 1) { closeLocationMenu(true); return; }
     closeLocationMenu(false);
-    if (item.kind === "changes" || item.kind === "change") {
+    if (item.kind === "changes") {
       location.href = item.url;
       return;
     }
@@ -144,10 +185,12 @@
       closeChatTasks(false);
       closeChatAgents(false);
       closeChatControls(false);
+      closeChatSessions(false);
       resetChatViews();
     } else if (item.kind === "work") openChatTasks(document.getElementById("location-toggle"));
     else if (item.kind === "agents") openChatAgents(document.getElementById("location-toggle"));
     else if (item.kind === "controls") openChatControls(document.getElementById("location-toggle"));
+    else if (item.kind === "sessions") openChatSessions(document.getElementById("location-toggle"));
     syncLocationFromChat();
   }
 
@@ -190,49 +233,8 @@
 
   initLocationNav();
 
-  // --- drag and drop -----------------------------------------------------
-
-  function initSortable() {
-    var board = boardEl();
-    if (!board || typeof Sortable === "undefined") return;
-    var change = board.getAttribute("data-change");
-    board.querySelectorAll(".cards").forEach(function (col) {
-      if (col._sortable) return; // already initialized
-      col._sortable = new Sortable(col, {
-        group: "board",
-        animation: 120,
-        ghostClass: "sortable-ghost",
-        dragClass: "sortable-drag",
-        onEnd: function (evt) {
-          var task = evt.item.getAttribute("data-task");
-          var status = evt.to.getAttribute("data-status");
-          fetch("/changes/" + encodeURIComponent(change) + "/move", {
-            method: "POST",
-            headers: { "Content-Type": "application/json", Accept: "application/json", "X-Lessmess-UI": "1" },
-            body: JSON.stringify({ task: task, status: status, index: evt.newIndex }),
-          })
-            .then(function (r) {
-              if (!r.ok) return r.json().then(function (j) { throw new Error(j.error || r.statusText); });
-            })
-            .then(refreshBoard)
-            .catch(function (e) {
-              alert("Move failed: " + e.message);
-              refreshBoard();
-            });
-        },
-      });
-    });
-  }
-
-  // --- board refresh ------------------------------------------------------
-
-  function refreshBoard() {
-    var board = boardEl();
-    if (!board || typeof htmx === "undefined") return;
-    // Keep the drill-down task in the URL so SSE refreshes stay scoped.
-    htmx.ajax("GET", location.pathname + location.search, { target: "#board", swap: "innerHTML", headers: { Accept: "text/html" } });
-  }
-
+  // Task status changes (task detail modal) refresh the chat Work panel
+  // feed in place; status drag-and-drop died with the kanban board.
   document.addEventListener("change", function (e) {
     var select = e.target.closest && e.target.closest("[data-task-status]");
     if (!select) return;
@@ -262,7 +264,7 @@
     }).then(function () {
       control.dataset.status = select.value;
       message.textContent = "Status updated.";
-      refreshBoard();
+      if (sessionTasksChange) loadSessionTasks(sessionTasksChange, sessionTasksTask);
     }).catch(function (err) {
       select.value = previous;
       message.textContent = err.message;
@@ -270,14 +272,6 @@
     }).finally(function () {
       select.disabled = false;
     });
-  });
-
-  document.addEventListener("htmx:afterSwap", function (e) {
-    if (e.target && e.target.id === "board") {
-      initSortable();
-      if (chatOpen() && boardEl()) setChatTasks(boardEl(), boardEl().dataset.change);
-      refreshSubs();
-    }
   });
 
   // After a successful htmx form POST, run form-specific follow-ups.
@@ -311,21 +305,20 @@
     clearTimeout(timer);
     timer = setTimeout(function () {
       checkValidation();
-      if (page === "board" && boardEl()) refreshBoard();
       // Keep an open Chat attached when a discussion scaffolds a change.
-      else if (page === "index" && sessionOverlayOpen() && activeSessionID()) followSession();
-      else if (page === "index") location.reload();
+      if (page === "index" && sessionOverlayOpen() && activeSessionID()) followSession();
+      else if (page === "index") refreshChangeCards();
       if (sessionOverlayOpen()) {
-        if (sessionTasksChange) loadSessionTasks(sessionTasksChange);
-        else if (!(page === "board" && boardEl()) && activeSessionID()) resolveSessionTasks(activeSessionID());
+        if (sessionTasksChange) loadSessionTasks(sessionTasksChange, sessionTasksTask);
+        else if (activeSessionID()) resolveSessionTasks(activeSessionID());
       }
     }, 250);
   }
 
   // followSession: the open Chat session was likely just scaffolded
-  // into a change. Once the mapping says so, navigate to that change's
-  // board with ?session= — autoOpenSession reopens the same session there
-  // with its Work view. Until it binds, skip the refresh entirely.
+  // into a change. Once the mapping says so, hand the flow the change
+  // deep link with ?session= so the same session reopens with its Work
+  // view. Until it binds, skip the refresh entirely.
   function followSession() {
     var sessionID = activeSessionID();
     fetch("/api/sessions/" + encodeURIComponent(sessionID) + "/change", { headers: { Accept: "application/json" } })
@@ -333,7 +326,7 @@
       .then(function (j) {
         if (!j || !j.change) return;
         if (!sessionOverlayOpen() || activeSessionID() !== sessionID) return;
-        location.assign("/changes/" + encodeURIComponent(j.change) + "?session=" + encodeURIComponent(sessionID));
+        location.assign("/?change=" + encodeURIComponent(j.change) + "&session=" + encodeURIComponent(sessionID));
       })
       .catch(function () {});
   }
@@ -703,310 +696,22 @@
       .catch(function () {});
   }
 
-  // --- sessions panel ---------------------------------------------------------
-
-  function changeID() {
-    var b = boardEl();
-    return b ? b.getAttribute("data-change") : null;
-  }
+  // --- session resume helpers ------------------------------------------------
 
   function chatDisplayTitle(title) {
     var value = title || "";
-    var change = changeID();
+    var change = sessionTasksChange;
     var prefix = change ? change + " — " : "";
     return prefix && value.indexOf(prefix) === 0 ? value.slice(prefix.length) : value;
   }
 
-  // The board's drill-down task ("" on the change's root board).
-  function boardTask() {
-    var b = boardEl();
-    return b ? b.getAttribute("data-task") || "" : "";
-  }
-
-  // Last-opened session per board scope: change root or drilled task.
-  function lastSessionKey() {
-    var t = boardTask();
-    return "tt-last-session:" + changeID() + (t ? "/" + t : "");
-  }
+  // markOpened records the last-opened session for the change bound to the
+  // open session, so Resume (change crumb / change cards) can continue
+  // exactly this session later.
   function markOpened(sessionID) {
-    try { localStorage.setItem(lastSessionKey(), sessionID); } catch (_) {}
+    if (sessionTasksChange) markOpenedFor(sessionTasksChange, sessionID);
   }
 
-  // fetchSessions calls cb with the change's sessions, or null on error.
-  function fetchSessions(cb) {
-    fetch("/changes/" + changeID() + "/sessions", { headers: { Accept: "application/json" } })
-      .then(function (r) { return r.json(); })
-      .then(function (j) { cb(j.sessions || []); })
-      .catch(function () { cb(null); });
-  }
-
-  function loadSessions() {
-    fetchSessions(function (sessions) {
-      var ul = document.getElementById("sessions-list");
-      if (!ul) return;
-      ul.innerHTML = "";
-      renderSubs(sessions);
-      var scoped = boardSessions(sessions);
-      if (!scoped || !scoped.length) {
-        var empty = document.createElement("li");
-        empty.className = "session-empty";
-        empty.textContent = boardTask()
-          ? "No sessions bound to this task yet — start one."
-          : "No sessions yet — start one.";
-        ul.appendChild(empty);
-        return;
-      }
-      scoped.forEach(function (s) {
-        var li = document.createElement("li");
-        li.className = "session-item";
-        var title = document.createElement("span");
-        title.className = "session-title";
-        title.textContent = s.title;
-        var meta = document.createElement("span");
-        meta.className = "session-meta";
-        meta.textContent = (s.created || "").slice(0, 10);
-        if (s.spawnedFrom) {
-          var badge = document.createElement("span");
-          badge.className = "spawn-badge";
-          badge.textContent = "from " + s.spawnedFrom;
-          badge.title = "Spawned by a handoff from change " + s.spawnedFrom;
-          meta.appendChild(document.createTextNode(" "));
-          meta.appendChild(badge);
-        }
-        var actions = document.createElement("span");
-        actions.className = "session-actions";
-        var chatBtn = document.createElement("button");
-        chatBtn.className = "btn-ghost";
-        chatBtn.textContent = "Chat";
-        chatBtn.addEventListener("click", function () { markOpened(s.session); openChat(s.session, s.title); });
-        var unBtn = document.createElement("button");
-        unBtn.className = "btn-ghost";
-        unBtn.textContent = "✕";
-        unBtn.title = "Unlink from change (session stays in opencode)";
-        unBtn.addEventListener("click", function () {
-          fetch("/changes/" + changeID() + "/sessions/" + s.session, { method: "DELETE" })
-            .then(function (r) { if (!r.ok) throw 0; loadSessions(); })
-            .catch(function () { alert("Unlink failed"); });
-        });
-        actions.appendChild(chatBtn);
-        actions.appendChild(unBtn);
-        li.appendChild(title);
-        li.appendChild(meta);
-        li.appendChild(actions);
-        ul.appendChild(li);
-      });
-    });
-  }
-
-  // --- subagent session chips -------------------------------------------------
-
-  // refreshSubs re-renders the subagent chips from the sessions endpoint;
-  // called on board load and after every board fragment swap.
-  function refreshSubs() {
-    fetchSessions(renderSubs);
-  }
-
-  // renderSubs attaches subagent sessions to their task cards (via the
-  // task-ID title prefix the server maps into `task`); bound sessions
-  // without a task fall back to the header strip. Sessions without a
-  // parent are plain change sessions and render in the Sessions panel only.
-  function renderSubs(sessions) {
-    var byTask = {};
-    var stray = [];
-    (sessions || []).forEach(function (s) {
-      if (s.task) (byTask[s.task] = byTask[s.task] || []).push(s);
-      else if (s.parent) stray.push(s);
-    });
-    document.querySelectorAll("#board .card[data-task]").forEach(function (card) {
-      var old = card.querySelector(".card-subs");
-      if (old) old.remove();
-      var subs = byTask[card.dataset.task];
-      if (!subs || !subs.length) return;
-      var wrap = document.createElement("div");
-      wrap.className = "card-subs";
-      subs.forEach(function (s) { wrap.appendChild(subChip(s)); });
-      card.appendChild(wrap);
-    });
-    var strip = document.getElementById("board-subs");
-    if (!strip) return;
-    strip.innerHTML = "";
-    if (!stray.length) { strip.hidden = true; return; }
-    strip.hidden = false;
-    stray.forEach(function (s) { strip.appendChild(subChip(s)); });
-  }
-
-  // subChip is one subagent session with a Chat action.
-  // Dead sessions
-  // (gone from the opencode service) render dimmed but stay openable.
-  function subChip(s) {
-    var chip = document.createElement("span");
-    chip.className = "sub-chip" + (s.live ? "" : " sub-dead");
-    var dot = document.createElement("span");
-    dot.className = "sub-dot";
-    chip.appendChild(dot);
-    var label = document.createElement("span");
-    label.className = "sub-label";
-    label.textContent = s.title || s.session;
-    label.title = s.session;
-    chip.appendChild(label);
-    var talk = document.createElement("button");
-    talk.type = "button";
-    talk.className = "btn-ghost sub-talk";
-    talk.textContent = "Chat";
-    talk.title = s.live
-      ? "Open Chat on this subagent session"
-      : "Session not found in the opencode service";
-    talk.addEventListener("click", function () { markOpened(s.session); openChat(s.session, s.title); });
-    chip.appendChild(talk);
-    return chip;
-  }
-
-  function initSessions() {
-    var btn = document.getElementById("sessions-btn");
-    if (!btn) return;
-    btn.addEventListener("click", function () {
-      var p = document.getElementById("sessions-panel");
-      p.hidden = !p.hidden;
-      if (!p.hidden) loadSessions();
-    });
-    var nb = document.getElementById("new-session-btn");
-    if (nb) {
-      nb.addEventListener("click", function () {
-        createSessionAndOpen(nb, maybeOpenSession);
-      });
-    }
-    initSpawnChange();
-  }
-
-  // --- spawn change (handoff) -------------------------------------------------
-
-  // initSpawnChange wires the "Spawn change" action: pick a handoff*.md
-  // artifact authored in this change, and spawn a new change whose fresh
-  // session is seeded from it. The picker reloads every time the form
-  // opens (artifacts are written by sessions or by hand while the board
-  // is open).
-  function initSpawnChange() {
-    var btn = document.getElementById("spawn-change-btn");
-    var form = document.getElementById("spawn-change-form");
-    if (!btn || !form) return;
-    var sel = document.getElementById("spawn-artifact");
-    var errEl = document.getElementById("spawn-error");
-
-    function spawnError(msg) {
-      errEl.textContent = msg || "";
-      errEl.hidden = !msg;
-    }
-
-    function loadHandoffs() {
-      spawnError("");
-      sel.innerHTML = "";
-      fetch("/changes/" + changeID() + "/handoffs", { headers: { Accept: "application/json" } })
-        .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.statusText); return j; }); })
-        .then(function (j) {
-          var files = j.handoffs || [];
-          if (!files.length) {
-            var opt = document.createElement("option");
-            opt.value = "";
-            opt.textContent = "no handoff-*.md artifacts in this change";
-            sel.appendChild(opt);
-            sel.disabled = true;
-            return;
-          }
-          sel.disabled = false;
-          files.forEach(function (f) {
-            var opt = document.createElement("option");
-            opt.value = f;
-            opt.textContent = f;
-            sel.appendChild(opt);
-          });
-        })
-        .catch(function (e) { spawnError("Load handoffs failed: " + e.message); });
-    }
-
-    btn.addEventListener("click", function () {
-      form.hidden = !form.hidden;
-      if (!form.hidden) loadHandoffs();
-    });
-
-    form.addEventListener("submit", function (ev) {
-      ev.preventDefault();
-      var title = document.getElementById("spawn-title").value.trim();
-      var prefix = document.getElementById("spawn-prefix").value.trim();
-      var artifact = sel.value;
-      if (!title || !artifact) return;
-      var body = { title: title, artifact: artifact };
-      if (prefix) body.prefix = prefix;
-      var submit = form.querySelector("button[type=submit]");
-      submit.disabled = true;
-      fetch("/changes/" + changeID() + "/spawn-change", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify(body),
-      })
-        .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.statusText); return j; }); })
-        .then(function (j) {
-          form.hidden = true;
-          form.reset();
-          spawnError("");
-          openPreferredSession(j.session, changeID() + " — " + j.title);
-        })
-        .catch(function (e) { spawnError("Spawn failed: " + e.message); })
-        .finally(function () { submit.disabled = false; });
-    });
-  }
-
-  // createSessionAndOpen POSTs a session for the board scope (task-bound
-  // on sub-boards) and hands it to onCreated.
-  function createSessionAndOpen(btn, onCreated) {
-    var t = boardTask();
-    fetch("/changes/" + changeID() + "/sessions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify(t ? { task: t } : {}),
-    })
-      .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.statusText); return j; }); })
-      .then(function (s) { markOpened(s.session); loadSessions(); onCreated(s.session, s.title); })
-      .catch(function (e) { alert("Create session failed: " + e.message); });
-  }
-
-  // boardSessions filters a session list to the board scope: on a
-  // sub-board only sessions bound to that exact task (plus its auto-spawn
-  // and delegated children share the task annotation).
-  function boardSessions(sessions) {
-    var t = boardTask();
-    if (!t) return sessions;
-    return (sessions || []).filter(function (s) { return s.task === t; });
-  }
-
-  // --- continue / start session button ---------------------------------------
-
-  // One-click resume: opens the last-opened session (validated against the
-  // live list, falling back to the newest created), or creates + opens a
-  // session when the change has none.
-  function initContinue() {
-    var btn = document.getElementById("continue-session-btn");
-    if (!btn) return;
-    fetchSessions(function (sessions) {
-      if (sessions) {
-        var scoped = boardSessions(sessions);
-        btn.textContent = scoped.length ? "Continue session" : "Start session";
-      }
-      renderSubs(sessions);
-    });
-    btn.addEventListener("click", function () {
-      if (btn.disabled) return;
-      fetchSessions(function (sessions) {
-        if (!sessions) { alert("Could not load sessions"); return; }
-        var scoped = boardSessions(sessions);
-        if (!scoped.length) { createSessionAndOpen(btn, function (sid, title) { btn.textContent = "Continue session"; maybeOpenSession(sid, title); }); return; }
-        var stored = null;
-        try { stored = localStorage.getItem(lastSessionKey()); } catch (_) {}
-        var s = scoped.find(function (x) { return x.session === stored; }) || scoped[scoped.length - 1];
-        markOpened(s.session);
-        openPreferredSession(s.session, s.title);
-      });
-    });
-  }
 
   // --- chat overlay ---------------------------------------------------------
 
@@ -1100,7 +805,7 @@
 
   function syncChatHeader() {
     var view = currentChatView();
-    var labels = { work: "Work", agents: "Child activity", controls: "Session controls" };
+    var labels = { work: "Work", agents: "Child activity", controls: "Session controls", sessions: "Sessions" };
     var title = document.getElementById("chat-title");
     var state = document.getElementById("chat-session-state");
     var close = document.querySelector(".chat-head [data-close-chat]");
@@ -1139,13 +844,15 @@
       win.querySelectorAll("[data-chat-view-panel]").forEach(function (panel) {
         var name = panel.dataset.chatViewPanel;
         var selected = name === "chat" || (name === "work" && !panel.hidden && panel.classList.contains("open")) ||
-          (name === "agents" && !panel.hidden && panel.classList.contains("open")) || (name === "controls" && !panel.hidden);
+          (name === "agents" && !panel.hidden && panel.classList.contains("open")) || (name === "controls" && !panel.hidden) ||
+          (name === "sessions" && !panel.hidden);
         panel.setAttribute("aria-hidden", String(!selected));
         panel.inert = !selected;
       });
       document.getElementById("chat-tasks-btn").setAttribute("aria-expanded", String(document.getElementById("chat-tasks").classList.contains("open")));
       document.getElementById("chat-agents-btn").setAttribute("aria-expanded", String(document.getElementById("chat-agents").classList.contains("open")));
       document.getElementById("chat-controls-btn").setAttribute("aria-expanded", String(!document.getElementById("chat-controls-sheet").hidden));
+      document.getElementById("chat-sessions-btn").setAttribute("aria-expanded", String(!document.getElementById("chat-sessions-sheet").hidden));
       syncChatHeader();
       return;
     }
@@ -1204,9 +911,10 @@
     var current = cstate.viewStack.pop();
     var returnFocus = cstate.viewFocus.pop();
     saveChatViewPosition(current);
-    var toggle = document.getElementById(current === "agents" ? "chat-agents-btn" : current === "work" ? "chat-tasks-btn" : current === "controls" ? "chat-controls-btn" : "");
+    var toggle = document.getElementById(current === "agents" ? "chat-agents-btn" : current === "work" ? "chat-tasks-btn" : current === "controls" ? "chat-controls-btn" : current === "sessions" ? "chat-sessions-btn" : "");
     if (toggle) toggle.setAttribute("aria-expanded", "false");
     if (current === "controls") document.getElementById("chat-controls-sheet").hidden = true;
+    if (current === "sessions") document.getElementById("chat-sessions-sheet").hidden = true;
     if (current === "agents") {
       document.getElementById("chat-agents").classList.remove("open");
       document.getElementById("chat-agent-backdrop").hidden = true;
@@ -1225,9 +933,11 @@
     var controls = document.getElementById("chat-controls-sheet");
     var agents = document.getElementById("chat-agents");
     var work = document.getElementById("chat-tasks");
+    var sessions = document.getElementById("chat-sessions-sheet");
     if (controls && !controls.hidden) { closeChatControls(); return true; }
     if (agents && !agents.hidden && agents.classList.contains("open")) { closeChatAgents(); return true; }
     if (work && !work.hidden && work.classList.contains("open")) { closeChatTasks(); return true; }
+    if (sessions && !sessions.hidden) { closeChatSessions(); return true; }
     return false;
   }
 
@@ -1317,12 +1027,8 @@
     renderChatNavigation();
     updateChatDeliveryControls();
     setChatStatus("Connecting…");
-    setChatTasks(null, null);
-    if (page === "board" && boardEl() && boardEl().dataset.change) {
-      setChatTasks(boardEl(), boardEl().dataset.change);
-    } else {
-      resolveSessionTasks(sessionID);
-    }
+    setChatTasks(null);
+    resolveSessionTasks(sessionID);
     pollChat(true);
     loadChatUsage(true);
     loadChatLifecycle();
@@ -2232,6 +1938,7 @@
     if (name !== "work") closeChatTasks(false);
     if (name !== "agents") closeChatAgents(false);
     if (name !== "controls") closeChatControls(false);
+    if (name !== "sessions") closeChatSessions(false);
     return true;
   }
 
@@ -2953,16 +2660,24 @@
     focusChatPanel("work");
   }
 
-  function setChatTasks(src, change, task) {
+  function setChatTasks(feed) {
     var panel = document.getElementById("chat-tasks");
     var toggle = document.getElementById("chat-tasks-btn");
     var plan = document.getElementById("chat-plan-btn");
+    var sessionsBtn = document.getElementById("chat-sessions-btn");
     if (!panel || !toggle || !plan) return;
-    if (!change) closeChatTasks();
+    var change = feed && feed.change;
+    if (!change) {
+      closeChatTasks();
+      closeChatSessions(false);
+      sessionTasksChange = null;
+      sessionTasksTask = "";
+    }
     panel.innerHTML = "";
     panel.hidden = !change;
     toggle.hidden = !change;
     plan.hidden = !change;
+    if (sessionsBtn) sessionsBtn.hidden = !change;
     if (change) {
       var planURL = "/changes/" + encodeURIComponent(change) + "/plan";
       plan.href = planURL;
@@ -2972,8 +2687,376 @@
       plan.removeAttribute("href");
       plan.removeAttribute("hx-get");
     }
-    if (task === undefined && src && src.matches && src.matches("#board")) task = src.dataset.task || "";
-    if (change) renderTaskPanel(panel, src, change, task || "");
+    if (change) renderTaskPanel(panel, feed);
+  }
+
+  // --- Sessions quick action + sheet -----------------------------------------
+  // One change-scoped surface inside chat: session switching/new/unlink
+  // and the change-level actions (commit, close/reopen, worktree
+  // info/remove) that lived on the board page. Spawning a change from a
+  // handoff artifact stays an agent-driven API flow with no UI affordance.
+
+  function sheetChange() {
+    return sessionTasksChange || null;
+  }
+
+  function closeChatSessions(returnFocus) {
+    var sheet = document.getElementById("chat-sessions-sheet");
+    var button = document.getElementById("chat-sessions-btn");
+    if (compactChatUI() && cstate.viewStack[cstate.viewStack.length - 1] === "sessions") closeChatView();
+    if (sheet) sheet.hidden = true;
+    if (button) button.setAttribute("aria-expanded", "false");
+    syncChatView(false);
+    if (!compactChatUI() && returnFocus !== false) restoreChatAuxiliaryFocus("sessions");
+  }
+
+  function openChatSessions(opener) {
+    var sheet = document.getElementById("chat-sessions-sheet");
+    var button = document.getElementById("chat-sessions-btn");
+    if (!sheet || sheetChange() == null) return;
+    if (!compactChatUI()) requestChatAuxiliary("sessions");
+    if (!compactChatUI()) cstate.auxiliaryFocus.sessions = opener || document.activeElement;
+    sheet.hidden = false;
+    if (button) button.setAttribute("aria-expanded", "true");
+    if (compactChatUI()) openChatView("sessions", opener);
+    else { syncChatView(false); focusChatPanel("sessions"); }
+    loadSessionsSheet();
+  }
+
+  // fetchSessionsFor is the change-parameterized sessions fetch (the board
+  // helpers read the board's data-change; the sheet resolves its change
+  // from the open session's binding).
+  function fetchSessionsFor(change, cb) {
+    fetch("/changes/" + encodeURIComponent(change) + "/sessions", { headers: { Accept: "application/json" } })
+      .then(function (r) { return r.json(); })
+      .then(function (j) { cb(j.sessions || []); })
+      .catch(function () { cb(null); });
+  }
+
+  // markOpenedFor records the last-opened session for a change-scoped
+  // resume key; markOpened keeps the board's task-scoped key shape.
+  function markOpenedFor(change, sessionID) {
+    try { localStorage.setItem("tt-last-session:" + change, sessionID); } catch (_) {}
+  }
+
+  // createChangeSessionFor POSTs a change-root session and hands it to cb.
+  function createChangeSessionFor(change, cb) {
+    fetch("/changes/" + encodeURIComponent(change) + "/sessions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({}),
+    })
+      .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.statusText); return j; }); })
+      .then(function (s) { cb(s); })
+      .catch(function (e) { alert("Create session failed: " + e.message); });
+  }
+
+  // resumeChangeSession is the shared continue/start entry point behind
+  // the breadcrumb Resume action and (in UI-03) the change cards: continue
+  // the last-opened session when it still exists, else the newest created,
+  // else create and open one. Opening the already-active session is a
+  // no-op.
+  function resumeChangeSession(change) {
+    if (!change) return;
+    fetchSessionsFor(change, function (sessions) {
+      if (!sessions) { alert("Could not load sessions"); return; }
+      var stored = null;
+      try { stored = localStorage.getItem("tt-last-session:" + change); } catch (_) {}
+      var s = sessions.find(function (x) { return x.session === stored; }) || sessions[sessions.length - 1];
+      if (!s) {
+        createChangeSessionFor(change, function (created) {
+          markOpenedFor(change, created.session);
+          openChat(created.session, created.title);
+        });
+        return;
+      }
+      if (chatOpen() && activeSessionID() === s.session) return;
+      markOpenedFor(change, s.session);
+      openChat(s.session, s.title);
+    });
+  }
+
+  function sessionsSheetError(msg) {
+    var el = document.getElementById("chat-sessions-error");
+    if (!el) return;
+    el.textContent = msg || "";
+    el.hidden = !msg;
+  }
+
+  function loadSessionsSheet() {
+    var change = sheetChange();
+    var list = document.getElementById("chat-sessions-list");
+    if (!change || !list) return;
+    sessionsSheetError("");
+    fetchSessionsFor(change, function (sessions) {
+      list.innerHTML = "";
+      if (!sessions) { sessionsSheetError("Could not load sessions."); return; }
+      if (!sessions.length) {
+        var empty = document.createElement("li");
+        empty.className = "session-empty";
+        empty.textContent = "No sessions yet — start one.";
+        list.appendChild(empty);
+        return;
+      }
+      sessions.forEach(function (s) { list.appendChild(sessionsSheetRow(change, s)); });
+    });
+    refreshSessionsSheetChangeInfo(change);
+  }
+
+  function sessionsSheetRow(change, s) {
+    var li = document.createElement("li");
+    li.className = "session-item" + (s.live ? "" : " session-dead");
+    var open = document.createElement("button");
+    open.type = "button";
+    open.className = "session-switch";
+    var title = document.createElement("span");
+    title.className = "session-title";
+    title.textContent = s.title;
+    var meta = document.createElement("span");
+    meta.className = "session-meta";
+    meta.textContent = (s.created || "").slice(0, 10);
+    if (s.spawnedFrom) {
+      var badge = document.createElement("span");
+      badge.className = "spawn-badge";
+      badge.textContent = "from " + s.spawnedFrom;
+      badge.title = "Spawned by a handoff from change " + s.spawnedFrom;
+      meta.appendChild(document.createTextNode(" "));
+      meta.appendChild(badge);
+    }
+    if (s.task) {
+      var taskChip = document.createElement("span");
+      taskChip.className = "chip";
+      taskChip.textContent = s.task;
+      taskChip.title = "Bound to task " + s.task;
+      meta.appendChild(document.createTextNode(" "));
+      meta.appendChild(taskChip);
+    }
+    if (!s.live) {
+      var dead = document.createElement("span");
+      dead.className = "session-dead-note";
+      dead.textContent = "not found in opencode";
+      meta.appendChild(document.createTextNode(" "));
+      meta.appendChild(dead);
+    }
+    open.appendChild(title);
+    open.appendChild(meta);
+    open.title = s.live ? "Open this session in Chat" : "Session not found in the opencode service";
+    open.addEventListener("click", function () {
+      if (!s.live) return;
+      markOpened(s.session);
+      openChat(s.session, s.title);
+    });
+    var actions = document.createElement("span");
+    actions.className = "session-actions";
+    var unBtn = document.createElement("button");
+    unBtn.className = "btn-ghost";
+    unBtn.textContent = "✕";
+    unBtn.title = "Unlink from change (session stays in opencode)";
+    unBtn.addEventListener("click", function () {
+      fetch("/changes/" + encodeURIComponent(change) + "/sessions/" + encodeURIComponent(s.session), { method: "DELETE" })
+        .then(function (r) { if (!r.ok) throw 0; loadSessionsSheet(); })
+        .catch(function () { sessionsSheetError("Unlink failed."); });
+    });
+    actions.appendChild(unBtn);
+    li.appendChild(open);
+    li.appendChild(actions);
+    return li;
+  }
+
+  // refreshSessionsSheetChangeInfo pulls the change JSON (overall status,
+  // worktree) and renders the change-actions footer accordingly.
+  function refreshSessionsSheetChangeInfo(change) {
+    var overallEl = document.getElementById("chat-sessions-overall");
+    var wtEl = document.getElementById("chat-sessions-worktree");
+    var closeBtn = document.getElementById("chat-change-close-btn");
+    var reopenBtn = document.getElementById("chat-change-reopen-btn");
+    var wtRemoveBtn = document.getElementById("chat-change-worktree-remove");
+    if (!overallEl || !wtEl) return;
+    fetch("/changes/" + encodeURIComponent(change), { headers: { Accept: "application/json" } })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (j) {
+        if (!j) return;
+        var overall = j.overall || "";
+        overallEl.textContent = overall;
+        overallEl.className = "chat-sessions-overall status-" + statusClass(overall);
+        if (closeBtn) closeBtn.hidden = overall === "Done";
+        if (reopenBtn) reopenBtn.hidden = overall !== "Done";
+        var wt = j.worktree;
+        wtEl.innerHTML = "";
+        wtEl.hidden = !wt;
+        if (wtRemoveBtn) wtRemoveBtn.hidden = !wt;
+        if (!wt) return;
+        var branch = document.createElement("span");
+        branch.className = "pill wt-branch";
+        branch.textContent = wt.Branch || "";
+        branch.title = "Worktree: " + (wt.Path || "");
+        wtEl.appendChild(branch);
+        if (wt.State === "dirty") {
+          var flag = document.createElement("span");
+          flag.className = "pill wt-flag";
+          flag.textContent = "uncommitted";
+          flag.title = "The worktree has uncommitted changes";
+          wtEl.appendChild(flag);
+        }
+        if (wt.State === "missing") {
+          var missing = document.createElement("span");
+          missing.className = "pill wt-flag";
+          missing.textContent = "worktree missing";
+          wtEl.appendChild(missing);
+        }
+        if (wt.PRURL) {
+          var pr = document.createElement("a");
+          pr.className = "pill wt-pr";
+          pr.href = wt.PRURL;
+          pr.target = "_blank";
+          pr.rel = "noopener";
+          pr.textContent = "PR ↗";
+          wtEl.appendChild(pr);
+        }
+        if (wt.Review) {
+          var reviewPill = document.createElement("span");
+          reviewPill.className = "pill wt-review";
+          reviewPill.dataset.review = wt.Review;
+          reviewPill.textContent = "review: " + wt.Review;
+          wtEl.appendChild(reviewPill);
+          var reviewBtn = document.createElement("button");
+          reviewBtn.type = "button";
+          reviewBtn.className = "btn-ghost";
+          reviewBtn.textContent = "Review";
+          reviewBtn.setAttribute("hx-get", "/changes/" + encodeURIComponent(change) + "/review");
+          reviewBtn.setAttribute("hx-target", "#detail");
+          reviewBtn.setAttribute("hx-swap", "innerHTML");
+          wtEl.appendChild(reviewBtn);
+        }
+        if (window.htmx) htmx.process(wtEl);
+      })
+      .catch(function () {});
+  }
+
+  function postLifecycleFor(change, action) {
+    fetch("/changes/" + encodeURIComponent(change) + "/" + action, {
+      method: "POST",
+      headers: { Accept: "application/json", "X-Lessmess-UI": "1" },
+    })
+      .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.statusText); return j; }); })
+      .then(function () {
+        loadSessionsSheet();
+        loadSessionTasks(change, sessionTasksTask);
+      })
+      .catch(function (e) { sessionsSheetError(action + " failed: " + e.message); });
+  }
+
+  function initSessionsSheet() {
+    var sheet = document.getElementById("chat-sessions-sheet");
+    if (!sheet) return;
+    var openBtn = document.getElementById("chat-sessions-btn");
+    if (openBtn) {
+      openBtn.addEventListener("click", function () {
+        if (!sheet.hidden && !compactChatUI()) closeChatSessions();
+        else openChatSessions(openBtn);
+      });
+    }
+    document.getElementById("chat-sessions-close").addEventListener("click", function () { closeChatSessions(); });
+    document.getElementById("chat-session-new-btn").addEventListener("click", function () {
+      var change = sheetChange();
+      if (!change) return;
+      fetch("/changes/" + encodeURIComponent(change) + "/sessions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({}),
+      })
+        .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.statusText); return j; }); })
+        .then(function (s) {
+          markOpened(s.session);
+          loadSessionsSheet();
+          openChat(s.session, s.title);
+        })
+        .catch(function (e) { sessionsSheetError("Create session failed: " + e.message); });
+    });
+
+    var closeBtn = document.getElementById("chat-change-close-btn");
+    var reopenBtn = document.getElementById("chat-change-reopen-btn");
+    if (closeBtn) {
+      closeBtn.addEventListener("click", function () {
+        var change = sheetChange();
+        if (!change) return;
+        // Root-level open-task warning; the server's close gate stays
+        // authoritative (it checks the whole tree and names offenders).
+        fetch("/changes/" + encodeURIComponent(change) + "/tasks", { headers: { Accept: "application/json" } })
+          .then(function (r) { return r.ok ? r.json() : { tasks: [] }; })
+          .then(function (feed) {
+            var open = (feed.tasks || []).filter(function (t) { return t.status !== "Done" && t.status !== "Cancelled"; }).length;
+            if (open > 0 && !window.confirm(open + " task(s) are not Done or Cancelled — close the change anyway?")) return;
+            postLifecycleFor(change, "close");
+          })
+          .catch(function () { postLifecycleFor(change, "close"); });
+      });
+    }
+    if (reopenBtn) {
+      reopenBtn.addEventListener("click", function () {
+        var change = sheetChange();
+        if (change) postLifecycleFor(change, "reopen");
+      });
+    }
+
+    var commitBtn = document.getElementById("chat-change-commit-btn");
+    if (commitBtn) {
+      commitBtn.addEventListener("click", function () {
+        var change = sheetChange();
+        if (!change || commitBtn.disabled) return;
+        commitBtn.disabled = true;
+        commitBtn.innerHTML = '<span class="spinner" aria-hidden="true"></span> Committing…';
+        fetch("/changes/" + encodeURIComponent(change) + "/commit", { method: "POST", headers: { Accept: "application/json" } })
+          .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.statusText); return j; }); })
+          .then(function (j) { pollSheetCommitStatus(change, j.session, 0); })
+          .catch(function (e) {
+            commitBtn.disabled = false;
+            commitBtn.textContent = "Commit";
+            sessionsSheetError("Commit failed: " + e.message);
+          });
+      });
+    }
+
+    var wtRemoveBtn = document.getElementById("chat-change-worktree-remove");
+    if (wtRemoveBtn) {
+      wtRemoveBtn.addEventListener("click", function () {
+        var change = sheetChange();
+        if (!change) return;
+        if (!window.confirm("Remove this change's worktree? The branch and its commits are kept.")) return;
+        wtRemoveBtn.disabled = true;
+        fetch("/changes/" + encodeURIComponent(change) + "/worktree/remove", { method: "POST", headers: { Accept: "application/json" } })
+          .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.statusText); return j; }); })
+          .then(function () { loadSessionsSheet(); })
+          .catch(function (e) { sessionsSheetError("Worktree removal failed: " + e.message); })
+          .finally(function () { wtRemoveBtn.disabled = false; });
+      });
+    }
+
+  }
+
+  function pollSheetCommitStatus(change, session, attempts) {
+    var commitBtn = document.getElementById("chat-change-commit-btn");
+    if (attempts > 200) { // ~10 minutes max
+      if (commitBtn) { commitBtn.disabled = false; commitBtn.textContent = "Commit"; }
+      sessionsSheetError("Commit is taking unusually long — check the session in the Sessions sheet.");
+      return;
+    }
+    fetch("/changes/" + encodeURIComponent(change) + "/commit-status?session=" + encodeURIComponent(session), { headers: { Accept: "application/json" } })
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (j.done) {
+          if (commitBtn) commitBtn.innerHTML = "✓ Committed";
+          setTimeout(function () {
+            if (commitBtn) { commitBtn.disabled = false; commitBtn.textContent = "Commit"; }
+          }, 3000);
+        } else {
+          setTimeout(function () { pollSheetCommitStatus(change, session, attempts + 1); }, 3000);
+        }
+      })
+      .catch(function () {
+        if (commitBtn) { commitBtn.disabled = false; commitBtn.textContent = "Commit"; }
+        sessionsSheetError("Lost contact while waiting for the commit — check the Sessions sheet.");
+      });
   }
 
   function closeChatMore(returnFocus) {
@@ -3365,6 +3448,7 @@
       else openChatTasks(moreButton);
     });
     document.getElementById("chat-task-backdrop").addEventListener("click", closeChatTasks);
+    initSessionsSheet();
     function menuKeyboard(menu, close) {
       menu.addEventListener("keydown", function (e) {
         var items = Array.prototype.filter.call(menu.querySelectorAll('[role="menuitem"]'), function (item) { return !item.disabled && !item.hidden; });
@@ -3387,6 +3471,7 @@
       closeChatTasks(false);
       closeChatAgents(false);
       closeChatControls(false);
+      closeChatSessions(false);
       resetChatViews();
     });
     if (window.visualViewport) {
@@ -3706,8 +3791,9 @@
   });
 
   // The change whose Work view was resolved for a Chat opened away from its
-  // board. On board pages the live board DOM remains authoritative.
+  // board, plus the scope ("" = change root) so SSE refreshes keep it.
   var sessionTasksChange = null;
+  var sessionTasksTask = "";
 
   // --- Chat Work panel -----------------------------------------------------
 
@@ -3720,41 +3806,52 @@
   // Mirrors the statusClass template func in internal/server/render.go.
   function statusClass(s) { return s.toLowerCase().replace(/ /g, "-"); }
 
-  function renderTaskPanel(panel, src, change, task) {
-    var chatWork = panel.id === "chat-tasks";
+  // Mirrors model.TaskStatusOrder in internal/model/model.go.
+  var TASK_STATUS_ORDER = ["Not started", "In progress", "Blocked", "Test", "Done", "Cancelled"];
+
+  // renderTaskPanel builds the Work panel from the /changes/{id}/tasks
+  // JSON feed: status groups in workflow order, rows opening the detail
+  // modal, plan links, and the scope row when scoped to a container.
+  function renderTaskPanel(panel, feed) {
+    var change = feed.change;
+    var task = feed.scope || "";
     var html = '<div class="ttp-scroll" data-chat-view-scroll>';
-    if (chatWork && change) {
+    if (change) {
       html += '<a class="ttp-plan ttp-plan-first" data-work-document="plan" hx-get="/changes/' +
         encodeURIComponent(change) + '/plan" hx-target="#detail" hx-swap="innerHTML"><span><strong>Plan</strong><small>Read the change plan</small></span><span aria-hidden="true">&rsaquo;</span></a>';
     }
-    if (chatWork && task) {
-      html += '<div class="ttp-scope"><button type="button" data-work-root data-change="' + esc(change) + '">All tasks</button><span>Subtasks of <strong>' + esc(task) + '</strong></span></div>';
+    if (task) {
+      html += '<div class="ttp-scope"><button type="button" data-work-root data-change="' + esc(change) + '">All tasks</button><span>Subtasks of <strong>' + esc(feed.scopeTitle || task) + '</strong></span></div>';
     }
     html += '<div class="ttp-head">' + (task ? "Subtasks" : "Tasks") + '</div>';
+    var byStatus = {};
+    (feed.tasks || []).forEach(function (row) {
+      (byStatus[row.status] = byStatus[row.status] || []).push(row);
+    });
     var groups = 0;
-    if (src) {
-      src.querySelectorAll(".cards[data-status]").forEach(function (col) {
-        var cards = col.querySelectorAll(".card");
-        if (!cards.length) return;
-        groups++;
-        var status = col.getAttribute("data-status");
-        html += '<div class="ttp-group"><div class="ttp-group-head status-' +
-          statusClass(status) + '"><span>' + esc(status) + '</span><span class="count">' + cards.length +
-          "</span></div>";
-        cards.forEach(function (card) {
-          var a = card.querySelector(".card-title");
-          var href = a && a.getAttribute("hx-get");
-          if (!href) return;
-          var sub = card.querySelector(".card-sub");
-          var marker = sub ? '<span class="ttp-subtask-marker" title="Has subtasks" aria-label="Has subtasks, ' + esc(sub.textContent.trim()) + '">' + esc(sub.textContent.trim().replace(/\s*✓\s*$/, "")) + '</span>' : "";
-          html += '<a class="ttp-row"' + (chatWork ? ' data-work-document="task"' : '') + ' hx-get="' + esc(href) + '" hx-headers=\'{"Accept": "text/html"}\'' +
-            ' hx-target="#detail" hx-swap="innerHTML"><span class="chip">' +
-            esc(card.getAttribute("data-task") || "") + '</span><span class="ttp-row-title">' +
-            esc(a.textContent) + "</span>" + marker + "</a>";
-        });
-        html += "</div>";
+    function group(status) {
+      var rows = byStatus[status];
+      if (!rows || !rows.length) return;
+      groups++;
+      html += '<div class="ttp-group"><div class="ttp-group-head status-' +
+        statusClass(status) + '"><span>' + esc(status) + '</span><span class="count">' + rows.length +
+        "</span></div>";
+      rows.forEach(function (row) {
+        var marker = row.hasSub
+          ? '<span class="ttp-subtask-marker" title="Has subtasks" aria-label="Has subtasks, ' +
+            esc(row.subDone + "/" + row.subTotal) + '">' + esc(row.subDone + "/" + row.subTotal) + "</span>"
+          : "";
+        html += '<a class="ttp-row" data-work-document="task" hx-get="' + esc(row.href) +
+          '" hx-headers=\'{"Accept": "text/html"}\'' +
+          ' hx-target="#detail" hx-swap="innerHTML"><span class="chip">' +
+          esc(row.id) + '</span><span class="ttp-row-title">' + esc(row.title) + "</span>" + marker + "</a>";
       });
+      html += "</div>";
     }
+    TASK_STATUS_ORDER.forEach(group);
+    Object.keys(byStatus).forEach(function (status) {
+      if (TASK_STATUS_ORDER.indexOf(status) === -1) group(status);
+    });
     if (!groups) html += '<div class="ttp-empty">No tasks yet.</div>';
     html += "</div>"; // .ttp-scroll
     // Fixed footer: open the change plan modal, same request as the board's
@@ -3769,7 +3866,7 @@
   }
 
   // Chats opened away from a board resolve the session's change binding and,
-  // when bound, fill Work from the change's board fragment.
+  // when bound, fill Work from the change's tasks JSON feed.
   function resolveSessionTasks(sessionID) {
     fetch("/api/sessions/" + encodeURIComponent(sessionID) + "/change", { headers: { Accept: "application/json" } })
       .then(function (r) { return r.ok ? r.json() : null; })
@@ -3782,33 +3879,40 @@
   }
 
   function loadSessionTasks(changeID, taskID) {
-    var url = "/changes/" + encodeURIComponent(changeID);
+    var url = "/changes/" + encodeURIComponent(changeID) + "/tasks";
     if (taskID) url += "?task=" + encodeURIComponent(taskID);
-    return fetch(url, { headers: { Accept: "text/html", "HX-Request": "true" } })
-      .then(function (r) { return r.ok ? r.text() : null; })
-      .then(function (html) {
-        if (html == null || !sessionOverlayOpen()) return false;
-        var src = document.createElement("div");
-        src.innerHTML = html;
+    return fetch(url, { headers: { Accept: "application/json" } })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (feed) {
+        if (!feed || !sessionOverlayOpen()) return false;
+        activeChangeTitle = feed.title || changeID;
         sessionTasksChange = changeID;
-        if (chatOpen()) setChatTasks(src, changeID, taskID || "");
+        sessionTasksTask = taskID || "";
+        if (chatOpen()) {
+          setChatTasks(feed);
+          syncLocationFromChat();
+        }
         return true;
       })
       .catch(function () { return false; });
   }
 
-  // Auto-open Chat when arriving from the new-change-session flow
-  // (/changes/{id}?session={sid}).
-  function autoOpenSession() {
-    if (page !== "board") return;
-    var sid = new URLSearchParams(location.search).get("session");
-    if (!sid) return;
+  // Auto-open Chat when arriving from a change deep link
+  // (/?change={id}[&session={sid}]) — the destination of the old
+  // /changes/{id} board redirects.
+  function initChangeDeepLink() {
+    if (page !== "index") return;
+    var params = new URLSearchParams(location.search);
+    var change = params.get("change");
+    if (!change) return;
+    var sid = params.get("session");
     history.replaceState(null, "", location.pathname);
-    fetch("/changes/" + changeID() + "/sessions", { headers: { Accept: "application/json" } })
+    if (!sid) { resumeChangeSession(change); return; }
+    fetch("/changes/" + encodeURIComponent(change) + "/sessions", { headers: { Accept: "application/json" } })
       .then(function (r) { return r.json(); })
       .then(function (j) {
         var s = (j.sessions || []).find(function (x) { return x.session === sid; });
-        markOpened(sid);
+        markOpenedFor(change, sid);
         openPreferredSession(sid, s ? s.title : sid);
       })
       .catch(function () { openPreferredSession(sid, sid); });
@@ -3818,7 +3922,21 @@
     var subtasks = e.target.closest("[data-open-subtasks]");
     if (subtasks) {
       if (!chatOpen()) {
-        location.href = "/changes/" + encodeURIComponent(subtasks.dataset.change) + "?task=" + encodeURIComponent(subtasks.dataset.task);
+        // Enter the change first; scope the Work panel to the subtasks
+        // once its session is open.
+        var change = subtasks.dataset.change;
+        var task = subtasks.dataset.task;
+        resumeChangeSession(change);
+        var waits = 0;
+        var timer = setInterval(function () {
+          waits++;
+          if (chatOpen() && sessionTasksChange === change) {
+            clearInterval(timer);
+            loadSessionTasks(change, task).then(function () {
+              openChatTasks(document.getElementById("chat-tasks-btn"));
+            });
+          } else if (waits > 40) clearInterval(timer);
+        }, 150);
         return;
       }
       loadSessionTasks(subtasks.dataset.change, subtasks.dataset.task).then(function (loaded) {
@@ -3826,6 +3944,47 @@
         closeDetail();
         openChatTasks(document.getElementById("chat-tasks-btn"));
       });
+      return;
+    }
+    // Decompose is the user-instructed split of one task into a sub plan.
+    // Both success (201) and already-exists (409) land on the subtasks.
+    var decompose = e.target.closest("[data-decompose]");
+    if (decompose) {
+      var dChange = decompose.dataset.change;
+      var dTask = decompose.dataset.task;
+      decompose.disabled = true;
+      fetch("/changes/" + encodeURIComponent(dChange) + "/expand", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ task: dTask }),
+      })
+        .then(function (r) {
+          if (!r.ok && r.status !== 409) {
+            return r.json().then(function (j) { throw new Error(j.error || r.statusText); });
+          }
+          return {};
+        })
+        .then(function () {
+          closeDetail();
+          var open = function () { openChatTasks(document.getElementById("chat-tasks-btn")); };
+          if (chatOpen() && sessionTasksChange === dChange) {
+            loadSessionTasks(dChange, dTask).then(open);
+          } else {
+            resumeChangeSession(dChange);
+            var waits = 0;
+            var timer = setInterval(function () {
+              waits++;
+              if (chatOpen() && sessionTasksChange === dChange) {
+                clearInterval(timer);
+                loadSessionTasks(dChange, dTask).then(open);
+              } else if (waits > 40) clearInterval(timer);
+            }, 150);
+          }
+        })
+        .catch(function (err) {
+          decompose.disabled = false;
+          alert("Decompose failed: " + err.message);
+        });
       return;
     }
     var workRoot = e.target.closest("[data-work-root]");
@@ -3842,117 +4001,6 @@
       if (!closeTopChatAuxiliary()) closeChat();
     }
   });
-
-  // --- lifecycle buttons ---------------------------------------------------
-
-  function countOpenTasks() {
-    var n = 0;
-    document.querySelectorAll("#board .cards").forEach(function (col) {
-      var st = col.getAttribute("data-status");
-      if (st !== "Done" && st !== "Cancelled") {
-        n += col.querySelectorAll(".card").length;
-      }
-    });
-    return n;
-  }
-
-  function postLifecycle(action) {
-    fetch("/changes/" + changeID() + "/" + action, {
-      method: "POST",
-      headers: { Accept: "application/json", "X-Lessmess-UI": "1" },
-    })
-      .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.statusText); return j; }); })
-      .then(function () { location.reload(); }) // status pill lives outside the board fragment
-      .catch(function (e) { alert(action + " failed: " + e.message); });
-  }
-
-  function initLifecycle() {
-    var closeBtn = document.getElementById("close-change-btn");
-    if (closeBtn) {
-      closeBtn.addEventListener("click", function () {
-        var open = countOpenTasks();
-        if (open > 0 && !confirm(open + " task(s) are not Done or Cancelled — close the change anyway?")) {
-          return;
-        }
-        postLifecycle("close");
-      });
-    }
-    var reopenBtn = document.getElementById("reopen-btn");
-    if (reopenBtn) {
-      reopenBtn.addEventListener("click", function () { postLifecycle("reopen"); });
-    }
-    var commitBtn = document.getElementById("commit-btn");
-    if (commitBtn) {
-      commitBtn.addEventListener("click", function () {
-        if (commitBtn.disabled) return;
-        setCommitBusy(true);
-        fetch("/changes/" + changeID() + "/commit", {
-          method: "POST",
-          headers: { Accept: "application/json" },
-        })
-          .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.statusText); return j; }); })
-          .then(function (j) { pollCommitStatus(j.session, 0); })
-          .catch(function (e) {
-            setCommitBusy(false);
-            alert("Commit failed: " + e.message);
-          });
-      });
-    }
-
-    // Worktree strip: explicit cleanup action. The server refuses a dirty
-    // worktree (422) and a disabled pipeline (409); both surface here.
-    var wtRemoveBtn = document.getElementById("worktree-remove-btn");
-    if (wtRemoveBtn) {
-      wtRemoveBtn.addEventListener("click", function () {
-        if (!window.confirm("Remove this change's worktree? The branch and its commits are kept.")) return;
-        wtRemoveBtn.disabled = true;
-        fetch("/changes/" + changeID() + "/worktree/remove", {
-          method: "POST",
-          headers: { Accept: "application/json" },
-        })
-          .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.statusText); return j; }); })
-          .then(function () { location.reload(); })
-          .catch(function (e) {
-            wtRemoveBtn.disabled = false;
-            alert("Worktree removal failed: " + e.message);
-          });
-      });
-    }
-
-    function setCommitBusy(busy) {
-      commitBtn.disabled = busy;
-      if (busy) {
-        commitBtn.dataset.label = commitBtn.textContent;
-        commitBtn.innerHTML = '<span class="spinner" aria-hidden="true"></span> Committing…';
-      } else {
-        commitBtn.textContent = commitBtn.dataset.label || "Commit";
-      }
-    }
-
-    function pollCommitStatus(session, attempts) {
-      if (attempts > 200) { // ~10 minutes max
-        setCommitBusy(false);
-        alert("Commit is taking unusually long — check the session in the Sessions panel.");
-        return;
-      }
-      fetch("/changes/" + changeID() + "/commit-status?session=" + encodeURIComponent(session), {
-        headers: { Accept: "application/json" },
-      })
-        .then(function (r) { return r.json(); })
-        .then(function (j) {
-          if (j.done) {
-            commitBtn.innerHTML = "✓ Committed";
-            setTimeout(function () { setCommitBusy(false); }, 3000);
-          } else {
-            setTimeout(function () { pollCommitStatus(session, attempts + 1); }, 3000);
-          }
-        })
-        .catch(function () {
-          setCommitBusy(false);
-          alert("Lost contact while waiting for the commit — check the Sessions panel.");
-        });
-    }
-  }
 
   // --- detail modal -----------------------------------------------------------
 
@@ -4163,34 +4211,7 @@
     spy();
   }
 
-  // --- task expansion (sub plans) ----------------------------------------------
-  // The expand button on a card is the user-instructed decomposition
-  // action: POST /expand creates the container; both success (201) and
-  // already-exists (409) end on the task's sub-board.
-  document.addEventListener("click", function (e) {
-    var btn = e.target.closest("[data-expand]");
-    if (!btn) return;
-    var board = boardEl();
-    if (!board) return;
-    var change = board.getAttribute("data-change");
-    var task = btn.getAttribute("data-expand");
-    btn.disabled = true;
-    fetch("/changes/" + encodeURIComponent(change) + "/expand", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify({ task: task }),
-    })
-      .then(function (r) {
-        if (!r.ok && r.status !== 409) {
-          return r.json().then(function (j) { throw new Error(j.error || r.statusText); });
-        }
-        location.href = "/changes/" + encodeURIComponent(change) + "?task=" + encodeURIComponent(task);
-      })
-      .catch(function (err) {
-        alert("Expand failed: " + err.message);
-        btn.disabled = false;
-      });
-  });
+  // --- end -------------------------------------------------------------------
 
   // --- detail modal links ------------------------------------------------------
   // Relative .md links in the markdown (ledger, tasks, plan) open in this
@@ -4921,83 +4942,127 @@
     });
   }
 
-  // --- index table sorting --------------------------------------------------
+  // --- change card list: sort + tap-to-resume + in-place refresh -----------
 
-  // First-click direction per sortable column: text columns start ascending,
-  // Updated and Tasks start descending (newest / most tasks first).
-  var indexSortCols = {
-    id: "asc", title: "asc", prefix: "asc", status: "asc",
-    tasks: "desc", updated: "desc"
-  };
   var INDEX_SORT_KEY = "tt-index-sort";
+  var INDEX_SORT_DEFAULT = "updated:desc";
 
+  // Sort state is a "col:dir" string; anything absent, corrupt, or unknown
+  // falls back to the server's default order (newest first).
   function indexSortState() {
-    // Restores {col, dir} from localStorage; anything corrupt or unknown
-    // falls back to the server's default order (no override).
     try {
-      var raw = JSON.parse(localStorage.getItem(INDEX_SORT_KEY) || "null");
-      if (raw && indexSortCols[raw.col] && (raw.dir === "asc" || raw.dir === "desc")) {
-        return raw;
-      }
+      var raw = localStorage.getItem(INDEX_SORT_KEY) || "";
+      if (/^(updated|status|tasks|title):(asc|desc)$/.test(raw)) return raw;
     } catch (_) {}
-    return null;
+    return INDEX_SORT_DEFAULT;
   }
 
-  function indexCellKey(tr, col) {
-    if (col === "tasks") return parseInt(tr.getAttribute("data-tasks"), 10) || 0;
-    if (col === "status") return parseInt(tr.getAttribute("data-status-rank"), 10) || 0;
-    if (col === "updated") return tr.getAttribute("data-updated") || "";
-    var cell = tr.querySelector('td[data-col="' + col + '"]');
-    return cell ? cell.textContent.trim() : "";
+  // Mirrors statusRank in internal/server/render.go via TASK_STATUS_ORDER.
+  function statusRankOf(status) {
+    var i = TASK_STATUS_ORDER.indexOf(status);
+    return i === -1 ? TASK_STATUS_ORDER.length : i;
   }
 
-  function applyIndexSort(col, dir) {
-    var table = document.querySelector(".change-table");
-    if (!table) return;
-    var tbody = table.tBodies[0];
-    if (!tbody) return;
-    var rows = Array.prototype.slice.call(tbody.rows);
+  function cardSortKey(card, col) {
+    if (col === "tasks") return parseInt(card.getAttribute("data-tasks"), 10) || 0;
+    if (col === "status") return parseInt(card.getAttribute("data-status-rank"), 10) || 0;
+    if (col === "updated") return card.getAttribute("data-updated") || "";
+    return (card.getAttribute("data-title") || "").toLowerCase();
+  }
+
+  function applyChangeSort(state) {
+    var host = document.getElementById("change-cards");
+    if (!host) return;
+    var parts = state.split(":");
+    var col = parts[0], dir = parts[1] || "asc";
+    var cards = Array.prototype.slice.call(host.querySelectorAll(".change-card"));
     var mul = dir === "asc" ? 1 : -1;
     // Array#sort is stable, so equal keys keep the server's default order.
-    rows.sort(function (a, b) {
-      var ka = indexCellKey(a, col), kb = indexCellKey(b, col);
+    cards.sort(function (a, b) {
+      var ka = cardSortKey(a, col), kb = cardSortKey(b, col);
       if (ka < kb) return -mul;
       if (ka > kb) return mul;
       return 0;
     });
-    rows.forEach(function (tr) { tbody.appendChild(tr); });
-
-    table.querySelectorAll("thead th").forEach(function (th) {
-      th.removeAttribute("aria-sort");
-    });
-    table.querySelectorAll(".sort-btn").forEach(function (btn) {
-      btn.classList.remove("sort-asc", "sort-desc");
-    });
-    var th = table.querySelector('thead th[data-col="' + col + '"]');
-    if (th) th.setAttribute("aria-sort", dir === "asc" ? "ascending" : "descending");
-    var btn = table.querySelector('.sort-btn[data-sort-col="' + col + '"]');
-    if (btn) btn.classList.add(dir === "asc" ? "sort-asc" : "sort-desc");
+    cards.forEach(function (card) { host.appendChild(card); });
+    var select = document.getElementById("change-sort");
+    if (select) select.value = state;
   }
 
   function initIndexSort() {
-    var table = document.querySelector(".change-table");
-    if (!table) return;
-    table.querySelectorAll(".sort-btn").forEach(function (btn) {
-      btn.addEventListener("click", function () {
-        var col = btn.getAttribute("data-sort-col");
-        if (!indexSortCols[col]) return;
-        var cur = indexSortState();
-        var dir = (cur && cur.col === col)
-          ? (cur.dir === "asc" ? "desc" : "asc")
-          : indexSortCols[col];
-        try {
-          localStorage.setItem(INDEX_SORT_KEY, JSON.stringify({ col: col, dir: dir }));
-        } catch (_) {}
-        applyIndexSort(col, dir);
-      });
+    var select = document.getElementById("change-sort");
+    if (!select) return;
+    var state = indexSortState();
+    select.value = state;
+    if (select.value !== state) { // unknown stored value
+      state = INDEX_SORT_DEFAULT;
+      select.value = state;
+    }
+    select.addEventListener("change", function () {
+      try { localStorage.setItem(INDEX_SORT_KEY, select.value); } catch (_) {}
+      applyChangeSort(select.value);
     });
-    var stored = indexSortState();
-    if (stored) applyIndexSort(stored.col, stored.dir);
+    applyChangeSort(state);
+  }
+
+  // buildChangeCard mirrors the server's .change-card markup for in-place
+  // SSE refreshes of the list (no page reload while a chat may be open).
+  function buildChangeCard(c) {
+    var a = document.createElement("a");
+    a.className = "change-card";
+    a.href = "/changes/" + encodeURIComponent(c.id);
+    a.dataset.change = c.id;
+    a.dataset.tasks = String(c.tasks || 0);
+    a.dataset.statusRank = String(statusRankOf(c.status));
+    a.dataset.updated = c.updated || "";
+    a.dataset.title = c.title || "";
+    var name = document.createElement("span");
+    name.className = "change-card-name";
+    name.textContent = c.title || c.id;
+    var meta = document.createElement("span");
+    meta.className = "change-card-meta";
+    var pill = document.createElement("span");
+    pill.className = "pill status-" + statusClass(c.status);
+    pill.textContent = c.status || "";
+    var count = document.createElement("span");
+    count.className = "change-card-count";
+    count.textContent = (c.complete || 0) + "/" + (c.tasks || 0);
+    var date = document.createElement("span");
+    date.className = "change-card-date";
+    date.textContent = c.updated || "";
+    meta.appendChild(pill);
+    meta.appendChild(count);
+    meta.appendChild(date);
+    a.appendChild(name);
+    a.appendChild(meta);
+    return a;
+  }
+
+  function refreshChangeCards() {
+    var host = document.getElementById("change-cards");
+    if (!host) return;
+    fetch("/", { headers: { Accept: "application/json" } })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (j) {
+        if (!j || !j.changes || !host.isConnected) return;
+        host.innerHTML = "";
+        j.changes.forEach(function (c) { host.appendChild(buildChangeCard(c)); });
+        applyChangeSort(indexSortState());
+      })
+      .catch(function () {});
+  }
+
+  // Tapping a change card enters the change: resume its session in the
+  // chat overlay (create one when the change has none). Plain left clicks
+  // only — modified clicks keep the browser's link semantics.
+  function initChangeCards() {
+    document.addEventListener("click", function (e) {
+      var card = e.target.closest && e.target.closest(".change-card");
+      if (!card) return;
+      if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      e.preventDefault();
+      resumeChangeSession(card.dataset.change);
+    });
   }
 
   // --- setup wizard ---------------------------------------------------------
@@ -6173,12 +6238,9 @@
 
   document.addEventListener("DOMContentLoaded", function () {
     initTheme();
-    initSortable();
-    initSessions();
-    initContinue();
-    initLifecycle();
     initCommitAll();
     initIndexSort();
+    initChangeCards();
     initSettings();
     initOpencodeStatus();
     initOpencodeIntegrations();
@@ -6187,7 +6249,7 @@
     initSetup();
     initOnboardingBanner();
     checkValidation();
-    autoOpenSession();
+    initChangeDeepLink();
     loadDiscussions();
   });
 })();
