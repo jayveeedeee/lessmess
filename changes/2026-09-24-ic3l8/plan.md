@@ -49,6 +49,9 @@ composer's ⋮ options menu.
   change actions footer: Commit, Close/Reopen (open-task confirm), worktree pills/remove/review.
 - **Breadcrumb dropdown**: a "Resume session" action pinned at the bottom whenever a change context
   exists, sharing the same resume helper as the cards; the change crumb persists for the visit.
+  For change-bound sessions the change name replaces the "Chat" crumb as the current location
+  (`Changes / <Change Name>`); panel and document crumbs stack above it, and "Chat" survives only
+  for unbound discussion sessions.
 - **Responsive sweep**: full-screen modals, ≥44px touch targets, safe-area insets, explorer /
   settings / setup / opencode-page polish at phone widths; desktop functionally untouched.
 
