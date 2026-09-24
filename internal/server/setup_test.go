@@ -15,7 +15,7 @@ func setupShell(t *testing.T, boot func(string) (http.Handler, error)) (*SetupSe
 	t.Helper()
 	dir := t.TempDir()
 	calls := 0
-	s := NewSetup(dir, func(d string) (http.Handler, error) {
+	s := NewSetup(dir, "", func(d string) (http.Handler, error) {
 		calls++
 		if boot != nil {
 			return boot(d)

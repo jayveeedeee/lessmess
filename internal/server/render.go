@@ -62,6 +62,7 @@ type renderer struct {
 	settings *template.Template
 	opencode *template.Template
 	setup    *template.Template
+	projects *template.Template
 	assetsV  string
 	// accent resolves the palette entry for the page head; nil until the
 	// owning server wires it (then defaults to the built-in orange).
@@ -69,10 +70,28 @@ type renderer struct {
 	// projectName resolves the project display name for the header and
 	// tab title; nil until wired (then renders empty).
 	projectName func() string
+	// base resolves the URL path prefix the owning server is mounted
+	// under (hub mode "/p/<slug>", "" standalone); nil until wired (then
+	// no prefix — pageData.BasePath stays empty).
+	base func() string
 }
 
-func mustParse(files ...string) *template.Template {
-	return template.Must(template.New("page").Funcs(templateFuncs).ParseFS(web.FS, files...))
+// mustParseWithBase parses a template set for one renderer, adding the
+// "bp" func: the renderer's mount prefix. Fragment templates render
+// without pageData (a boardView or taskView is the dot), so they get
+// their prefix from bp() instead of {{.BasePath}}.
+func (r *renderer) mustParseWithBase(files ...string) *template.Template {
+	funcs := template.FuncMap{}
+	for k, v := range templateFuncs {
+		funcs[k] = v
+	}
+	funcs["bp"] = func() string {
+		if r.base != nil {
+			return r.base()
+		}
+		return ""
+	}
+	return template.Must(template.New("page").Funcs(funcs).ParseFS(web.FS, files...))
 }
 
 // assetsVersion returns a short content hash of the app-owned static
@@ -90,15 +109,15 @@ func assetsVersion() string {
 }
 
 func newRenderer() *renderer {
-	return &renderer{
-		index:    mustParse("templates/layout.html", "templates/index.html"),
-		partial:  mustParse("templates/partials.html", "templates/explorer.html"),
-		explorer: mustParse("templates/layout.html", "templates/explorer.html"),
-		settings: mustParse("templates/layout.html", "templates/settings.html"),
-		opencode: mustParse("templates/layout.html", "templates/opencode.html"),
-		setup:    mustParse("templates/layout.html", "templates/setup.html"),
-		assetsV:  assetsVersion(),
-	}
+	r := &renderer{assetsV: assetsVersion()}
+	r.index = r.mustParseWithBase("templates/layout.html", "templates/index.html")
+	r.partial = r.mustParseWithBase("templates/partials.html", "templates/explorer.html")
+	r.explorer = r.mustParseWithBase("templates/layout.html", "templates/explorer.html")
+	r.settings = r.mustParseWithBase("templates/layout.html", "templates/settings.html")
+	r.opencode = r.mustParseWithBase("templates/layout.html", "templates/opencode.html")
+	r.setup = r.mustParseWithBase("templates/layout.html", "templates/setup.html")
+	r.projects = r.mustParseWithBase("templates/layout.html", "templates/projects.html")
+	return r
 }
 
 func (r *renderer) render(w http.ResponseWriter, tmpl *template.Template, name string, data any) {
@@ -108,6 +127,9 @@ func (r *renderer) render(w http.ResponseWriter, tmpl *template.Template, name s
 		pd.AccentStyle = accentStyle(r.accentColor())
 		if r.projectName != nil {
 			pd.ProjectName = r.projectName()
+		}
+		if r.base != nil {
+			pd.BasePath = r.base()
 		}
 		data = pd
 	}
@@ -149,6 +171,10 @@ type pageData struct {
 	// AccentStyle is the head <style> overriding the accent CSS
 	// variables for the resolved palette; filled centrally by render().
 	AccentStyle template.HTML
+	// BasePath is the URL prefix this server is mounted under (hub mode
+	// "/p/<slug>", "" standalone); filled centrally by render() through
+	// the renderer hook. Templates and client JS prefix every URL with it.
+	BasePath string
 }
 
 type indexView struct {
@@ -242,8 +268,8 @@ func nodeRows(nodes []*store.TaskNode) []model.TaskState {
 	return out
 }
 
-func newBoardView(c *store.Change) boardView {
-	v := boardView{ID: c.ID, Title: c.ID, BoardURL: "/changes/" + c.ID}
+func newBoardView(c *store.Change, base string) boardView {
+	v := boardView{ID: c.ID, Title: c.ID, BoardURL: base + "/changes/" + c.ID}
 	if c.Err != nil || c.State == nil {
 		v.Error = "State unreadable: " + c.Err.Error()
 		return v
@@ -259,9 +285,9 @@ func newBoardView(c *store.Change) boardView {
 // newTaskBoardView builds the drill-down board for one decomposed task:
 // columns from its children, an ancestor breadcrumb, and the subtree
 // rollup.
-func newTaskBoardView(c *store.Change, n *store.TaskNode) boardView {
+func newTaskBoardView(c *store.Change, n *store.TaskNode, base string) boardView {
 	v := boardView{
-		ID: c.ID, Title: c.ID, BoardURL: "/changes/" + c.ID,
+		ID: c.ID, Title: c.ID, BoardURL: base + "/changes/" + c.ID,
 		Task: n.ID, NodeTitle: n.ID,
 	}
 	if c.State != nil && c.State.Title != "" {
@@ -273,7 +299,7 @@ func newTaskBoardView(c *store.Change, n *store.TaskNode) boardView {
 	v.Overall = string(c.Overall())
 	v.Columns = columnsFromNodes(n.Children)
 	// Breadcrumb: change root, then every ancestor, then this node.
-	v.Crumbs = append(v.Crumbs, crumbView{ID: c.ID, Title: v.Title, URL: "/changes/" + c.ID, Root: true})
+	v.Crumbs = append(v.Crumbs, crumbView{ID: c.ID, Title: v.Title, URL: base + "/changes/" + c.ID, Root: true})
 	var chain []*store.TaskNode
 	for p := n.Parent; p != nil; p = p.Parent {
 		chain = append([]*store.TaskNode{p}, chain...)
@@ -283,7 +309,7 @@ func newTaskBoardView(c *store.Change, n *store.TaskNode) boardView {
 		if p.Task != nil && p.Task.Title != "" {
 			title = p.Task.Title
 		}
-		v.Crumbs = append(v.Crumbs, crumbView{ID: p.ID, Title: title, URL: "/changes/" + c.ID + "?task=" + p.ID})
+		v.Crumbs = append(v.Crumbs, crumbView{ID: p.ID, Title: title, URL: base + "/changes/" + c.ID + "?task=" + p.ID})
 	}
 	return v
 }

@@ -117,13 +117,25 @@ type ChangeLedger struct {
 }
 
 // ParseChangeLedger parses a per-change ledger strictly against the pinned schema.
+// trimBackticks drops one wrapping backtick pair, tolerating the common
+// hand/GPT-authored ledger convention of writing header IDs as `id`
+// where the canonical renderer emits the bare value. IDs never
+// legitimately contain backticks.
+func trimBackticks(s string) string {
+	s = strings.TrimSpace(s)
+	if len(s) >= 2 && strings.HasPrefix(s, "`") && strings.HasSuffix(s, "`") {
+		return strings.TrimSpace(s[1 : len(s)-1])
+	}
+	return s
+}
+
 func ParseChangeLedger(name string, data []byte) (*ChangeLedger, error) {
 	lines := strings.Split(string(data), "\n")
 	l := &ChangeLedger{taskTable: taskTable{doc: name, Lines: lines}}
 	for _, ln := range lines {
 		switch {
 		case strings.HasPrefix(ln, "- Change ID:"):
-			l.ChangeID = strings.TrimSpace(strings.TrimPrefix(ln, "- Change ID:"))
+			l.ChangeID = trimBackticks(strings.TrimPrefix(ln, "- Change ID:"))
 		case strings.HasPrefix(ln, "- Branch:"):
 			l.Branch = strings.TrimSpace(strings.TrimPrefix(ln, "- Branch:"))
 		case strings.HasPrefix(ln, "- Overall status:"):
@@ -172,7 +184,7 @@ func ParseTaskLedger(name string, data []byte) (*TaskLedger, error) {
 			if m == nil {
 				return nil, parseErr(name, "malformed '- Task:' header (want '<task-id> (change <change-id>)')")
 			}
-			l.TaskID, l.ChangeID = m[1], m[2]
+			l.TaskID, l.ChangeID = trimBackticks(m[1]), trimBackticks(m[2])
 		case strings.HasPrefix(ln, "- Last updated:"):
 			l.LastUpdated = strings.TrimSpace(strings.TrimPrefix(ln, "- Last updated:"))
 		}

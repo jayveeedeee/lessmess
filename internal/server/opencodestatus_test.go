@@ -94,7 +94,7 @@ func TestOpencodeStatusUnavailableAndPageLinks(t *testing.T) {
 		t.Fatal("settings status link missing")
 	}
 	asset := do(t, s.Handler(), "GET", "/static/app.js", "").Body.String()
-	if !strings.Contains(asset, "View service status") || !strings.Contains(asset, `href = "/settings/opencode"`) {
+	if !strings.Contains(asset, "View service status") || !strings.Contains(asset, `href = BASE + "/settings/opencode"`) {
 		t.Fatal("chat service-failure link missing")
 	}
 }

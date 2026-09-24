@@ -247,7 +247,7 @@ func (s *Server) scaffoldChange(w http.ResponseWriter, r *http.Request) {
 		slog.Warn("scaffold refused: session already bound", "session", req.Session, "change", bound)
 		writeJSON(w, http.StatusConflict, map[string]string{
 			"change": bound,
-			"error":  "session already bound to change " + bound + "; continue the work within that change (refine plan.md, add task files and ledger rows) — do not scaffold a new change. To spawn a genuinely new change out of this one, write changes/" + bound + "/handoff-<topic>.md with the full context, then POST /changes/" + bound + "/spawn-change with {\"title\",\"prefix\",\"artifact\",\"session\"} (explicit user approval required)",
+			"error":  "session already bound to change " + bound + "; continue the work within that change (refine plan.md, add task files and ledger rows) — do not scaffold a new change. To spawn a genuinely new change out of this one, write changes/" + bound + "/handoff-<topic>.md with the full context, then POST " + s.Base + "/changes/" + bound + "/spawn-change with {\"title\",\"prefix\",\"artifact\",\"session\"} (explicit user approval required)",
 		})
 		return
 	}

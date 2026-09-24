@@ -1,0 +1,32 @@
+{{define "content"}}
+<section id="projects-page" class="projects-page">
+  <header class="projects-head">
+    <h1>Projects</h1>
+    <p class="muted">All repositories served by this lessmess instance. Each project lives under its own <code>/p/&lt;slug&gt;</code> address.</p>
+  </header>
+  <ul class="projects-list">
+    {{range .Data.Projects}}
+    <li class="project-row" data-slug="{{.Slug}}" data-status="{{.Status}}">
+      <a class="project-link" href="{{.BaseURL}}">
+        <span class="project-name">{{.Name}}</span>
+        <span class="project-path">{{.Path}}</span>
+        {{if and .Detail (ne .Status "ready")}}<span class="project-detail">{{.Detail}}</span>{{end}}
+      </a>
+      <span class="project-status status-{{.Status}}" {{if .Detail}}title="{{.Detail}}"{{end}}>{{.Status}}</span>
+      <button type="button" class="project-remove btn-ghost" data-slug="{{.Slug}}" title="Remove this project from the instance">Remove</button>
+    </li>
+    {{else}}
+    <li class="projects-empty">
+      <p>No projects registered yet. Add your first repository below.</p>
+    </li>
+    {{end}}
+  </ul>
+  <form id="project-add-form" class="project-add">
+    <label class="sr-only" for="project-add-path">Project directory</label>
+    <input id="project-add-path" type="text" placeholder="/absolute/path/to/repository" autocomplete="off" spellcheck="false">
+    <button type="submit" class="btn-accent">Add project</button>
+    <span id="project-add-status" class="muted" role="status" aria-live="polite"></span>
+  </form>
+  <p class="muted projects-note">Removing a project only unmounts it and forgets it here — the repository's <code>changes/</code> and <code>.lessmess/</code> state are never touched.</p>
+</section>
+{{end}}

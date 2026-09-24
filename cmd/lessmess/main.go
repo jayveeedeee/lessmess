@@ -18,6 +18,7 @@ import (
 
 	"lessmess/internal/docs"
 	"lessmess/internal/opencode"
+	"lessmess/internal/registry"
 	"lessmess/internal/server"
 	"lessmess/internal/store"
 )
@@ -57,6 +58,8 @@ func usage() {
 
 Usage:
   lessmess serve    [--host 127.0.0.1] [--port 8080] [--dir .]
+                    (--dir omitted serves every project registered in the
+                    global registry, each under /p/<slug>/)
   lessmess validate [--dir .]
   lessmess migrate  [--dry-run] [--dir .]
   lessmess init     [--dir .]
@@ -75,19 +78,9 @@ func runServe(args []string) int {
 	var c config
 	fs.StringVar(&c.host, "host", "127.0.0.1", "address to bind")
 	fs.IntVar(&c.port, "port", 8080, "port to listen on")
-	fs.StringVar(&c.dir, "dir", ".", "repository root containing changes/")
+	fs.StringVar(&c.dir, "dir", "", "repository root containing changes/ (empty: serve every project registered in the global registry)")
 	if err := fs.Parse(args); err != nil {
 		return 2
-	}
-
-	if err := store.MigrateStateDir(c.dir); err != nil {
-		slog.Warn("state dir migration skipped", "err", err)
-	}
-	// Legacy markdown workflow state migrates to JSON before the store
-	// opens (worktree-backed changes resolve through the same resolver).
-	if _, err := store.MigrateIfNeeded(c.dir, server.WorktreeChangeRoot(c.dir)); err != nil {
-		fmt.Fprintln(os.Stderr, "migrate:", err)
-		return 1
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -100,40 +93,80 @@ func runServe(args []string) int {
 		}
 	}()
 
-	// boot builds the full handler for an initialized repository. It is the
-	// single store-open path: used directly for a normal start, and by the
-	// setup-mode server for its hot-open swap after bootstrap.
-	boot := func(dir string) (http.Handler, error) {
+	// One opencode service drives every project of the instance; discovery
+	// is shared, sessions are created per project directory.
+	var oc *opencode.Client
+	if cl, err := opencode.DiscoverClient(ctx); err != nil {
+		slog.Warn("opencode integration disabled", "err", err)
+	} else {
+		slog.Info("opencode service connected", "url", cl.BaseURL())
+		oc = cl
+	}
+
+	// boot builds a project's full handler: legacy-state migration, store
+	// open + watch, server wiring. basePath is the URL prefix the handler
+	// is mounted under ("" in single-project mode, "/p/<slug>" in hub
+	// mode); publicBase is the externally visible base — host:port plus
+	// any prefix — baked into agent-facing prompts.
+	boot := func(dir, basePath, publicBase string) (http.Handler, func(), error) {
+		if err := store.MigrateStateDir(dir); err != nil {
+			slog.Warn("state dir migration skipped", "err", err)
+		}
+		if _, err := store.MigrateIfNeeded(dir, server.WorktreeChangeRoot(dir)); err != nil {
+			return nil, nil, err
+		}
 		st, err := store.Open(dir)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if err := st.Watch(ctx); err != nil {
 			st.Close()
-			return nil, err
+			return nil, nil, err
 		}
-		cleanups = append(cleanups, st.Close)
 		logStoreSummary(st)
 		app := server.New(st)
-		app.PublicBase = net.JoinHostPort(c.host, fmt.Sprint(c.port))
-		if oc, err := opencode.DiscoverClient(ctx); err != nil {
-			slog.Warn("opencode integration disabled", "err", err)
-		} else {
-			slog.Info("opencode service connected", "url", oc.BaseURL())
+		app.Base = basePath
+		app.PublicBase = publicBase
+		if oc != nil {
 			app.SetOpencode(oc)
 		}
-		cleanups = append(cleanups, app.Close)
-		return app.Handler(), nil
+		return app.Handler(), func() { app.Close(); st.Close() }, nil
 	}
 
-	handler, err := boot(c.dir)
-	if err != nil {
-		if !errors.Is(err, store.ErrNoChanges) {
-			slog.Error("open store", "err", err)
+	var handler http.Handler
+	if c.dir == "" {
+		// Hub mode: every registered project under its /p/<slug>/ mount.
+		regPath, err := registry.DefaultPath()
+		if err != nil {
+			slog.Error("resolve project registry", "err", err)
 			return 1
 		}
-		slog.Info("no changes/ tree; starting in setup mode", "dir", c.dir)
-		handler = server.NewSetup(c.dir, boot)
+		hub := server.NewHub(registry.OpenStore(regPath), boot, c.host, c.port)
+		cleanups = append(cleanups, hub.Close)
+		handler = hub.Handler()
+	} else {
+		publicBase := net.JoinHostPort(c.host, fmt.Sprint(c.port))
+		h, closeFn, err := boot(c.dir, "", publicBase)
+		if err != nil {
+			if !errors.Is(err, store.ErrNoChanges) {
+				slog.Error("open store", "err", err)
+				return 1
+			}
+			slog.Info("no changes/ tree; starting in setup mode", "dir", c.dir)
+			// The setup server's hot-open swap keeps only the handler, so
+			// the callback parks the close func in the cleanup list itself.
+			handler = server.NewSetup(c.dir, "", func(d string) (http.Handler, error) {
+				hh, cl, err := boot(d, "", publicBase)
+				if err != nil {
+					return nil, err
+				}
+				cleanups = append(cleanups, cl)
+				return hh, nil
+			})
+		} else {
+			handler = h
+			cleanups = append(cleanups, closeFn)
+		}
 	}
 
 	srv := &http.Server{
@@ -144,7 +177,11 @@ func runServe(args []string) int {
 
 	errCh := make(chan error, 1)
 	go func() {
-		slog.Info("serving", "addr", srv.Addr, "dir", c.dir)
+		mode, dir := "single", c.dir
+		if c.dir == "" {
+			mode, dir = "hub", ""
+		}
+		slog.Info("serving", "addr", srv.Addr, "mode", mode, "dir", dir)
 		errCh <- srv.ListenAndServe()
 	}()
 

@@ -5,6 +5,10 @@
   "use strict";
 
   var page = document.body.getAttribute("data-page");
+  // URL prefix of this project's mount ("" in single-project mode, e.g.
+  // "/p/demo" under the hub). Every fetch, SSE connection, and JS-built
+  // link joins it; the server bakes it into every URL it emits too.
+  var BASE = document.body.getAttribute("data-base") || "";
 
   function openPreferredSession(sessionID, title) {
     openChat(sessionID, title);
@@ -25,15 +29,26 @@
   function locationBaseTrail() {
     var nav = document.getElementById("location-nav");
     if (!nav) return [];
-    var trail = [{ kind: "changes", label: "Changes", url: "/" }];
+    var trail;
+    if (BASE) {
+      // Hub mode: the trail's root is the projects landing, and the
+      // project's change list is the level below it.
+      trail = [
+        { kind: "projects", label: "Projects", url: "/" },
+        { kind: "project", label: document.body.getAttribute("data-project-name") || "Project", url: BASE + "/" },
+      ];
+    } else {
+      // Single-project mode: no project level — the change list is the root.
+      trail = [{ kind: "changes", label: "Changes", url: BASE + "/" }];
+    }
     // The change crumb exists only while a change-bound session is open —
     // it IS the current location then (no "Chat" crumb). Closing the chat
-    // or returning to the list leaves just Changes; re-entry is the cards.
+    // or returning to the list leaves just the base; re-entry is the cards.
     if (chatOpen() && sessionTasksChange) {
       trail.push({
         kind: "change",
         label: activeChangeTitle || sessionTasksChange,
-        url: "/changes/" + encodeURIComponent(sessionTasksChange),
+        url: BASE + "/changes/" + encodeURIComponent(sessionTasksChange),
         change: sessionTasksChange,
       });
     }
@@ -171,7 +186,9 @@
     }
     if (index === locationTrail.length - 1) { closeLocationMenu(true); return; }
     closeLocationMenu(false);
-    if (item.kind === "changes") {
+    // Plain URL crumbs: the trail's base levels — the change list root,
+    // the projects landing, and a project's change list — navigate.
+    if (item.kind === "changes" || item.kind === "projects" || item.kind === "project") {
       location.href = item.url;
       return;
     }
@@ -252,7 +269,7 @@
     select.disabled = true;
     message.textContent = "Updating…";
     message.classList.remove("is-error");
-    fetch("/changes/" + encodeURIComponent(control.dataset.change) + "/tasks/" + encodeURIComponent(control.dataset.task) + "/status", {
+    fetch(BASE + "/changes/" + encodeURIComponent(control.dataset.change) + "/tasks/" + encodeURIComponent(control.dataset.task) + "/status", {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "application/json", "X-Lessmess-UI": "1" },
       body: JSON.stringify({ status: select.value, evidence: evidence.trim() })
@@ -293,7 +310,10 @@
 
   // --- SSE live updates ----------------------------------------------------
 
-  var es = typeof EventSource !== "undefined" ? new EventSource("/events") : null;
+  // The projects root has no event stream of its own — every project's
+  // /events lives under that project's /p/<slug>/ mount (the base the
+  // page knows via <body data-base>).
+  var es = typeof EventSource !== "undefined" && page !== "projects" ? new EventSource(BASE + "/events") : null;
   var timer = null;
   if (es) {
     es.addEventListener("fs", scheduleRefresh);
@@ -321,12 +341,12 @@
   // view. Until it binds, skip the refresh entirely.
   function followSession() {
     var sessionID = activeSessionID();
-    fetch("/api/sessions/" + encodeURIComponent(sessionID) + "/change", { headers: { Accept: "application/json" } })
+    fetch(BASE + "/api/sessions/" + encodeURIComponent(sessionID) + "/change", { headers: { Accept: "application/json" } })
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (j) {
         if (!j || !j.change) return;
         if (!sessionOverlayOpen() || activeSessionID() !== sessionID) return;
-        location.assign("/?change=" + encodeURIComponent(j.change) + "&session=" + encodeURIComponent(sessionID));
+        location.assign(BASE + "/?change=" + encodeURIComponent(j.change) + "&session=" + encodeURIComponent(sessionID));
       })
       .catch(function () {});
   }
@@ -353,7 +373,7 @@
     box.querySelectorAll("details[open]").forEach(function (d) {
       if (d.dataset.rel) open.push(d.dataset.rel);
     });
-    fetch("/explorer/tree", { headers: { Accept: "text/html" } })
+    fetch(BASE + "/explorer/tree", { headers: { Accept: "text/html" } })
       .then(function (r) { return r.text(); })
       .then(function (html) {
         box.innerHTML = html;
@@ -378,7 +398,7 @@
   function refreshExplorerDetail() {
     var pane = document.getElementById("explorer-detail");
     if (!pane) return;
-    fetch("/explorer/detail?dir=" + encodeURIComponent(explorerSelected), { headers: { Accept: "text/html" } })
+    fetch(BASE + "/explorer/detail?dir=" + encodeURIComponent(explorerSelected), { headers: { Accept: "text/html" } })
       .then(function (r) { return r.text(); })
       .then(function (html) { pane.innerHTML = html; })
       .catch(function () {});
@@ -406,7 +426,7 @@
     e.preventDefault();
     e.stopPropagation();
     btn.disabled = true;
-    fetch("/explorer/chat", {
+    fetch(BASE + "/explorer/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
       body: JSON.stringify({ dir: btn.dataset.dir }),
@@ -431,7 +451,7 @@
     var btn = e.target.closest("#chat-btn");
     if (!btn) return;
     btn.disabled = true;
-    fetch("/chat/session", {
+    fetch(BASE + "/chat/session", {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
       body: "{}",
@@ -450,7 +470,7 @@
   // --- validation banner ---------------------------------------------------
 
   function checkValidation() {
-    fetch("/api/validate", { headers: { Accept: "application/json" } })
+    fetch(BASE + "/api/validate", { headers: { Accept: "application/json" } })
       .then(function (r) { return r.json(); })
       .then(function (j) {
         var banner = document.getElementById("banner");
@@ -551,7 +571,7 @@
       btn.disabled = true;
       refreshRunning = true;
       status.textContent = "Refreshing…";
-      fetch("/docs/refresh", { method: "POST", headers: { Accept: "application/json" } })
+      fetch(BASE + "/docs/refresh", { method: "POST", headers: { Accept: "application/json" } })
         .then(function (r) { return r.json(); })
         .then(function (j) {
           if (j.enqueued) {
@@ -594,7 +614,7 @@
         seedBtn.disabled = true;
         seedRunning = true;
         status.textContent = "Seeding…";
-        fetch("/docs/seed", {
+        fetch(BASE + "/docs/seed", {
           method: "POST",
           headers: { "Content-Type": "application/json", Accept: "application/json" },
           body: JSON.stringify({ force: !!(force && force.checked) }),
@@ -649,7 +669,7 @@
   function loadDiscussions() {
     var ul = document.getElementById("discussions-list");
     if (!ul) return;
-    fetch("/api/discussions", { headers: { Accept: "application/json" } })
+    fetch(BASE + "/api/discussions", { headers: { Accept: "application/json" } })
       .then(function (r) { return r.json(); })
       .then(function (j) {
         ul.innerHTML = "";
@@ -681,7 +701,7 @@
           unBtn.textContent = "✕";
           unBtn.title = "Unlink (session stays in opencode)";
           unBtn.addEventListener("click", function () {
-            fetch("/api/discussions/" + s.session, { method: "DELETE" })
+            fetch(BASE + "/api/discussions/" + s.session, { method: "DELETE" })
               .then(function (r) { if (!r.ok) throw 0; loadDiscussions(); })
               .catch(function () { alert("Unlink failed"); });
           });
@@ -1108,7 +1128,7 @@
     var controller = new AbortController();
     cstate.request = controller;
     transcript.setAttribute("aria-busy", "true");
-    fetch("/api/sessions/" + encodeURIComponent(sessionID) + "/chat", {
+    fetch(BASE + "/api/sessions/" + encodeURIComponent(sessionID) + "/chat", {
       headers: { Accept: "text/html" },
       signal: controller.signal,
     })
@@ -1245,7 +1265,7 @@
     control.disabled = true;
     transcript.setAttribute("aria-busy", "true");
     setChatStatus("Loading older messages…");
-    fetch("/api/sessions/" + encodeURIComponent(sessionID) + "/chat?cursor=" + encodeURIComponent(control.dataset.cursor), {
+    fetch(BASE + "/api/sessions/" + encodeURIComponent(sessionID) + "/chat?cursor=" + encodeURIComponent(control.dataset.cursor), {
       headers: { Accept: "text/html" },
       signal: controller.signal,
     })
@@ -1304,7 +1324,7 @@
     el.classList.toggle("error", !!error);
     if (serviceLink) {
       var link = document.createElement("a");
-      link.href = "/settings/opencode";
+      link.href = BASE + "/settings/opencode";
       link.textContent = "View service status";
       link.className = "chat-service-link";
       el.appendChild(link);
@@ -1766,7 +1786,7 @@
       options.headers["Content-Type"] = "application/json";
       options.body = JSON.stringify(body);
     }
-    return fetch("/api/sessions/" + encodeURIComponent(sessionID) + "/chat/" + path, options)
+    return fetch(BASE + "/api/sessions/" + encodeURIComponent(sessionID) + "/chat/" + path, options)
       .then(function (r) {
         if (r.ok) return;
         return r.json().catch(function () { return {}; }).then(function (j) {
@@ -1799,7 +1819,7 @@
     cstate.mutation = true;
     control.disabled = true;
     setChatStatus("Submitting durable follow-up…");
-    return fetch("/api/sessions/" + encodeURIComponent(sessionID) + "/deliver", {
+    return fetch(BASE + "/api/sessions/" + encodeURIComponent(sessionID) + "/deliver", {
       method: "POST",
       headers: { Accept: "application/json" },
       body: body,
@@ -2017,7 +2037,7 @@
     var sessionID = cstate.session;
     if (cstate.usageRequest) cstate.usageRequest.abort();
     cstate.usageRequest = new AbortController();
-    fetch("/api/sessions/" + encodeURIComponent(sessionID) + "/chat/usage", {
+    fetch(BASE + "/api/sessions/" + encodeURIComponent(sessionID) + "/chat/usage", {
       headers: { Accept: "application/json" }, signal: cstate.usageRequest.signal
     }).then(function (r) {
       if (!r.ok) throw new Error("Context usage unavailable");
@@ -2100,7 +2120,7 @@
   }
 
   function lifecycleURL(path) {
-    return "/api/sessions/" + encodeURIComponent(cstate.session) + (path === undefined ? "/lifecycle" : path);
+    return BASE + "/api/sessions/" + encodeURIComponent(cstate.session) + (path === undefined ? "/lifecycle" : path);
   }
 
   function lifecycleResponse(r) {
@@ -2199,7 +2219,7 @@
     var sessionID = cstate.session;
     var controller = new AbortController();
     cstate.navigationRequest = controller;
-    return fetch("/api/sessions/" + encodeURIComponent(sessionID) + "/navigation", { headers: { Accept: "application/json" }, signal: controller.signal })
+    return fetch(BASE + "/api/sessions/" + encodeURIComponent(sessionID) + "/navigation", { headers: { Accept: "application/json" }, signal: controller.signal })
       .then(lifecycleResponse)
       .then(function (data) {
         if (cstate.session !== sessionID) return null;
@@ -2571,7 +2591,7 @@
     if (!cstate.session) return Promise.resolve();
     var sessionID = cstate.session;
     document.getElementById("chat-controls-note").textContent = "Loading controls…";
-    return fetch("/api/sessions/" + encodeURIComponent(sessionID) + "/chat/controls", { headers: { Accept: "application/json" } })
+    return fetch(BASE + "/api/sessions/" + encodeURIComponent(sessionID) + "/chat/controls", { headers: { Accept: "application/json" } })
       .then(function (r) { if (!r.ok) return r.json().catch(function () { return {}; }).then(function (j) { throw new Error(j.error || "Controls unavailable"); }); return r.json(); })
       .then(function (data) { if (cstate.session === sessionID) renderChatControls(data); })
       .catch(function (err) { if (cstate.session === sessionID) document.getElementById("chat-controls-note").textContent = err.message; });
@@ -2603,7 +2623,7 @@
   function loadChatReferences() {
     var list = document.getElementById("chat-reference-list");
     list.textContent = "Loading…";
-    return fetch("/api/sessions/" + encodeURIComponent(cstate.session) + "/chat/references", { headers: { Accept: "application/json" } })
+    return fetch(BASE + "/api/sessions/" + encodeURIComponent(cstate.session) + "/chat/references", { headers: { Accept: "application/json" } })
       .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
       .then(function (data) { cstate.referenceCatalog = data.references || []; renderChatReferenceList(); })
       .catch(function () { list.textContent = "Could not load project references."; });
@@ -2679,7 +2699,7 @@
     plan.hidden = !change;
     if (sessionsBtn) sessionsBtn.hidden = !change;
     if (change) {
-      var planURL = "/changes/" + encodeURIComponent(change) + "/plan";
+      var planURL = BASE + "/changes/" + encodeURIComponent(change) + "/plan";
       plan.href = planURL;
       plan.setAttribute("hx-get", planURL);
       if (window.htmx) htmx.process(plan);
@@ -2727,7 +2747,7 @@
   // helpers read the board's data-change; the sheet resolves its change
   // from the open session's binding).
   function fetchSessionsFor(change, cb) {
-    fetch("/changes/" + encodeURIComponent(change) + "/sessions", { headers: { Accept: "application/json" } })
+    fetch(BASE + "/changes/" + encodeURIComponent(change) + "/sessions", { headers: { Accept: "application/json" } })
       .then(function (r) { return r.json(); })
       .then(function (j) { cb(j.sessions || []); })
       .catch(function () { cb(null); });
@@ -2741,7 +2761,7 @@
 
   // createChangeSessionFor POSTs a change-root session and hands it to cb.
   function createChangeSessionFor(change, cb) {
-    fetch("/changes/" + encodeURIComponent(change) + "/sessions", {
+    fetch(BASE + "/changes/" + encodeURIComponent(change) + "/sessions", {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
       body: JSON.stringify({}),
@@ -2853,7 +2873,7 @@
     unBtn.textContent = "✕";
     unBtn.title = "Unlink from change (session stays in opencode)";
     unBtn.addEventListener("click", function () {
-      fetch("/changes/" + encodeURIComponent(change) + "/sessions/" + encodeURIComponent(s.session), { method: "DELETE" })
+      fetch(BASE + "/changes/" + encodeURIComponent(change) + "/sessions/" + encodeURIComponent(s.session), { method: "DELETE" })
         .then(function (r) { if (!r.ok) throw 0; loadSessionsSheet(); })
         .catch(function () { sessionsSheetError("Unlink failed."); });
     });
@@ -2872,7 +2892,7 @@
     var reopenBtn = document.getElementById("chat-change-reopen-btn");
     var wtRemoveBtn = document.getElementById("chat-change-worktree-remove");
     if (!overallEl || !wtEl) return;
-    fetch("/changes/" + encodeURIComponent(change), { headers: { Accept: "application/json" } })
+    fetch(BASE + "/changes/" + encodeURIComponent(change), { headers: { Accept: "application/json" } })
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (j) {
         if (!j) return;
@@ -2923,7 +2943,7 @@
           reviewBtn.type = "button";
           reviewBtn.className = "btn-ghost";
           reviewBtn.textContent = "Review";
-          reviewBtn.setAttribute("hx-get", "/changes/" + encodeURIComponent(change) + "/review");
+          reviewBtn.setAttribute("hx-get", BASE + "/changes/" + encodeURIComponent(change) + "/review");
           reviewBtn.setAttribute("hx-target", "#detail");
           reviewBtn.setAttribute("hx-swap", "innerHTML");
           wtEl.appendChild(reviewBtn);
@@ -2934,7 +2954,7 @@
   }
 
   function postLifecycleFor(change, action) {
-    fetch("/changes/" + encodeURIComponent(change) + "/" + action, {
+    fetch(BASE + "/changes/" + encodeURIComponent(change) + "/" + action, {
       method: "POST",
       headers: { Accept: "application/json", "X-Lessmess-UI": "1" },
     })
@@ -2960,7 +2980,7 @@
     document.getElementById("chat-session-new-btn").addEventListener("click", function () {
       var change = sheetChange();
       if (!change) return;
-      fetch("/changes/" + encodeURIComponent(change) + "/sessions", {
+      fetch(BASE + "/changes/" + encodeURIComponent(change) + "/sessions", {
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
         body: JSON.stringify({}),
@@ -2982,7 +3002,7 @@
         if (!change) return;
         // Root-level open-task warning; the server's close gate stays
         // authoritative (it checks the whole tree and names offenders).
-        fetch("/changes/" + encodeURIComponent(change) + "/tasks", { headers: { Accept: "application/json" } })
+        fetch(BASE + "/changes/" + encodeURIComponent(change) + "/tasks", { headers: { Accept: "application/json" } })
           .then(function (r) { return r.ok ? r.json() : { tasks: [] }; })
           .then(function (feed) {
             var open = (feed.tasks || []).filter(function (t) { return t.status !== "Done" && t.status !== "Cancelled"; }).length;
@@ -3006,7 +3026,7 @@
         if (!change || commitBtn.disabled) return;
         commitBtn.disabled = true;
         commitBtn.innerHTML = '<span class="spinner" aria-hidden="true"></span> Committing…';
-        fetch("/changes/" + encodeURIComponent(change) + "/commit", { method: "POST", headers: { Accept: "application/json" } })
+        fetch(BASE + "/changes/" + encodeURIComponent(change) + "/commit", { method: "POST", headers: { Accept: "application/json" } })
           .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.statusText); return j; }); })
           .then(function (j) { pollSheetCommitStatus(change, j.session, 0); })
           .catch(function (e) {
@@ -3024,7 +3044,7 @@
         if (!change) return;
         if (!window.confirm("Remove this change's worktree? The branch and its commits are kept.")) return;
         wtRemoveBtn.disabled = true;
-        fetch("/changes/" + encodeURIComponent(change) + "/worktree/remove", { method: "POST", headers: { Accept: "application/json" } })
+        fetch(BASE + "/changes/" + encodeURIComponent(change) + "/worktree/remove", { method: "POST", headers: { Accept: "application/json" } })
           .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.statusText); return j; }); })
           .then(function () { loadSessionsSheet(); })
           .catch(function (e) { sessionsSheetError("Worktree removal failed: " + e.message); })
@@ -3041,7 +3061,7 @@
       sessionsSheetError("Commit is taking unusually long — check the session in the Sessions sheet.");
       return;
     }
-    fetch("/changes/" + encodeURIComponent(change) + "/commit-status?session=" + encodeURIComponent(session), { headers: { Accept: "application/json" } })
+    fetch(BASE + "/changes/" + encodeURIComponent(change) + "/commit-status?session=" + encodeURIComponent(session), { headers: { Accept: "application/json" } })
       .then(function (r) { return r.json(); })
       .then(function (j) {
         if (j.done) {
@@ -3817,7 +3837,7 @@
     var task = feed.scope || "";
     var html = '<div class="ttp-scroll" data-chat-view-scroll>';
     if (change) {
-      html += '<a class="ttp-plan ttp-plan-first" data-work-document="plan" hx-get="/changes/' +
+      html += '<a class="ttp-plan ttp-plan-first" data-work-document="plan" hx-get="' + BASE + '/changes/' +
         encodeURIComponent(change) + '/plan" hx-target="#detail" hx-swap="innerHTML"><span><strong>Plan</strong><small>Read the change plan</small></span><span aria-hidden="true">&rsaquo;</span></a>';
     }
     if (task) {
@@ -3857,7 +3877,7 @@
     // Fixed footer: open the change plan modal, same request as the board's
     // Plan button.
     if (change) {
-      html += '<div class="ttp-foot"><a class="ttp-plan" hx-get="/changes/' +
+      html += '<div class="ttp-foot"><a class="ttp-plan" hx-get="' + BASE + '/changes/' +
         encodeURIComponent(change) + '/plan"' +
         ' hx-target="#detail" hx-swap="innerHTML">Plan</a></div>';
     }
@@ -3868,7 +3888,7 @@
   // Chats opened away from a board resolve the session's change binding and,
   // when bound, fill Work from the change's tasks JSON feed.
   function resolveSessionTasks(sessionID) {
-    fetch("/api/sessions/" + encodeURIComponent(sessionID) + "/change", { headers: { Accept: "application/json" } })
+    fetch(BASE + "/api/sessions/" + encodeURIComponent(sessionID) + "/change", { headers: { Accept: "application/json" } })
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (j) {
         if (!j || !j.change) return;
@@ -3879,7 +3899,7 @@
   }
 
   function loadSessionTasks(changeID, taskID) {
-    var url = "/changes/" + encodeURIComponent(changeID) + "/tasks";
+    var url = BASE + "/changes/" + encodeURIComponent(changeID) + "/tasks";
     if (taskID) url += "?task=" + encodeURIComponent(taskID);
     return fetch(url, { headers: { Accept: "application/json" } })
       .then(function (r) { return r.ok ? r.json() : null; })
@@ -3908,7 +3928,7 @@
     var sid = params.get("session");
     history.replaceState(null, "", location.pathname);
     if (!sid) { resumeChangeSession(change); return; }
-    fetch("/changes/" + encodeURIComponent(change) + "/sessions", { headers: { Accept: "application/json" } })
+    fetch(BASE + "/changes/" + encodeURIComponent(change) + "/sessions", { headers: { Accept: "application/json" } })
       .then(function (r) { return r.json(); })
       .then(function (j) {
         var s = (j.sessions || []).find(function (x) { return x.session === sid; });
@@ -3953,7 +3973,7 @@
       var dChange = decompose.dataset.change;
       var dTask = decompose.dataset.task;
       decompose.disabled = true;
-      fetch("/changes/" + encodeURIComponent(dChange) + "/expand", {
+      fetch(BASE + "/changes/" + encodeURIComponent(dChange) + "/expand", {
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
         body: JSON.stringify({ task: dTask }),
@@ -4248,18 +4268,18 @@
     if ((m = path.match(/^tasks\/(.+\.md)$/i)) && id) {
       // The last segment decides: a task file vs a container ledger.
       if (/\/ledger\.md$/i.test(m[1])) {
-        return { url: "/changes/" + id + "/ledger?href=" + encodeURIComponent(path), frag: hash };
+        return { url: BASE + "/changes/" + id + "/ledger?href=" + encodeURIComponent(path), frag: hash };
       }
-      return { url: "/changes/" + id + "/tasks/" + m[1], frag: hash };
+      return { url: BASE + "/changes/" + id + "/tasks/" + m[1], frag: hash };
     }
     if ((m = path.match(/^(\d{4}-\d{2}-\d{2}-[a-z0-9]+)\/plan\.md$/i))) {
-      return { url: "/changes/" + m[1] + "/plan", frag: hash };
+      return { url: BASE + "/changes/" + m[1] + "/plan", frag: hash };
     }
     if (/^(\.\.\/)?ledger\.md$/i.test(path) && id) {
-      return { url: "/changes/" + id + "/ledger", frag: hash };
+      return { url: BASE + "/changes/" + id + "/ledger", frag: hash };
     }
     if (/^plan\.md$/i.test(path) && id) {
-      return { url: "/changes/" + id + "/plan", frag: hash };
+      return { url: BASE + "/changes/" + id + "/plan", frag: hash };
     }
     return null;
   }
@@ -4318,7 +4338,7 @@
       list.innerHTML = '<p class="muted">Checking…</p>';
       stat.textContent = "";
       modal.hidden = false;
-      fetch("/api/git/status", { headers: { Accept: "application/json" } })
+      fetch(BASE + "/api/git/status", { headers: { Accept: "application/json" } })
         .then(function (r) { return r.json(); })
         .then(function (j) {
           if (!j.repo || !j.changes || !j.changes.length) {
@@ -4370,7 +4390,7 @@
         status.textContent = "Commit is taking unusually long — check the session in Discussions.";
         return;
       }
-      fetch("/api/git/commit-status?session=" + encodeURIComponent(session), {
+      fetch(BASE + "/api/git/commit-status?session=" + encodeURIComponent(session), {
         headers: { Accept: "application/json" },
       })
         .then(function (r) { return r.json(); })
@@ -4396,7 +4416,7 @@
     confirmBtn.addEventListener("click", function () {
       if (confirmBtn.disabled || busy) return;
       setBusy(true);
-      fetch("/api/git/commit", { method: "POST", headers: { Accept: "application/json" } })
+      fetch(BASE + "/api/git/commit", { method: "POST", headers: { Accept: "application/json" } })
         .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.statusText); return j; }); })
         .then(function (j) { poll(j.session, 0); })
         .catch(function (e) {
@@ -4698,7 +4718,7 @@
       e.preventDefault();
       var field = btn.closest(".settings-field").getAttribute("data-field");
       btn.disabled = true;
-      fetch("/api/settings/change", {
+      fetch(BASE + "/api/settings/change", {
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
         body: JSON.stringify({ field: field, scope: scope }),
@@ -4734,7 +4754,7 @@
         status.hidden = false;
         status.classList.remove("err");
         status.textContent = "Saving…";
-        fetch("/api/settings?scope=" + scope, {
+        fetch(BASE + "/api/settings?scope=" + scope, {
           method: "PUT",
           headers: { "Content-Type": "application/json", Accept: "application/json" },
           body: JSON.stringify(payload),
@@ -4763,13 +4783,13 @@
     // and after the align action (which changes server-side state the
     // notice renders).
     function loadSettings() {
-      return fetch("/api/settings", { headers: { Accept: "application/json" } })
+      return fetch(BASE + "/api/settings", { headers: { Accept: "application/json" } })
         .then(function (r) { return r.json(); })
         .then(function (j) { view = j; render(); })
         .catch(function () {});
     }
     loadSettings();
-    fetch("/api/settings/options", { headers: { Accept: "application/json" } })
+    fetch(BASE + "/api/settings/options", { headers: { Accept: "application/json" } })
       .then(function (r) { return r.json(); })
       .then(function (j) { options = j; renderOptions(); render(); })
       .catch(function () {
@@ -4782,7 +4802,7 @@
     if (alignBtn) {
       alignBtn.addEventListener("click", function () {
         alignBtn.disabled = true;
-        fetch("/api/settings/opencode-default-agent", {
+        fetch(BASE + "/api/settings/opencode-default-agent", {
           method: "POST",
           headers: { Accept: "application/json" },
         })
@@ -4801,7 +4821,7 @@
       exBox.innerHTML = "";
 
       function exLoadRows(rel, afterRow, depth) {
-        fetch("/api/setup/dirs?dir=" + encodeURIComponent(rel), { headers: { Accept: "application/json" } })
+        fetch(BASE + "/api/setup/dirs?dir=" + encodeURIComponent(rel), { headers: { Accept: "application/json" } })
           .then(function (r) { return r.json(); })
           .then(function (j) {
             var dirs = j.dirs || [];
@@ -4907,7 +4927,7 @@
       exSave.addEventListener("click", function () {
         exSave.disabled = true;
         exStatus.textContent = "Saving…";
-        fetch("/docs/exclusions", {
+        fetch(BASE + "/docs/exclusions", {
           method: "POST",
           headers: { "Content-Type": "application/json", Accept: "application/json" },
           body: JSON.stringify({ excludeDirs: exSelected() }),
@@ -4933,7 +4953,7 @@
     var d = document.getElementById("onboarding-dismiss");
     d.addEventListener("click", function () {
       d.disabled = true;
-      fetch("/api/setup/dismiss", { method: "POST", headers: { Accept: "application/json" } })
+      fetch(BASE + "/api/setup/dismiss", { method: "POST", headers: { Accept: "application/json" } })
         .then(function (r) {
           if (r.ok) b.hidden = true;
           else d.disabled = false;
@@ -5010,7 +5030,7 @@
   function buildChangeCard(c) {
     var a = document.createElement("a");
     a.className = "change-card";
-    a.href = "/changes/" + encodeURIComponent(c.id);
+    a.href = BASE + "/changes/" + encodeURIComponent(c.id);
     a.dataset.change = c.id;
     a.dataset.tasks = String(c.tasks || 0);
     a.dataset.statusRank = String(statusRankOf(c.status));
@@ -5041,7 +5061,7 @@
   function refreshChangeCards() {
     var host = document.getElementById("change-cards");
     if (!host) return;
-    fetch("/", { headers: { Accept: "application/json" } })
+    fetch(BASE + "/", { headers: { Accept: "application/json" } })
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (j) {
         if (!j || !j.changes || !host.isConnected) return;
@@ -5153,7 +5173,7 @@
 
     function loadPrereqs() {
       el("setup-prereqs-next").disabled = true;
-      return fetch("/api/setup/prereqs", { headers: { Accept: "application/json" } })
+      return fetch(BASE + "/api/setup/prereqs", { headers: { Accept: "application/json" } })
         .then(function (r) { return r.json(); })
         .then(function (j) {
           state.checks = j.checks || [];
@@ -5178,7 +5198,7 @@
     function enterName() {
       var input = el("setup-project-name");
       if (input.value !== "") return;
-      fetch("/api/settings", { headers: { Accept: "application/json" } })
+      fetch(BASE + "/api/settings", { headers: { Accept: "application/json" } })
         .then(function (r) { return r.json(); })
         .then(function (j) {
           if (input.value !== "") return;
@@ -5199,7 +5219,7 @@
       var status = el("setup-name-status");
       var payload = { general: { projectName: el("setup-project-name").value.trim() } };
       status.textContent = "Saving…";
-      fetch("/api/settings?scope=" + nameScope(), {
+      fetch(BASE + "/api/settings?scope=" + nameScope(), {
         method: "PUT",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
         body: JSON.stringify(payload),
@@ -5241,7 +5261,7 @@
     }
 
     function loadDirRows(rel, box, depth, afterRow) {
-      fetch("/api/setup/dirs?dir=" + encodeURIComponent(rel), { headers: { Accept: "application/json" } })
+      fetch(BASE + "/api/setup/dirs?dir=" + encodeURIComponent(rel), { headers: { Accept: "application/json" } })
         .then(function (r) { return r.json(); })
         .then(function (j) {
           var dirs = j.dirs || [];
@@ -5358,7 +5378,7 @@
       showError("");
       var coverage = el("setup-coverage").checked;
       var excludeDirs = coverage ? selectedExcludes() : [];
-      fetch("/api/setup/bootstrap", {
+      fetch(BASE + "/api/setup/bootstrap", {
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
         body: JSON.stringify({ docsCoverage: coverage, excludeDirs: excludeDirs }),
@@ -5393,7 +5413,7 @@
     var optionsLoaded = false;
 
     function loadAgentOptions() {
-      return fetch("/api/settings/options", { headers: { Accept: "application/json" } })
+      return fetch(BASE + "/api/settings/options", { headers: { Accept: "application/json" } })
         .then(function (r) { return r.json(); })
         .then(function (j) {
           if (!j.available) { el("setup-options-hint").hidden = false; return; }
@@ -5434,7 +5454,7 @@
         model: el("setup-model").value.trim(),
       } };
       status.textContent = "Saving…";
-      fetch("/api/settings?scope=" + setupScope(), {
+      fetch(BASE + "/api/settings?scope=" + setupScope(), {
         method: "PUT",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
         body: JSON.stringify(payload),
@@ -5455,7 +5475,7 @@
     // --- step 4: docs seeding (opt-in) ---
 
     function pollSeed() {
-      fetch("/api/setup/docs-seed-status", { headers: { Accept: "application/json" } })
+      fetch(BASE + "/api/setup/docs-seed-status", { headers: { Accept: "application/json" } })
         .then(function (r) { return r.json(); })
         .then(function (j) {
           var log = el("setup-seed-log");
@@ -5485,7 +5505,7 @@
       var btn = el("setup-seed-btn");
       btn.disabled = true;
       showError("");
-      fetch("/api/setup/docs-seed", {
+      fetch(BASE + "/api/setup/docs-seed", {
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
         body: JSON.stringify({ budget: budget }),
@@ -5535,13 +5555,13 @@
       if (state.agentSaved) stepMarks.agent = "set";
       else if (state.agentSkipped) stepMarks.agent = "skipped";
       if (state.docsOutcome === "skipped") stepMarks.docs = "skipped";
-      fetch("/api/setup/complete", {
+      fetch(BASE + "/api/setup/complete", {
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
         body: JSON.stringify({ steps: stepMarks }),
       })
         .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.statusText); return j; }); })
-        .then(function () { window.location.href = "/"; })
+        .then(function () { window.location.href = BASE + "/"; })
         .catch(function (e) {
           showError("Could not record completion: " + e.message);
           btn.disabled = false;
@@ -5645,7 +5665,7 @@
 
     function load() {
       summary.textContent = "Loading service status...";
-      return fetch("/api/opencode/status", { headers: { Accept: "application/json" }, cache: "no-store" })
+      return fetch(BASE + "/api/opencode/status", { headers: { Accept: "application/json" }, cache: "no-store" })
         .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.statusText); return j; }); })
         .then(render)
         .catch(function () { summary.textContent = "Status unavailable."; message.textContent = "Could not load OpenCode status."; message.hidden = false; });
@@ -5655,7 +5675,7 @@
       rediscover.disabled = true;
       message.textContent = "Rediscovering the registered service...";
       message.hidden = false;
-      fetch("/api/opencode/rediscover", { method: "POST", headers: { Accept: "application/json", "X-Lessmess-UI": "1" }, cache: "no-store" })
+      fetch(BASE + "/api/opencode/rediscover", { method: "POST", headers: { Accept: "application/json", "X-Lessmess-UI": "1" }, cache: "no-store" })
         .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.statusText); return j; }); })
         .then(render)
         .catch(function (err) { message.textContent = err.message; message.hidden = false; })
@@ -5686,7 +5706,7 @@
         options.headers["Content-Type"] = "application/json";
         options.headers["X-Lessmess-UI"] = "1";
       }
-      return fetch(path, options).then(function (r) {
+      return fetch(BASE + path, options).then(function (r) {
         return r.json().catch(function () { return {}; }).then(function (body) {
           if (!r.ok) throw new Error(body.error || "The integration operation failed.");
           return body;
@@ -6051,7 +6071,7 @@
       options.headers["Content-Type"] = "application/json";
       options.headers["X-Lessmess-UI"] = "1";
     }
-    return fetch(path, options).then(function (response) {
+    return fetch(BASE + path, options).then(function (response) {
       return response.json().catch(function () { return {}; }).then(function (body) {
         if (!response.ok) throw new Error(body.error || "OpenCode management operation failed.");
         return body;
@@ -6234,10 +6254,58 @@
     load();
   }
 
+  // --- projects page (hub landing) -----------------------------------------
+
+  function initProjects() {
+    var root = document.getElementById("projects-page");
+    if (!root) return;
+    var form = document.getElementById("project-add-form");
+    var input = document.getElementById("project-add-path");
+    var status = document.getElementById("project-add-status");
+    function setStatus(text) { status.textContent = text || ""; }
+
+    form.addEventListener("submit", function (e) {
+      e.preventDefault();
+      var path = (input.value || "").trim();
+      if (!path) { setStatus("Enter an absolute directory path."); return; }
+      setStatus("Adding…");
+      fetch(BASE + "/api/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Lessmess-UI": "1" },
+        body: JSON.stringify({ path: path }),
+      }).then(function (r) {
+        return r.json().catch(function () { return {}; }).then(function (body) {
+          if (r.status === 201) { window.location.reload(); return null; }
+          throw new Error(body.error || "Adding the project failed (" + r.status + ").");
+        });
+      }).catch(function (err) { setStatus(err.message); });
+    });
+
+    root.addEventListener("click", function (e) {
+      var btn = e.target.closest(".project-remove");
+      if (!btn) return;
+      if (!window.confirm("Remove this project from the instance? The repository itself is not touched.")) return;
+      btn.disabled = true;
+      fetch(BASE + "/api/projects/" + encodeURIComponent(btn.dataset.slug), {
+        method: "DELETE",
+        headers: { "X-Lessmess-UI": "1" },
+      }).then(function (r) {
+        if (r.status === 204) { window.location.reload(); return null; }
+        return r.json().catch(function () { return {}; }).then(function (body) {
+          throw new Error(body.error || "Removing the project failed (" + r.status + ").");
+        });
+      }).catch(function (err) {
+        btn.disabled = false;
+        window.alert(err.message);
+      });
+    });
+  }
+
   // --- init -----------------------------------------------------------------
 
   document.addEventListener("DOMContentLoaded", function () {
     initTheme();
+    initProjects();
     initCommitAll();
     initIndexSort();
     initChangeCards();
@@ -6248,8 +6316,8 @@
     initOpencodePermissions();
     initSetup();
     initOnboardingBanner();
-    checkValidation();
+    if (page !== "projects") checkValidation();
     initChangeDeepLink();
-    loadDiscussions();
+    if (page !== "projects") loadDiscussions();
   });
 })();

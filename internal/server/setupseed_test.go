@@ -97,7 +97,7 @@ func TestDocsSeed503WithoutCoverage(t *testing.T) {
 func TestDocsSeedRunsAndHonorsDefaults(t *testing.T) {
 	dir := seedFixture(t, "build", "prov/m")
 	captured := stubSeedSummarizer(t, nil)
-	s := NewSetup(dir, nil)
+	s := NewSetup(dir, "", nil)
 	s.setOCClient(opencode.New("http://127.0.0.1:1", "pw"))
 
 	w := do(t, s, "POST", "/api/setup/docs-seed", `{"budget":1}`)
@@ -123,7 +123,7 @@ func TestDocsSeedConflictWhileRunning(t *testing.T) {
 	dir := seedFixture(t, "", "")
 	block := make(chan struct{})
 	stubSeedSummarizer(t, block)
-	s := NewSetup(dir, nil)
+	s := NewSetup(dir, "", nil)
 	s.setOCClient(opencode.New("http://127.0.0.1:1", "pw"))
 
 	if w := do(t, s, "POST", "/api/setup/docs-seed", `{"budget":0}`); w.Code != http.StatusAccepted {

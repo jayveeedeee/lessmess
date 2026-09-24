@@ -32,7 +32,7 @@
 {{define "explorerNode"}}
 <li class="xnode">
   <details data-rel="{{.Rel}}"{{if eq .Rel "."}} open{{end}}>
-    <summary class="xdir{{if eq .Rel "."}} selected{{end}}" hx-get="/explorer/detail?dir={{.Rel}}" hx-target="#explorer-detail" hx-trigger="click">
+    <summary class="xdir{{if eq .Rel "."}} selected{{end}}" hx-get="{{bp}}/explorer/detail?dir={{.Rel}}" hx-target="#explorer-detail" hx-trigger="click">
       <span class="xdir-name">{{.Name}}/</span>
     </summary>
     {{if .Dirs}}

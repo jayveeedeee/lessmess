@@ -21,7 +21,10 @@ Node toolchain required.
 ## Usage
 
 ```sh
-# Start the server (http://127.0.0.1:8080)
+# Serve every project registered in the global registry (http://127.0.0.1:8080)
+lessmess serve [--host 127.0.0.1] [--port 8080]
+
+# Serve one repository at the root (single-project mode)
 lessmess serve [--host 127.0.0.1] [--port 8080] [--dir .]
 
 # Check the workflow state against the validation contract
@@ -38,8 +41,45 @@ lessmess init [--dir .]
 lessmess docs seed [--dry-run] [--budget N] [--dir .]
 ```
 
-`--dir` points at a repository root (default: current directory). One
-process serves one repository.
+`--dir` points at a repository root. Without it, `serve` starts in
+**multi-project mode** and serves every repository registered in the global
+project registry, each under its own `/p/<slug>/` address (see below).
+
+## Multi-project: one instance, many repositories
+
+One lessmess process can serve any number of repositories. Which projects it
+serves is **user-level state**, kept outside every repository in the global
+registry at `$XDG_CONFIG_HOME/lessmess/config.json` (`~/.config/lessmess/
+config.json` on macOS/Linux defaults; override the file with
+`LESSMESS_CONFIG`).
+
+- **Add and remove from the UI** — the root `/` is the projects landing
+  page: every registered project with its name, path, and mount status
+  (ready / setup pending / unavailable), plus **Add project** (absolute
+  directory path) and **Remove**. Adding hot-boots the project without a
+  restart; removing unmounts it and deletes the registry entry. Neither
+  ever touches the repository itself — `changes/` and `.lessmess/` are
+  left exactly as they are.
+- **Each project lives at `/p/<slug>/`** — its full UI (changes, explorer,
+  settings, chat, SSE stream) is served under that prefix, so several
+  projects can be open side-by-side in separate browser tabs. Slugs come
+  from the folder basename (`My Cool Project` → `my-cool-project`,
+  deduplicated with suffixes).
+- **Header switcher** — every project page has a Projects dropdown listing
+  the other projects and the landing page.
+- **Setup mode is per project** — a registered directory without a
+  `changes/` tree gets the onboarding wizard under its own prefix and
+  hot-opens into the full UI after bootstrap.
+- **Agent sessions are project-scoped** — sessions spawn in their
+  project's directory, and the curl instructions primed into new sessions
+  use the project's prefixed base URL, so an agent's scaffold call lands in
+  the right repository. (Sessions created before an upgrade to
+  multi-project mode keep their old unprefixed instructions.)
+- **Per-project branding** — each repository keeps its own accent color and
+  `general.projectName`; the landing page itself uses the default accent.
+
+Single-project mode (`--dir`) is unchanged and serves that repository at
+the root with no prefix — existing bookmarks and scripts keep working.
 
 ## The JSON workflow state
 
@@ -544,8 +584,9 @@ Layout:
 ```text
 cmd/lessmess/       CLI entry (serve, validate, migrate, init, docs seed)
 internal/model/     JSON workflow state types + legacy markdown readers (migration)
+internal/registry/  global project registry (user-level config for multi-project serve)
 internal/store/     state store: scan, cache, fsnotify watch, validation, safe writes, migration
-internal/server/    HTTP handlers, SSE, instruction injection, template rendering, docs queue + gardener
+internal/server/    HTTP handlers, hub (multi-project mounts), SSE, instruction injection, template rendering, docs queue + gardener
 internal/docs/      repo docs: coverage config, tree walk, STRUCTURE.md generation, seed
 web/                embedded templates and static assets (see web/static/VENDOR.md)
 ```

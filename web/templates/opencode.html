@@ -1,14 +1,14 @@
 {{define "content"}}
 <section id="opencode-status-page" class="oc-status" aria-labelledby="oc-status-title">
   <div class="oc-status-head">
-    <div><a class="muted" href="/settings">Back to Settings</a><h1 id="oc-status-title">OpenCode management</h1></div>
+    <div><a class="muted" href="{{.BasePath}}/settings">Back to Settings</a><h1 id="oc-status-title">OpenCode management</h1></div>
     <button id="oc-rediscover" type="button" class="btn-ghost">Rediscover service</button>
   </div>
   <p class="muted">Manage the local OpenCode service attached to this lessmess process. Public hosting is unsupported; provider and model entries are not network health checks.</p>
   <nav class="oc-management-nav" aria-label="OpenCode management">
     <a href="#oc-status-section">Status</a><a href="#oc-connections-section">Connections</a><a href="#oc-mcp-section">MCP</a><a href="#oc-permissions-section">Permissions</a>
   </nav>
-  <div class="oc-return-links"><button id="oc-return-chat" type="button" class="btn-ghost">Return to Chat</button><a class="btn-ghost" href="/settings">Return to Settings</a></div>
+  <div class="oc-return-links"><button id="oc-return-chat" type="button" class="btn-ghost">Return to Chat</button><a class="btn-ghost" href="{{.BasePath}}/settings">Return to Settings</a></div>
   <p id="oc-status-message" class="settings-error" role="status" aria-live="polite" hidden></p>
   <section id="oc-status-section" class="oc-section-anchor" aria-labelledby="oc-status-section-title">
     <h2 id="oc-status-section-title" class="sr-only">Status</h2>

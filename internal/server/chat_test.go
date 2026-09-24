@@ -853,12 +853,12 @@ func TestChatTranscriptRetryProviderAndCompactionAreSanitized(t *testing.T) {
 }
 
 func TestBareAssistantErrorFinishIsNotReportedAsProviderFailure(t *testing.T) {
-	view := makeChatMessageView("ses_chat", opencode.Message{Type: "assistant", Finish: "error"})
+	view := makeChatMessageView("", "ses_chat", opencode.Message{Type: "assistant", Finish: "error"})
 	if view.Error != "" {
 		t.Fatalf("bare error finish projected as %q", view.Error)
 	}
 
-	view = makeChatMessageView("ses_chat", opencode.Message{
+	view = makeChatMessageView("", "ses_chat", opencode.Message{
 		Type:   "assistant",
 		Finish: "error",
 		Error:  &opencode.StructuredError{Type: "ProviderError", Status: http.StatusBadGateway},

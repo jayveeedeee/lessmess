@@ -26,7 +26,7 @@ func realBoot(t *testing.T) func(string) (http.Handler, error) {
 
 func TestBootstrapFullLoop(t *testing.T) {
 	dir := t.TempDir()
-	s := NewSetup(dir, realBoot(t))
+	s := NewSetup(dir, "", realBoot(t))
 
 	// Bootstrap with coverage enabled.
 	w := do(t, s, "POST", "/api/setup/bootstrap", `{"docsCoverage":true}`)
@@ -89,7 +89,7 @@ func TestBootstrapFullLoop(t *testing.T) {
 
 func TestBootstrapSkipCoverage(t *testing.T) {
 	dir := t.TempDir()
-	s := NewSetup(dir, realBoot(t))
+	s := NewSetup(dir, "", realBoot(t))
 
 	w := do(t, s, "POST", "/api/setup/bootstrap", `{"docsCoverage":false}`)
 	if w.Code != http.StatusOK {
@@ -118,7 +118,7 @@ func TestBootstrapPartialTree(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(dir, "changes"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	s := NewSetup(dir, realBoot(t))
+	s := NewSetup(dir, "", realBoot(t))
 
 	w := do(t, s, "POST", "/api/setup/bootstrap", `{"docsCoverage":false}`)
 	if w.Code != http.StatusOK {
@@ -147,7 +147,7 @@ func TestSetupDirsListing(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "afile.txt"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	s := NewSetup(dir, nil)
+	s := NewSetup(dir, "", nil)
 
 	w := do(t, s, "GET", "/api/setup/dirs", "")
 	if w.Code != http.StatusOK {
@@ -188,7 +188,7 @@ func TestSetupDirsNestedAndExcluded(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "agentsdocs.json"), []byte(`{"include":["**"],"exclude":["swagger","a/b"]}`+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	s := NewSetup(dir, nil)
+	s := NewSetup(dir, "", nil)
 
 	// Root: swagger shows excluded (base-name pattern).
 	var root setupDirsResponse
@@ -253,7 +253,7 @@ func TestSetupDirsNestedAndExcluded(t *testing.T) {
 
 func TestBootstrapExcludeDirs(t *testing.T) {
 	dir := t.TempDir()
-	s := NewSetup(dir, realBoot(t))
+	s := NewSetup(dir, "", realBoot(t))
 	w := do(t, s, "POST", "/api/setup/bootstrap", `{"docsCoverage":true,"excludeDirs":["docs","swagger"]}`)
 	if w.Code != http.StatusOK {
 		t.Fatalf("bootstrap = %d %s", w.Code, w.Body)
@@ -281,7 +281,7 @@ func TestBootstrapNestedExcludeRoundTrip(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(dir, "src", "gen"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	s := NewSetup(dir, realBoot(t))
+	s := NewSetup(dir, "", realBoot(t))
 
 	// Select a nested path; an ancestor's redundant child is normalized away.
 	w := do(t, s, "POST", "/api/setup/bootstrap", `{"docsCoverage":true,"excludeDirs":["src","src/gen"]}`)
@@ -335,7 +335,7 @@ One row per change directory. Task statuses live exclusively in each change's `+
 	if err := os.WriteFile(filepath.Join(dir, "agentsdocs.json"), []byte(`{"include":["**"],"exclude":["web/static","docs"]}`+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	s := NewSetup(dir, realBoot(t))
+	s := NewSetup(dir, "", realBoot(t))
 
 	// Submit a new base-name selection: "docs" is dropped (not resubmitted),
 	// "web/static" is preserved, "scripts" is added.
@@ -390,7 +390,7 @@ func TestBootstrapBadBody(t *testing.T) {
 
 func TestBootstrapDefaultCoverageOn(t *testing.T) {
 	dir := t.TempDir()
-	s := NewSetup(dir, realBoot(t))
+	s := NewSetup(dir, "", realBoot(t))
 	w := do(t, s, "POST", "/api/setup/bootstrap", `{}`)
 	if w.Code != http.StatusOK {
 		t.Fatalf("bootstrap = %d", w.Code)

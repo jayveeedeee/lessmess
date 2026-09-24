@@ -416,13 +416,16 @@ type SetupServer struct {
 	mu      sync.Mutex
 	oc      *opencode.Client // discovered by the prereq re-check (ONB-02)
 	bootFn  func(dir string) (http.Handler, error)
+	basePath string          // URL prefix in hub mode; "" standalone
 	swapped atomic.Value // http.Handler after a successful boot
 }
 
-// NewSetup builds the setup-mode handler for dir. boot builds the full
-// handler once the repository is initialized (see main.runServe).
-func NewSetup(dir string, boot func(string) (http.Handler, error)) *SetupServer {
-	s := &SetupServer{bootFn: boot}
+// NewSetup builds the setup-mode handler for dir. basePath is the URL
+// prefix it is mounted under in hub mode ("" standalone) and must be
+// prefixed into its own redirects; boot builds the full handler once the
+// repository is initialized (see main.runServe).
+func NewSetup(dir, basePath string, boot func(string) (http.Handler, error)) *SetupServer {
+	s := &SetupServer{bootFn: boot, basePath: basePath}
 	s.env = &setupEnv{
 		dir:   dir,
 		rend:  newRenderer(),
@@ -444,6 +447,7 @@ func NewSetup(dir string, boot func(string) (http.Handler, error)) *SetupServer 
 	// project name reads the same layered settings the wizard edits.
 	s.env.rend.accent = func() AccentColor { return effectiveAccentColor(dir) }
 	s.env.rend.projectName = func() string { return effectiveProjectName(dir) }
+	s.env.rend.base = func() string { return s.basePath }
 	brand := newBrandRenderer(s.env.rend.accent)
 	m.HandleFunc("GET /icon.svg", brand.svg)
 	m.HandleFunc("GET /favicon.ico", brand.ico)
@@ -499,7 +503,7 @@ func (s *SetupServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // redirect to the wizard, everything else gets 503 JSON.
 func (s *SetupServer) guard(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet && wantsHTML(r) {
-		http.Redirect(w, r, "/", http.StatusSeeOther)
+		http.Redirect(w, r, s.basePath+"/", http.StatusSeeOther)
 		return
 	}
 	writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "setup not complete"})

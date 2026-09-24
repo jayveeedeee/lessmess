@@ -261,7 +261,7 @@ func (s *Server) chatSnapshot(w http.ResponseWriter, r *http.Request) {
 	}
 	var messages []chatMessageView
 	for i := len(page.Messages) - 1; i >= 0; i-- {
-		messages = append(messages, makeChatMessageView(sessionID, page.Messages[i]))
+		messages = append(messages, makeChatMessageView(s.Base, sessionID, page.Messages[i]))
 	}
 	view.Blocks = makeChatTranscriptBlocks(messages)
 	if cursor != "" {
@@ -417,7 +417,10 @@ func runningActivitySummary(activity chatActivityView) string {
 	}
 }
 
-func makeChatMessageView(sessionID string, message opencode.Message) chatMessageView {
+// makeChatMessageView normalizes one service message for the transcript.
+// base prefixes the lazily fetched tool/file detail URLs when the server
+// is mounted under a hub prefix ("" standalone).
+func makeChatMessageView(base, sessionID string, message opencode.Message) chatMessageView {
 	view := chatMessageView{ID: message.ID, Type: message.Type, Status: message.Status, Label: message.Type, Completed: message.Time.Completed > 0}
 	switch message.Type {
 	case "user":
@@ -483,7 +486,7 @@ func makeChatMessageView(sessionID string, message opencode.Message) chatMessage
 			pv.ToolName, _ = sliceChatBytes(part.Name, 0, 256)
 			pv.ToolStatus = normalizeToolStatus(part.State.Status)
 			pv.ToolID = part.ID
-			pv.ToolURL = fmt.Sprintf("/api/sessions/%s/chat/messages/%s/tools/%s", url.PathEscape(sessionID), url.PathEscape(message.ID), url.PathEscape(part.ID))
+			pv.ToolURL = fmt.Sprintf("%s/api/sessions/%s/chat/messages/%s/tools/%s", base, url.PathEscape(sessionID), url.PathEscape(message.ID), url.PathEscape(part.ID))
 		case opencode.UnknownPart:
 			pv.Kind = "unknown"
 			pv.UnknownType = firstNonempty(part.Type, "unknown")
@@ -497,7 +500,7 @@ func makeChatMessageView(sessionID string, message opencode.Message) chatMessage
 		mimeType, _, _ := mime.ParseMediaType(file.MIME)
 		view.Files = append(view.Files, chatFileView{
 			Name: safeChatFilename(file.Name), MIME: mimeType,
-			URL:   fmt.Sprintf("/api/sessions/%s/chat/messages/%s/files/%d", url.PathEscape(sessionID), url.PathEscape(message.ID), i),
+			URL:   fmt.Sprintf("%s/api/sessions/%s/chat/messages/%s/files/%d", base, url.PathEscape(sessionID), url.PathEscape(message.ID), i),
 			Image: isChatImage(mimeType), Reference: file.Source.Type == "uri",
 		})
 	}
@@ -665,7 +668,7 @@ func (s *Server) chatToolDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	next := offset + len(view.Output)
 	if next < len(allOutput) {
-		view.NextURL = fmt.Sprintf("/api/sessions/%s/chat/messages/%s/tools/%s?offset=%d&limit=%d", url.PathEscape(sessionID), url.PathEscape(messageID), url.PathEscape(toolID), next, limit)
+		view.NextURL = fmt.Sprintf("%s/api/sessions/%s/chat/messages/%s/tools/%s?offset=%d&limit=%d", s.Base, url.PathEscape(sessionID), url.PathEscape(messageID), url.PathEscape(toolID), next, limit)
 	}
 	view.Timing = formatToolTiming(tool.Time)
 	s.rend.render(w, s.rend.partial, "chatToolDetail", view)

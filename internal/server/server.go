@@ -31,6 +31,10 @@ type Server struct {
 	// PublicBase is the host:port the server listens on, used in
 	// agent-facing prompts. Set by main; empty falls back to a default.
 	PublicBase string
+	// Base is the URL path prefix this server is mounted under in hub
+	// mode (e.g. "/p/demo"); "" in single-project mode, where every URL
+	// stays root-absolute. Server-emitted links must prefix through it.
+	Base string
 
 	oc       *opencode.Client // nil disables the opencode integration
 	sessions *mapping
@@ -177,6 +181,9 @@ func New(st *store.Store) *Server {
 	// SVG, the favicon rasters, and the apple-touch tile.
 	s.rend.accent = func() AccentColor { return ResolveAccent(s.st.Dir) }
 	s.rend.projectName = func() string { return effectiveProjectName(s.st.Dir) }
+	// Base is set by the owner after construction (main for standalone,
+	// the hub for mounts); the hook reads it at render time.
+	s.rend.base = func() string { return s.Base }
 	brand := newBrandRenderer(s.rend.accent)
 	mux.HandleFunc("GET /icon.svg", brand.svg)
 	mux.HandleFunc("GET /favicon.ico", brand.ico)
@@ -381,7 +388,7 @@ func (s *Server) board(w http.ResponseWriter, r *http.Request) {
 	// panel now, so the parameter is dropped on the way. The JSON API
 	// below survives unchanged for API clients.
 	if wantsHTML(r) || isHX(r) {
-		target := "/?change=" + url.QueryEscape(id)
+		target := s.Base + "/?change=" + url.QueryEscape(id)
 		if sid := r.URL.Query().Get("session"); sid != "" {
 			target += "&session=" + url.QueryEscape(sid)
 		}
@@ -397,9 +404,9 @@ func (s *Server) board(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, store.ErrNotFound)
 			return
 		}
-		view = newTaskBoardView(c, n)
+		view = newTaskBoardView(c, n, s.Base)
 	} else {
-		view = newBoardView(c)
+		view = newBoardView(c, s.Base)
 	}
 	// Worktree strip: computed only for changes with a state entry, so
 	// repos without the feature pay nothing.
@@ -511,7 +518,7 @@ func (s *Server) listTasksFeed(w http.ResponseWriter, r *http.Request) {
 	}
 	feed.Overall = string(c.Overall())
 	for _, n := range nodes {
-		feed.Tasks = append(feed.Tasks, tasksFeedRowOf("/changes/"+id, n))
+		feed.Tasks = append(feed.Tasks, tasksFeedRowOf(s.Base+"/changes/"+id, n))
 	}
 	writeJSON(w, http.StatusOK, feed)
 }
@@ -764,7 +771,7 @@ func (s *Server) createChange(w http.ResponseWriter, r *http.Request) {
 	}
 	slog.Info("create change", "id", id)
 	if isHX(r) {
-		w.Header().Set("HX-Redirect", "/?change="+url.QueryEscape(id))
+		w.Header().Set("HX-Redirect", s.Base+"/?change="+url.QueryEscape(id))
 		w.WriteHeader(http.StatusOK)
 		return
 	}

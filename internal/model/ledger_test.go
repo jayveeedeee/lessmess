@@ -164,3 +164,43 @@ func TestParseTaskFileClosingFenceAtEOF(t *testing.T) {
 		t.Errorf("id = %q", f.ID)
 	}
 }
+
+// Hand/GPT-authored legacy ledgers often backtick the header IDs where the
+// canonical renderer emits them bare; the parser tolerates both so the
+// one-way migration refuses nothing on formatting alone.
+func TestParseChangeLedgerBacktickedIDs(t *testing.T) {
+	data := []byte("# Ledger — 2026-09-09-0\n\n" +
+		"## Change\n\n" +
+		"- Change ID: `2026-09-09-0`\n" +
+		"- Plan: [plan.md](plan.md)\n" +
+		"- Overall status: In progress\n" +
+		"- Last updated: 2026-09-10\n\n" +
+		"## Tasks\n\n" +
+		"| Task | Title | Status | Depends on | Updated | Notes |\n" +
+		"| --- | --- | --- | --- | --- | --- |\n" +
+		"| [KAN-00](tasks/00-first.md) | First | Done | — | 2026-09-09 | |\n")
+	l, err := ParseChangeLedger("changes/2026-09-09-0/ledger.md", data)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if l.ChangeID != "2026-09-09-0" {
+		t.Fatalf("ChangeID = %q, want the bare id", l.ChangeID)
+	}
+}
+
+func TestParseTaskLedgerBacktickedHeader(t *testing.T) {
+	data := []byte("# Task Ledger\n\n" +
+		"- Task: `EXC-00.00` (change `2026-09-09-0`)\n" +
+		"- Last updated: 2026-09-10\n\n" +
+		"## Tasks\n\n" +
+		"| Task | Title | Status | Depends on | Updated | Notes |\n" +
+		"| --- | --- | --- | --- | --- | --- |\n" +
+		"| [EXC-00.00](../../00-x.md) | First | Done | — | 2026-09-09 | |\n")
+	l, err := ParseTaskLedger("changes/c/tasks/00-x/ledger.md", data)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if l.TaskID != "EXC-00.00" || l.ChangeID != "2026-09-09-0" {
+		t.Fatalf("ids = %q / %q, want bare ids", l.TaskID, l.ChangeID)
+	}
+}

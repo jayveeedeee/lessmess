@@ -15,9 +15,10 @@ import (
 	"lessmess/internal/store"
 )
 
-// fixtureStore opens a store on a tempdir fixture repo: one change with
-// two Test tasks (close-ready), JSON state + prose files.
-func fixtureStore(t *testing.T) (*store.Store, string) {
+// fixtureRepo writes a tempdir fixture repo on disk: one change with
+// two Test tasks (close-ready), JSON state + prose files. The store is
+// NOT opened — callers open it themselves (fixtureStore, hub boots).
+func fixtureRepo(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
 	cdir := filepath.Join(dir, "changes", "2026-09-10-0")
@@ -57,7 +58,13 @@ func fixtureStore(t *testing.T) (*store.Store, string) {
 	if err := idx.Save(filepath.Join(wd, "index.json")); err != nil {
 		t.Fatal(err)
 	}
+	return dir
+}
 
+// fixtureStore opens a store on the fixture repo.
+func fixtureStore(t *testing.T) (*store.Store, string) {
+	t.Helper()
+	dir := fixtureRepo(t)
 	sto, err := store.Open(dir)
 	if err != nil {
 		t.Fatalf("Open: %v", err)

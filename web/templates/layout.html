@@ -9,18 +9,18 @@
 document.documentElement.dataset.theme = localStorage.getItem("tt-theme") || "dark";
 </script>
 <title>{{.ProjectName}}</title>
-<link rel="icon" href="/icon.svg" type="image/svg+xml">
-<link rel="alternate icon" href="/favicon.ico">
-<link rel="apple-touch-icon" href="/apple-touch-icon.png">
-<link rel="stylesheet" href="/static/app.css?v={{.AssetsV}}">
+<link rel="icon" href="{{.BasePath}}/icon.svg" type="image/svg+xml">
+<link rel="alternate icon" href="{{.BasePath}}/favicon.ico">
+<link rel="apple-touch-icon" href="{{.BasePath}}/apple-touch-icon.png">
+<link rel="stylesheet" href="{{.BasePath}}/static/app.css?v={{.AssetsV}}">
 {{.AccentStyle}}
-<script src="/static/htmx.min.js?v=1" defer></script>
-<script src="/static/app.js?v={{.AssetsV}}" defer></script>
+<script src="{{.BasePath}}/static/htmx.min.js?v=1" defer></script>
+<script src="{{.BasePath}}/static/app.js?v={{.AssetsV}}" defer></script>
 </head>
-<body data-page="{{.Page}}">
+<body data-page="{{.Page}}" data-base="{{.BasePath}}" data-project-name="{{.ProjectName}}">
 <header id="app-header"{{if eq .Page "index"}} class="has-location"{{end}}>
-  <a class="brand" href="/" aria-label="lessmess home"><img class="brand-icon" src="/icon.svg" alt="lessmess" width="28" height="28"><span class="brand-name">{{.ProjectName}}</span></a>
-  {{if ne .Page "setup"}}
+  <a class="brand" href="{{.BasePath}}/" aria-label="lessmess home"><img class="brand-icon" src="{{.BasePath}}/icon.svg" alt="lessmess" width="28" height="28"><span class="brand-name">{{.ProjectName}}</span></a>
+  {{if and (ne .Page "setup") (ne .Page "projects")}}
   {{if eq .Page "index"}}
   <div id="location-nav" class="location-nav">
     <button id="location-back" type="button" aria-label="Back" title="Back"><span class="location-back-icon" aria-hidden="true"></span></button>
@@ -30,12 +30,12 @@ document.documentElement.dataset.theme = localStorage.getItem("tt-theme") || "da
       <div class="location-actions">
   {{end}}
   <nav class="topnav topnav-primary">
-    <a href="/"{{if eq .Page "index"}} class="active"{{end}}>Changes</a>
-    <a href="/explorer"{{if eq .Page "explorer"}} class="active"{{end}}>Explorer</a>
+    <a href="{{.BasePath}}/"{{if eq .Page "index"}} class="active"{{end}}>Changes</a>
+    <a href="{{.BasePath}}/explorer"{{if eq .Page "explorer"}} class="active"{{end}}>Explorer</a>
   </nav>
   <nav class="topnav topnav-right">
     <button id="chat-btn" type="button" title="Chat with the codebase">Chat</button>
-    <a href="/settings"{{if or (eq .Page "settings") (eq .Page "opencode")}} class="active"{{end}}>Settings</a>
+    <a href="{{.BasePath}}/settings"{{if or (eq .Page "settings") (eq .Page "opencode")}} class="active"{{end}}>Settings</a>
   </nav>
   <button id="notif-bell" type="button" title="Docs notifications" aria-label="Docs notifications" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg><span id="notif-badge"></span></button>
   {{end}}
@@ -51,7 +51,7 @@ document.documentElement.dataset.theme = localStorage.getItem("tt-theme") || "da
   <section class="chat-window" role="dialog" aria-labelledby="chat-title" data-chat-view="chat">
     <div class="chat-head">
        <button type="button" class="modal-close chat-back" data-close-chat aria-label="Back"><span class="back-chevron" aria-hidden="true"></span></button>
-      <img class="brand-icon" src="/icon.svg" alt="" width="28" height="28">
+      <img class="brand-icon" src="{{.BasePath}}/icon.svg" alt="" width="28" height="28">
        <span class="chat-project-name">{{.ProjectName}}</span>
        <span class="chat-heading"><span id="chat-title" class="title"></span><span id="chat-session-state" class="chat-session-state" role="status" aria-live="polite">Connecting</span></span>
     </div>

@@ -1,7 +1,7 @@
 <!-- tasktracker:begin -->
 # Structure: web
 
-<!-- tasktracker-meta: refreshed=2026-09-21 source=2026-09-21-8235b tree=dac87d62a16d -->
+<!-- tasktracker-meta: refreshed=2026-09-24 source=2026-09-24-0zyrp tree=5ad8050d2f64 -->
 
 Embedded web UI assets for lessmess, bundling HTML templates and static files.
 

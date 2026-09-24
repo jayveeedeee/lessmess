@@ -1,7 +1,7 @@
 <!-- tasktracker:begin -->
 # Structure: internal/server
 
-<!-- tasktracker-meta: refreshed=2026-09-23 source=manual tree=b42321c17a15 -->
+<!-- tasktracker-meta: refreshed=2026-09-24 source=2026-09-24-0zyrp tree=b31c19cf6077 -->
 
 HTTP server over the store: HTML pages, JSON endpoints, SSE updates, session mapping, PTY terminal, and the docs refresh queue
 
@@ -13,6 +13,7 @@ HTTP server over the store: HTML pages, JSON endpoints, SSE updates, session map
 | `accent_test.go` | Tests for the palette, roll-once resolution and persistence, fail-open ids, and accent validation, options, and allowlist wiring. |
 | `autosession.go` | Once-only auto-spawn markers (`.lessmess/autosession.json`) for decomposed-task sessions. |
 | `autosession_test.go` | Tests for auto-spawn-once semantics, retry after spawn failure, and the task session endpoints. |
+| `basepath_test.go` | — |
 | `board_nested_test.go` | Tests for nested task boards: drill-down, recursive counts, close gates, and subtask creation. |
 | `bootstrap_test.go` | Tests the full bootstrap loop against a real store, asserting hot-open after bootstrap. |
 | `brandassets.go` | Serves `/icon.svg`, `/favicon.ico`, and `/apple-touch-icon.png` rendered with the effective accent, with ETag and 304 revalidation. |
@@ -34,6 +35,8 @@ HTTP server over the store: HTML pages, JSON endpoints, SSE updates, session map
 | `explorer_test.go` | Tests for the explorer view, tree rendering, and chat endpoint. |
 | `gitcommit.go` | Read-only git status helper plus repo-wide commit-all endpoints and prompt. |
 | `gitcommit_test.go` | Tests for git status parsing and the repo-wide commit-all flow. |
+| `hub.go` | — |
+| `hub_test.go` | — |
 | `instructions.go` | Prime-composition engine: loads and validates the embedded instruction-module manifest and renders each session's prime from modules selected by audience and change state. |
 | `instructions.json` | Embedded manifest of versioned instruction modules (discussion, change.session, change.handoff, worktree, task.session, closeout) composed into session primes. |
 | `instructions_test.go` | Tests for manifest validity, deterministic audience selection, placeholder and snapshot rendering, and the instructions endpoint. |
@@ -75,6 +78,7 @@ HTTP server over the store: HTML pages, JSON endpoints, SSE updates, session map
 | `setupseed_test.go` | Tests for the seed job lifecycle and configured agent/model pass-through. |
 | `spawnfallback.go` | Persists de-escalated session spawns (`.lessmess/spawn-fallback.json`) behind the index banner, with fail-open reads and best-effort writes. |
 | `spawnfallback_test.go` | Tests for the spawn de-escalation ladder outcomes, the record lifecycle and fail-open reads, and the index fallback banner. |
+| `tasksfeed_test.go` | — |
 | `taskstate.go` | Deterministic task-state endpoints (task status, update, reorder, decisions) with workflow rules enforced server-side and the user-only Done transition gated on the X-Lessmess-UI header. |
 | `taskstate_test.go` | Tests for the task-state endpoints: status transitions with evidence, user-gated Done, update, reorder, and decisions. |
 | `touched.go` | Derives covered docs dirs touched by a change |

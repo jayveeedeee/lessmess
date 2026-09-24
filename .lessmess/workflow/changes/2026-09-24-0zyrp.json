@@ -5,67 +5,105 @@
   "prefix": "MP",
   "branch": "main",
   "status": {
-    "value": "Planned",
-    "derived": true
+    "value": "Done",
+    "derived": false
   },
   "created": "2026-09-24",
   "updated": "2026-09-24",
+  "decisionLog": [
+    {
+      "date": "2026-09-24",
+      "decision": "BootFunc returns *server.Server (not a bare http.Handler) so the hub can wire per-project surfaces after boot — the header switcher via SetProjectSwitcher — while the slot stores srv.Handler(); the setup hot-swap callback checks the slot is still mounted before swapping and closes the boot if the project was removed mid-bootstrap."
+    },
+    {
+      "date": "2026-09-24",
+      "decision": "Fragment templates render without pageData (a view struct is the dot), so the mount prefix reaches them through a per-renderer bp() template func registered at parse time; full-page templates use pageData.BasePath ($.BasePath inside ranges). app.js joins every URL with BASE read from body[data-base]. Legacy --dir mode keeps Base empty and renders byte-identical URLs."
+    },
+    {
+      "date": "2026-09-24",
+      "decision": "Project switching lives in the breadcrumb trail, not a standalone header dropdown: hub mode renders the trail as Projects (root, → landing) → project name (→ that project's change list) → change/panel; single-project mode keeps the Changes root unchanged. The shipped Projects dropdown was removed (template, CSS, JS, and the BootFunc-*Server/SetProjectSwitcher wiring); pages expose data-base and data-project-name for the client-built trail instead."
+    },
+    {
+      "date": "2026-09-24",
+      "decision": "The hub self-heals registry drift on read paths: rows()/ensureMounted mounts any registered project without a slot, retries slots stuck at unavailable (failed boots opened nothing), and unmounts slots whose registry entry vanished — the global registry file is the authority and the in-memory slot table converges to it. This also makes a second hub instance sharing the registry non-fatal: its additions mount here on the next landing look instead of sitting unmounted."
+    },
+    {
+      "date": "2026-09-24",
+      "decision": "Legacy ledger parsing tolerates the backticked-ID convention (`id` where the canonical renderer emits bare ids) on - Change ID: and - Task: headers, so hand/GPT-authored legacy repos migrate on formatting alone; genuine data problems (prose dependency cells like None or ACC-00 through ACC-06) still refuse the migration and surface verbatim on the projects landing via a visible detail line."
+    }
+  ],
   "tasks": [
     {
       "id": "MP-00",
       "seq": 0,
       "title": "Global project registry package",
       "file": "tasks/00-global-project-registry-package.md",
-      "status": "Not started",
-      "updated": "2026-09-24"
+      "status": "Done",
+      "updated": "2026-09-24",
+      "notes": "go vet ./internal/registry/ clean; go test ./internal/registry/ -v: 8/8 PASS — fail-open load (missing + malformed), atomic save roundtrip, Slugify (spaces/unicode/collapse/cap), Add validation (relative/missing/file), slug dedupe demo→demo-2, duplicate-path rejection, Store add/get/remove with failed-add leaving file untouched."
     },
     {
       "id": "MP-01",
       "seq": 1,
       "title": "Multi-project serve mode",
       "file": "tasks/01-multi-project-serve-mode.md",
-      "status": "Not started",
-      "updated": "2026-09-24"
+      "status": "Done",
+      "updated": "2026-09-24",
+      "notes": "go test ./... green (incl. new TestHub* suite: mounts, StripPrefix routing, isolation 404 across projects, unknown-slug 404, ghost 503, setup wizard hot-swap under prefix, Close releases); -race clean. Live smoke (built binary, LESSMESS_CONFIG registry of 3): / lists 3 project-row rows; /api/projects reports ready/ready/unavailable with names+bases; /p/tasktracker/ 200, prefixed change board 200, prefixed /api/git/status 200; /p/ghost/ 503, /p/nope/ 404, /p/tasktracker 301→/p/tasktracker/; /p/tasktracker/events SSE connects, root /events 404. Legacy serve --dir regression: / 200, /api/projects 404, /p/scratch/ 404 (root-absolute, no hub)."
     },
     {
       "id": "MP-02",
       "seq": 2,
       "title": "Server-side base-path plumbing",
       "file": "tasks/02-server-side-base-path-plumbing.md",
-      "status": "Not started",
-      "updated": "2026-09-24"
+      "status": "Done",
+      "updated": "2026-09-24",
+      "notes": "Grep audit of internal/server for root-absolute emissions: all live surfaces now prefix through s.Base — board HTML redirect (+?session preserved), createChange HX-Redirect, tasks-feed Href (Work panel), chat ToolURL/FileURL/NextURL, scaffold-409 agent-facing spawn path, setup guard redirect (basePath), renderer hook fills pageData.BasePath. New tests TestServerBasePathEmissions + TestChatViewBasePathEmissions pass under Base=/p/demo; empty-base legacy shape unchanged (full go test ./... green, incl. TestFormEncodedCreateChangeRedirect which pins /?change=)."
     },
     {
       "id": "MP-03",
       "seq": 3,
       "title": "Client-side base-path plumbing",
       "file": "tasks/03-client-side-base-path-plumbing.md",
-      "status": "Not started",
-      "updated": "2026-09-24"
+      "status": "Done",
+      "updated": "2026-09-24",
+      "notes": "Audit greps clean: zero un-prefixed attribute URLs in web/templates and zero un-prefixed root-absolute URL strings in app.js (remaining /api/... literals are args to api()/managementAPI()/lifecycleURL() which join BASE internally). app.js gained BASE (body[data-base]) — all 56 fetch() calls, EventSource, location targets, trail/work-panel/modal-link builders prefixed. Templates: layout head/nav/brand + index + settings + opencode use .BasePath ($.BasePath inside the index range); explorer fragment uses new bp() renderer func (fragments render without pageData). Live smoke: hub project page shows data-base=/p/tasktracker with prefixed css/nav/brand/icon URLs; hub landing data-base=\"\"; legacy --dir page byte-shape unchanged (data-base=\"\", root-absolute). go vet + full go test green; -race clean."
     },
     {
       "id": "MP-04",
       "seq": 4,
       "title": "Projects landing page and registry API",
       "file": "tasks/04-projects-landing-page-and-registry-api.md",
-      "status": "Not started",
-      "updated": "2026-09-24"
+      "status": "Done",
+      "updated": "2026-09-24",
+      "notes": "TestHubAddRemoveProjects passes: add→201 hot-boot (project serves under prefix immediately), duplicate 409, relative/missing/file 422, bad-JSON and non-JSON 400, empty dir mounts setup wizard, delete unknown 404, delete 204 → mount 404 + registry file updated + repo state untouched (index.json intact), re-add restores same slug; -race clean. Live API smoke (hub on :9094): add→201 ready, dup 409, rel-path 422 message, registry file shows atomic persisted entry, DELETE 204 empties it. go vet + full go test green."
     },
     {
       "id": "MP-05",
       "seq": 5,
-      "title": "Header project switcher",
+      "title": "Project level in the breadcrumb trail",
       "file": "tasks/05-header-project-switcher.md",
-      "status": "Not started",
-      "updated": "2026-09-24"
+      "status": "Done",
+      "updated": "2026-09-24",
+      "notes": "TestProjectSwitcher (hub: menu lists all projects with prefixed hrefs, exactly one active marker on the current project, All-projects link; landing itself has no switcher) and TestProjectSwitcherHiddenInLegacyMode (no switcher without hub wiring; SetProjectSwitcher renders it) pass; -race clean; full go test green. Live: /p/tasktracker/ renders #project-menu with current project highlighted (active marker) plus other projects and All-projects link; landing renders none. Escape/outside-click handled in initProjectNav. Redesigned per user decision: dropdown removed (grep: zero project-menu/project-nav/project-toggle in templates, JS, CSS); Go surfaces reverted (pageData.Projects/CurrentSlug, ProjectLink, SetProjectSwitcher, renderer hooks gone; BootFunc returns http.Handler again). Trail: locationBaseTrail builds Projects→/,\u003cproject name\u003e→\u003cbase\u003e/ in hub mode, legacy keeps Changes root. New tests TestProjectBreadcrumbData + TestLegacyModeKeepsRootTrail pass; full go test 7/7 ok, -race clean. Live hub: /p/tasktracker/ emits data-base=/p/tasktracker + data-project-name=lessmess, no dropdown markup; task prose updated with revision note. CORRECTION after live use: activateLocation had kind-specific branches and only kind=changes navigated — the new projects/project crumbs fell through to the chat-view tail, so clicking them (and the back button onto them) did nothing. Fix: the plain-URL navigation branch now covers changes|projects|project (app.js ~line 191); node --check passes; full go test 7/7 ok; rebuilt+redeployed to the 9090 hub (app.js?v=aa512ff5, served file contains the branch, both projects ready). All crumb clicks verified against the branch map: Projects→/ , project→\u003cbase\u003e/ , back-button walks the same activateLocation path."
     },
     {
       "id": "MP-06",
       "seq": 6,
       "title": "Integration verification and docs",
       "file": "tasks/06-integration-verification-and-docs.md",
-      "status": "Not started",
-      "updated": "2026-09-24"
+      "status": "Done",
+      "updated": "2026-09-24",
+      "notes": "Acceptance criteria demonstrated live (final binary): (1) hub with tasktracker+scratch serves boards/settings(200)/explorer(200) at both prefixes, landing lists them with add/remove; (2) add hot-boots (live 201→serving), invalid 422, remove unmounts+forgets with repo untouched (test + live); (3) legacy --dir regression: / 200 root-absolute, /p/... 404, suite pins byte-shape; (4) per-prefix SSE connects (root /events 404s) — streams are per-project by construction; (5) agent prime through /p/scratch baked http://127.0.0.1:9098/p/scratch/changes/scaffold into its curls and POST /p/scratch/changes/scaffold landed change 2026-09-24-trtkg in scratch; (6) per-repo accents differ on disk (tasktracker fuchsia, scratch blue), landing uses default. Gates: go vet clean, go test ./... 7/7 ok, -race clean, lessmess validate exits 0 (docs warnings only — the close pipeline gardener owns them). README updated: serve modes, multi-project section, registry path/schema, compatibility note, layout map."
+    },
+    {
+      "id": "MP-07",
+      "seq": 7,
+      "title": "Tolerant legacy ledger parsing and unavailable-boot retry",
+      "file": "tasks/07-tolerant-legacy-ledger-parsing-and-unava.md",
+      "status": "Done",
+      "updated": "2026-09-24",
+      "notes": "Model: TestParseChangeLedgerBacktickedIDs + TestParseTaskLedgerBacktickedHeader pass (backticked ids parse to bare values). Hub: TestHubRetriesUnavailableSlots passes (transient boot failure → unavailable; cause fixed → next GET re-mounts to ready). Real repo: lessmess migrate --dry-run --dir truendo2 no longer reports the header mismatch; it now reports exactly the repo data prose deps (None / ACC-00 through ACC-06) — verified against the live instance, whose landing now shows the full reason inline. Full go test 7/7 ok, -race clean on model+server. truendo2 data fix (3 ledger cells) is the repo owner's one-liner; hub heals on next landing refresh after it."
     }
   ]
 }

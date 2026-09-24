@@ -3,7 +3,7 @@
 <div class="banner warn onboarding-banner" id="onboarding-banner">
   <span>Finish setting up lessmess — check prerequisites, pick a default agent, and choose your docs options.</span>
   <span class="onboarding-actions">
-    <a class="btn-accent" href="/setup">Finish setup</a>
+    <a class="btn-accent" href="{{.BasePath}}/setup">Finish setup</a>
     <button type="button" class="btn-ghost" id="onboarding-dismiss">Dismiss</button>
   </span>
 </div>
@@ -12,18 +12,17 @@
 <div class="banner warn" id="spawn-fallback-banner">
   <span><strong>Spawn fallback</strong> — {{.Data.SpawnFallback.Summary}}. New sessions may run under a different agent than configured until this is resolved.</span>
   <span class="onboarding-actions">
-    <a class="btn-accent" href="/settings">Review settings</a>
+    <a class="btn-accent" href="{{.BasePath}}/settings">Review settings</a>
   </span>
 </div>
 {{end}}
 <section class="changes">
   <div class="section-head">
-    <h2>Changes</h2>
     {{if .Data.GitRepo}}
     <button type="button" class="btn-ghost" id="commit-all-btn"{{if not .Data.GitDirty}} disabled{{end}}>Commit all</button>
     {{end}}
     <form class="inline-form form-accent"
-          hx-post="/changes/session" hx-swap="none">
+          hx-post="{{.BasePath}}/changes/session" hx-swap="none">
       <button type="submit" class="btn-accent">New change session</button>
     </form>
   </div>
@@ -37,7 +36,7 @@
   </select>
   <div id="change-cards" class="change-cards">
     {{range .Data.Changes}}
-    <a class="change-card" href="/changes/{{.ID}}" data-change="{{.ID}}"
+    <a class="change-card" href="{{$.BasePath}}/changes/{{.ID}}" data-change="{{.ID}}"
        data-tasks="{{.Tasks}}" data-status-rank="{{.Status | statusRank}}" data-updated="{{.Updated}}"
        data-title="{{.Title}}">
       <span class="change-card-name">{{.Title}}</span>

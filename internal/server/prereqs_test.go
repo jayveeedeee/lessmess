@@ -152,7 +152,7 @@ func TestPrereqsPartialChangesTree(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(dir, "changes"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	s := NewSetup(dir, nil)
+	s := NewSetup(dir, "", nil)
 	var resp prereqsResponse
 	w := do(t, s, "GET", "/api/setup/prereqs", "")
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
