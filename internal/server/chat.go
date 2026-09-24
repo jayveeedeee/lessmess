@@ -435,8 +435,6 @@ func makeChatMessageView(sessionID string, message opencode.Message) chatMessage
 			view.Error = "The model stopped because its output limit was reached. Continue the conversation to resume."
 		} else if message.Finish == "content-filter" {
 			view.Error = "The provider stopped this response because of its content policy."
-		} else if message.Finish == "error" {
-			view.Error = "The provider could not finish this response. Check the selected model or provider connection, then retry."
 		}
 	case "compaction":
 		view.Label = "Context compaction"

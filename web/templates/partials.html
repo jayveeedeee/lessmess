@@ -100,6 +100,10 @@
           <input name="{{$field.Key}}" type="{{if eq $field.Type "multiselect"}}checkbox{{else}}radio{{end}}" data-field-type="{{$field.Type}}" value="{{.Value}}" {{if .Selected}}checked{{end}} {{if and $field.Required (ne $field.Type "multiselect")}}required{{end}}>
           <span><strong>{{.Label}}</strong>{{if .Description}}<small>{{.Description}}</small>{{end}}</span>
         </label>{{end}}
+        <label class="chat-choice chat-choice-custom">
+          <input name="{{$field.Key}}" type="{{if eq $field.Type "multiselect"}}checkbox{{else}}radio{{end}}" data-field-type="{{$field.Type}}" value="__lessmess_custom__" {{if and $field.Required (ne $field.Type "multiselect")}}required{{end}}>
+          <span><strong>Other</strong><input type="text" data-chat-custom-answer="{{$field.Key}}" placeholder="Type a custom answer" aria-label="Custom answer for {{$field.Title}}"></span>
+        </label>
       </div>
     </fieldset>{{else}}<fieldset class="chat-field">
       <legend>{{.Title}}{{if .Required}} *{{end}}{{if .Description}}<small>{{.Description}}</small>{{end}}</legend>
@@ -117,9 +121,10 @@
     </div>
     <p class="chat-form-error" data-chat-form-error role="alert" hidden></p>
     <nav class="chat-form-nav" aria-label="Form navigation">
-      <button type="button" class="secondary" data-chat-form-prev hidden>Previous</button>
-      <button type="button" data-chat-form-next>Next</button>
-      <button type="submit" data-chat-form-submit hidden>Submit</button>
+      <button type="button" class="secondary chat-form-nav-action" data-chat-form-prev aria-label="Previous question" title="Previous question" hidden><span class="back-chevron" aria-hidden="true"></span></button>
+      <button type="button" class="btn-ghost chat-form-nav-action" data-chat-form-close aria-label="Close questions" title="Close questions"><span class="chat-form-close-icon" aria-hidden="true"></span></button>
+      <button type="button" class="chat-form-nav-action" data-chat-form-next aria-label="Next question" title="Next question"><span class="forward-chevron" aria-hidden="true"></span></button>
+      <button type="submit" class="chat-form-nav-action" data-chat-form-submit aria-label="Submit answers" title="Submit answers" hidden><span class="chat-form-submit-icon" aria-hidden="true"></span><span class="sr-only" data-chat-form-submit-label>Submit</span></button>
     </nav>
   </form>
   {{end}}

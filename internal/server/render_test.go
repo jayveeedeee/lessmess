@@ -79,7 +79,7 @@ func TestExpandableLocationBreadcrumbContract(t *testing.T) {
 		}
 	}
 	css := do(t, h, "GET", "/static/app.css", "").Body.String()
-	for _, want := range []string{`.has-location > .brand { display: none; }`, `.location-nav {`, `#location-back {`, `.location-back-icon {`, `justify-content: flex-end`, `text-align: right`, `#location-menu {`, `#location-trail {`, `.location-actions {`, `width: 100vw`, `.modal-head {`, `.chat-head {`, `@keyframes location-slide`, `inset: var(--app-header-height) 0 0`, `top: calc(var(--chat-viewport-top, 0px) + var(--app-header-height))`} {
+	for _, want := range []string{`.has-location > .brand { display: none; }`, `.location-nav {`, `#location-back {`, `.location-back-icon {`, `justify-content: flex-end`, `text-align: right`, `#location-menu {`, `right: 0`, `left: auto`, `#location-trail {`, `.location-actions {`, `width: 100vw`, `.modal-head {`, `.chat-head {`, `@keyframes location-slide`, `inset: var(--app-header-height) 0 0`, `top: calc(var(--chat-viewport-top, 0px) + var(--app-header-height))`} {
 		if !strings.Contains(css, want) {
 			t.Errorf("location breadcrumb CSS missing %q", want)
 		}
@@ -290,7 +290,7 @@ func TestChatComposerUIContract(t *testing.T) {
 	page := htmlGet(t, h, "/changes/2026-09-10-0", false).Body.String()
 	for _, want := range []string{
 		`id="chat-prompt" rows="2"`, `id="chat-send-btn" type="submit" class="btn-accent chat-action-button" data-action="send"`, `aria-label="Send message"`, `class="chat-action-icon"`,
-		`id="chat-more-btn"`, `aria-label="Chat options, active context usage unavailable"`, `aria-haspopup="menu"`, `aria-expanded="false"`, `aria-controls="chat-more-menu"`, `class="chat-more-glyph" aria-hidden="true">⋮</span>`, `class="chat-more-label">Close</span>`,
+		`id="chat-more-btn"`, `aria-label="Chat options, active context usage unavailable"`, `aria-haspopup="menu"`, `aria-expanded="false"`, `aria-controls="chat-more-menu"`, `class="chat-more-glyph" aria-hidden="true"></span>`, `class="chat-more-label">Close</span>`,
 		`id="chat-more-menu"`, `role="menu"`, `aria-label="Chat options"`,
 		`id="chat-plan-btn" class="chat-quick-action" role="menuitem"`, `id="chat-tasks-btn" class="chat-quick-action"`,
 		`id="chat-controls-btn" class="chat-quick-action"`, `<span>Runtime</span>`,
@@ -303,14 +303,15 @@ func TestChatComposerUIContract(t *testing.T) {
 
 	js := do(t, h, "GET", "/static/app.js", "").Body.String()
 	for _, want := range []string{
-		`function syncChatComposerHeight()`, `new ResizeObserver(syncChatComposerHeight).observe(composer)`, `"--chat-composer-height"`,
+		`function syncChatComposerHeight()`, `new ResizeObserver(syncChatComposerHeight).observe(composerShell)`, `"--chat-composer-height"`,
 		`function openChatControls(opener, runtimeOnly)`, `sheet.classList.toggle("runtime-only", !!runtimeOnly)`, `runtimeOnly ? "Runtime" : "Session controls"`,
 		`openChatControls(moreButton, true).then`, `document.getElementById("chat-agent-select").focus`,
 		`function updateChatActionButton()`, `document.activeElement === prompt && prompt.value.trim() !== ""`,
 		`button.dataset.action = send ? "send" : "stop"`, `button.type = send ? "submit" : "button"`,
 		`prompt.addEventListener("focus", updateChatActionButton)`, `prompt.addEventListener("blur"`,
 		`chatMutation("interrupt", undefined, send)`,
-		`function closeChatMore(returnFocus)`, `menu.closest(".chat-compose-row").classList.add("options-open")`, `button.querySelector(".chat-more-glyph").textContent = "×"`,
+		`chatMutation("interrupt").catch(function () {})`, `path === "interrupt" ? "Stopping…" : "Sending…"`,
+		`function closeChatMore(returnFocus)`, `menu.closest(".chat-compose-row").classList.add("options-open")`,
 		`closeChatMessageActions(true) || closeChatMore(true) || closeChatReferences(true)`,
 		`loadChatReferences().then`, `openChatControls(moreButton).then`,
 		`var usage = cstate.usage || {}`, `var compactLabel = document.getElementById("chat-compact-label")`, `compactLabel.textContent = pending ? "Compacting..." : "Compact"`, `setChatStatus("Compaction failed: " + err.message, true)`,
@@ -427,19 +428,22 @@ func TestChatCompactViewStackUIContract(t *testing.T) {
 	}
 }
 
-func TestChatFormCompactFullscreenContract(t *testing.T) {
+func TestChatFormComposerHostContract(t *testing.T) {
 	st, _ := fixtureStore(t)
 	h := New(st).Handler()
+	page := htmlGet(t, h, "/changes/2026-09-10-0", false).Body.String()
+	for _, want := range []string{`id="chat-composer-shell" class="chat-composer"`, `id="chat-form-host" class="chat-form-host" hidden`, `id="chat-composer" class="chat-composer-form"`} {
+		if !strings.Contains(page, want) {
+			t.Errorf("composer form host missing %q", want)
+		}
+	}
 	css := do(t, h, "GET", "/static/app.css", "").Body.String()
 	for _, want := range []string{
-		`@media (max-width: 840px)`, `.chat-form {`, `position: fixed`, `inset: 0`,
-		`height: calc(var(--chat-viewport-height, 100dvh) - var(--app-header-height))`, `max-height: none`,
-		`env(safe-area-inset-top)`, `env(safe-area-inset-right)`,
-		`env(safe-area-inset-bottom)`, `env(safe-area-inset-left)`,
-		`.chat-form-body`, `overflow-y: auto`, `.chat-form-nav`,
+		`.chat-composer.form-open > .chat-composer-form { display: none; }`, `.chat-form-host {`, `border-radius: 22px`,
+		`.chat-form-host .chat-form {`, `position: static`, `max-height: min(70dvh, 620px)`, `.chat-form-body { min-height: 0; overflow-y: auto`,
 	} {
 		if !strings.Contains(css, want) {
-			t.Errorf("compact full-screen chat form CSS missing %q", want)
+			t.Errorf("composer-hosted chat form CSS missing %q", want)
 		}
 	}
 }
@@ -535,7 +539,7 @@ func TestChatComposerNavigationUIContract(t *testing.T) {
 		`@media (max-width: 840px)`, `.chat-more-wrap { display: block; flex: none; }`,
 		`.chat-heading {`, `min-width: 5.5rem`, `.chat-session-state { display: block`,
 		`.chat-more-menu {`, `width: 100%`, `.chat-compose-row.options-open #chat-prompt { display: none; }`, `.chat-quick-action {`, `min-height: 76px`, `.chat-more-menu[hidden]`,
-		`.chat-more-wrap > #chat-more-btn {`, `border-radius: 50%`, `.chat-more-glyph { position: relative; z-index: 1; }`,
+		`.chat-more-wrap > #chat-more-btn {`, `height: 44px`, `place-items: center`, `border: 0`, `border-radius: 50%`, `.chat-more-glyph {`, `box-shadow: 0 -6px 0 currentColor, 0 6px 0 currentColor`, `#chat-more-btn[aria-expanded="true"] .chat-more-glyph::before`,
 	} {
 		if !strings.Contains(css, want) {
 			t.Errorf("chat composer navigation CSS missing %q", want)

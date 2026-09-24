@@ -1,15 +1,23 @@
-# UI-01: Add a Sessions sheet to the chat options menu with change actions
+# UI-01: Add a Sessions quick action and sheet to the chat composer
 
 ## Why
 
 With the kanban board removed, every board-page function needs a home. The user decided: session
-switching AND change-level actions live in a "Sessions" sheet opened from the ⋮ options menu below
-the chat input — one thumb-friendly surface.
+switching AND change-level actions live in a "Sessions" sheet opened from the chat composer's
+options area — one thumb-friendly surface. Since planning, change 2026-09-21-aw36x (commit
+be42a6c) replaced the ⋮ pop-up menu with an in-composer quick-action grid, so the entry point is a
+new quick action in that grid.
 
 ## Current behavior
 
-- The ⋮ menu (`#chat-more-menu`) offers Work / Agents / Controls / Compact; panels open in the
-  chat shell's `data-chat-view` sheet pattern (`#chat-tasks`, `#chat-agents`, `#chat-controls-sheet`).
+- The composer's options expand in place as a quick-action grid (`#chat-more-menu` inside
+  `.chat-compose-row`, toggled by `#chat-more-btn` which carries the context-usage ring and flips
+  to a Close treatment while open): Plan (`#chat-plan-btn`), Tasks (`#chat-tasks-btn`), Runtime
+  (`#chat-controls-btn`), Compact (`#chat-compact-btn`). Plan and Tasks ship `hidden` and app.js
+  unhides them when the session is change-bound.
+- Panels open in the chat shell's `data-chat-view` sheet pattern (`#chat-tasks`, `#chat-agents`,
+  `#chat-controls-sheet` — the latter now split into a compact Runtime variant plus
+  `.chat-controls-extended` sections).
 - Sessions management lives on the board page: `#sessions-panel` (list with Chat/unlink, New
   session), the Spawn-change form (handoff picker), the Continue button, Commit, Close/Reopen, and
   the worktree strip (branch, uncommitted, missing, PR link, review link, Remove worktree).
@@ -18,9 +26,11 @@ the chat input — one thumb-friendly surface.
 
 ## Target behavior
 
-- New "Sessions" item in `#chat-more-menu`, shown when the active session is bound to a change
-  (same gating as the Work item), opening a new sheet `#chat-sessions-sheet` in the existing
-  `data-chat-view` pattern (backdrop, Escape, view stack, inert handling all reused).
+- New "Sessions" quick action in the quick-action grid — an icon+label button
+  (`#chat-sessions-btn`, `role="menuitem"` like its siblings), shipping `hidden` and unhidden by
+  app.js exactly when the Plan/Tasks actions are (session bound to a change) — opening a new sheet
+  `#chat-sessions-sheet` in the existing `data-chat-view` pattern (backdrop, Escape, view stack,
+  inert handling all reused).
 - Sheet content, fed by `GET /changes/{id}/sessions` (change resolved via
   `/api/sessions/{id}/change`):
   - Session list: title, created date, live/dead dimming, `from <change>` spawn badge, task chip
@@ -41,6 +51,6 @@ the chat input — one thumb-friendly surface.
 - From a change-bound chat at 390px width, every former board action is reachable from the sheet:
   switch/new/unlink session, spawn change via handoff, commit, close (confirm warns while tasks
   are open), reopen, worktree info/remove/review.
-- A discussion (unbound) session shows no Sessions item.
+- A discussion (unbound) session shows no Sessions quick action.
 - Spawned-from badges and dead-session dimming render as on the old panel.
 - `go vet ./... && go test ./...` pass.

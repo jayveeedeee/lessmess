@@ -3,7 +3,7 @@
 ## Why
 
 The chat overlay's Work panel (`#chat-tasks`) has no backend of its own. `renderTaskPanel`
-(web/static/app.js ~3579) scrapes `.cards[data-status]` / `.card` DOM out of the board's HTML
+(web/static/app.js) scrapes `.cards[data-status]` / `.card` DOM out of the board's HTML
 fragment, fetched by `loadSessionTasks` via `GET /changes/{id}` with an `HX-Request` header. The
 kanban board is being removed later in this change, so the Work panel must be decoupled from board
 HTML first.

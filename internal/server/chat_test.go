@@ -72,7 +72,8 @@ func TestChatSnapshotRendersSafeAuthoritativeState(t *testing.T) {
 		`class="chat-choice-list" role="radiogroup"`, `type="radio" data-field-type="string"`, "Customer-facing systems",
 		`type="checkbox" data-field-type="multiselect"`, "First target",
 		`data-chat-form-step="0"`, `data-chat-form-step="1" hidden`, `data-chat-form-review hidden`,
-		`data-chat-form-progress role="status"`, `data-chat-form-prev hidden`, `data-chat-form-next`, `data-chat-form-submit hidden`,
+		`data-chat-form-progress role="status"`, `data-chat-form-prev aria-label="Previous question"`, `data-chat-form-close aria-label="Close questions"`, `data-chat-form-next aria-label="Next question"`, `data-chat-form-submit aria-label="Submit answers"`,
+		`value="__lessmess_custom__"`, `data-chat-custom-answer="environment"`, `placeholder="Type a custom answer"`,
 		`aria-label="Form navigation"`, `novalidate`, `Review your answers`,
 		"Unsupported message part:", "future-message", "chat-flow-reasoning", "chat-flow-tool", "chat-flow-unknown",
 	} {
@@ -353,14 +354,15 @@ func TestChatFormWizardControllerContract(t *testing.T) {
 	for _, want := range []string{
 		`function collectChatFormAnswers(form)`, `parseInt(field.value, 10)`, `Number(field.value)`,
 		`function validateChatFormStep(form, step, report)`, `Select at least one option.`,
-		`document.addEventListener("click"`, `[data-chat-form-prev], #chat-transcript [data-chat-form-next]`,
+		`document.addEventListener("click"`, `.chat-window [data-chat-form-prev], .chat-window [data-chat-form-next]`,
 		`function captureChatForms()`, `function restoreChatForms()`, `cstate.formStates`,
 		`captureChatForms();`, `restoreChatForms();`, `state.answers = collectChatFormAnswers(form)`,
 		`state.status === "submitting" || state.status === "submitted" || cstate.mutation`,
 		`setChatFormSubmitting(form, "submitting", "")`, `setChatFormSubmitting(currentChatForm(formID) || form, "submitted", "")`,
 		`setChatFormSubmitting(currentChatForm(formID) || form, "error", err.message)`, `Form submission failed: `,
 		`var formID = form.dataset.formId || form.dataset.chatForm`, `"forms/" + encodeURIComponent(formID) + "/reply"`,
-		`{ answers: answers }`, `compactChatUI() && requiredForm`,
+		`{ answers: answers }`, `function mountChatForm()`, `function dismissChatForm(form)`, `state.dismissed = true`,
+		`chatCustomAnswer(form, option.name)`, `option.value === "__lessmess_custom__"`, `Enter a custom answer.`,
 	} {
 		if !strings.Contains(js, want) {
 			t.Errorf("chat form wizard controller missing %q", want)
@@ -372,10 +374,10 @@ func TestChatFormWizardControllerContract(t *testing.T) {
 
 	css := do(t, s.Handler(), "GET", "/static/app.css", "").Body.String()
 	for _, want := range []string{
-		`.chat-choice input {`, `position: absolute`, `opacity: 0`, `.chat-choice::before`,
+		`.chat-choice > input {`, `position: absolute`, `opacity: 0`, `.chat-choice::before`,
 		`.chat-choice:has(input:focus-visible)`, `min-height: 44px`,
-		`.chat-form-body { min-height: 0; overflow-y: auto`, `.chat-form-nav {`,
-		`height: calc(var(--chat-viewport-height, 100dvh) - var(--app-header-height))`, `env(safe-area-inset-bottom)`,
+		`.chat-form-body { min-height: 0; overflow-y: auto`, `.chat-form-nav {`, `grid-template-columns: 1fr 1fr 1fr`,
+		`.chat-form-host .chat-form {`, `.chat-choice-custom input[data-chat-custom-answer]`,
 	} {
 		if !strings.Contains(css, want) {
 			t.Errorf("chat form wizard CSS missing %q", want)
@@ -832,10 +834,13 @@ func TestChatTranscriptRetryProviderAndCompactionAreSanitized(t *testing.T) {
 	})
 	w := do(t, s.Handler(), "GET", "/api/sessions/ses_chat/chat", "")
 	body := w.Body.String()
-	for _, want := range []string{"Retrying provider request", "provider could not finish", "Compacting conversation context", "Conversation context compacted", "Context compaction failed"} {
+	for _, want := range []string{"Retrying provider request", "provider request failed", "Compacting conversation context", "Conversation context compacted", "Context compaction failed"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("missing %q: %s", want, body)
 		}
+	}
+	if strings.Contains(body, "provider could not finish") {
+		t.Fatalf("bare error finish was misreported as a provider failure: %s", body)
 	}
 	for _, secret := range []string{"raw retry secret", "raw provider secret", "providerState", "authorization", "private summary", "/private/path"} {
 		if strings.Contains(body, secret) {
@@ -844,6 +849,22 @@ func TestChatTranscriptRetryProviderAndCompactionAreSanitized(t *testing.T) {
 	}
 	if strings.Contains(body, "<header>Context compaction</header>") {
 		t.Fatalf("compaction retained redundant legacy event label: %s", body)
+	}
+}
+
+func TestBareAssistantErrorFinishIsNotReportedAsProviderFailure(t *testing.T) {
+	view := makeChatMessageView("ses_chat", opencode.Message{Type: "assistant", Finish: "error"})
+	if view.Error != "" {
+		t.Fatalf("bare error finish projected as %q", view.Error)
+	}
+
+	view = makeChatMessageView("ses_chat", opencode.Message{
+		Type:   "assistant",
+		Finish: "error",
+		Error:  &opencode.StructuredError{Type: "ProviderError", Status: http.StatusBadGateway},
+	})
+	if view.Error != "The provider request failed. Check the selected model or provider connection, then retry." {
+		t.Fatalf("structured provider error projected as %q", view.Error)
 	}
 }
 

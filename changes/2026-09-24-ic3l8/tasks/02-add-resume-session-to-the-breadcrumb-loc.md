@@ -8,10 +8,14 @@ context exists — chat open or closed.
 
 ## Current behavior
 
-- `#location-menu` renders the trail (Changes / `<change>` / Chat / Work / Controls / docs) from
-  `locationTrail`; items navigate or reopen views. The change crumb appears only while a
-  change-bound chat is open (`syncLocationFromChat`); closing the chat resets the trail to
-  [Changes].
+- The app bar's location control was reworked by change 2026-09-21-aw36x (tasks 64/66, commit
+  be42a6c): a back chevron (`#location-back`) activates the previous trail entry, and
+  `#location-toggle` opens the `#location-menu` dropdown listing the full trail
+  (`#location-trail`); entries switch chat panels, open detail documents (restoring the prior
+  trail on close), and navigate between pages. The trail machinery (`locationTrail`,
+  `renderLocationTrail`, `activateLocation`) survived intact.
+- The change crumb appears only while a change-bound chat is open (`syncLocationFromChat`);
+  closing the chat resets the trail to [Changes].
 - Resume logic exists on the board's Continue button (`initContinue`): prefer the stored
   `tt-last-session:<change>` session if still listed, else the newest created, else create a
   session (`POST /changes/{id}/sessions`) and open it; the label flips Continue/Start.

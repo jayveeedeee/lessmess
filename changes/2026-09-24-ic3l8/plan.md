@@ -20,11 +20,15 @@ composer's ⋮ options menu.
 - Change page (`/changes/{id}`): a kanban board (drag-and-drop status moves, `?task=` drill-down
   sub-boards) carrying every lifecycle control: Continue session, Plan, Sessions panel (list,
   new, unlink, spawn-change handoff picker), Commit, Close/Reopen, worktree strip, subagent chips.
-- Chat overlay: transcript + composer with a ⋮ menu (Work / Agents / Controls / Compact); the Work
-  panel has no backend — it mirrors the board's HTML fragment by scraping card DOM from
-  `GET /changes/{id}`.
-- Breadcrumb dropdown (location menu): trail-only navigation; the change crumb exists only while a
-  change-bound chat is open.
+- Chat overlay (as reshaped by change 2026-09-21-aw36x, commit be42a6c): the composer floats over
+  the transcript and its options expand in place as a quick-action grid inside the composer —
+  Plan / Tasks / Runtime / Compact (`#chat-more-menu`, toggled by `#chat-more-btn`, which carries
+  the context-usage ring and flips to a Close treatment while open); send and interrupt are one
+  stateful icon button. The Work panel still has no backend — it mirrors the board's HTML fragment
+  by scraping card DOM from `GET /changes/{id}`.
+- Breadcrumb dropdown (location menu): reworked as an app-bar location control — a back chevron
+  (`#location-back`) plus the current-location dropdown listing the full trail; the change crumb
+  exists only while a change-bound chat is open.
 - SSE: index full-reloads on workflow events when no chat is open; boards refresh via fragments.
 
 ## Target behavior
@@ -39,9 +43,10 @@ composer's ⋮ options menu.
   modal.
 - **Work panel**: renders from a new JSON feed (`GET /changes/{id}/tasks[?task=]`) with subtask
   rollups — no board DOM dependency.
-- **⋮ Sessions sheet**: session list (switch/new/unlink, subagent + spawned-from badges), the
-  spawn-change handoff flow, and the change actions footer: Commit, Close/Reopen (open-task
-  confirm), worktree pills/remove/review.
+- **Sessions quick action + sheet**: a "Sessions" quick action joins the composer's quick-action
+  grid (gated on change-bound sessions like Plan/Tasks) and opens a Sessions sheet: session list
+  (switch/new/unlink, subagent + spawned-from badges), the spawn-change handoff flow, and the
+  change actions footer: Commit, Close/Reopen (open-task confirm), worktree pills/remove/review.
 - **Breadcrumb dropdown**: a "Resume session" action pinned at the bottom whenever a change context
   exists, sharing the same resume helper as the cards; the change crumb persists for the visit.
 - **Responsive sweep**: full-screen modals, ≥44px touch targets, safe-area insets, explorer /
@@ -54,6 +59,11 @@ composer's ⋮ options menu.
 - `internal/server/`: new tasks JSON endpoint, board route → redirect for HTML, index JSON stays,
   render tests updated; no workflow-state semantics change.
 - `README.md` board mentions updated.
+- Coordination: planned against the post-be42a6c chat surface (quick-action grid, floating
+  composer, app-bar location control from change 2026-09-21-aw36x). That change's MAC-76
+  (composer options-control centering) is still uncommitted in the working tree — implementation
+  of the UI tasks here starts after it lands, and UI-04 rebases on whatever aw36x committed by
+  then. Its remaining open tasks (MAC-20…24) are release/packaging only and don't touch `web/`.
 
 ## Non-goals
 
@@ -67,7 +77,9 @@ composer's ⋮ options menu.
 
 - Chat is the change surface (user decision): the board page dies rather than slimming down.
 - Card contents are exactly the four user-named fields; no visible change ID.
-- Change-level actions live inside the ⋮ Sessions sheet (user decision), not on cards or a hub page.
+- Change-level actions live in the Sessions sheet opened from a Sessions quick action in the
+  composer's quick-action grid (user decision, adapted from the pre-be42a6c ⋮ menu to the
+  quick-action grid aw36x shipped), not on cards or a hub page.
 - Resume entry points: breadcrumb dropdown bottom (user decision) + card tap (user decision).
 - Old `/changes/{id}` deep links redirect into the resume flow rather than 404ing.
 

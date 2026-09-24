@@ -5,8 +5,8 @@
   "prefix": "MAC",
   "branch": "main",
   "status": {
-    "value": "In progress",
-    "derived": true
+    "value": "Done",
+    "derived": false
   },
   "created": "2026-09-21",
   "updated": "2026-09-24",
@@ -269,61 +269,6 @@
       ],
       "updated": "2026-09-21",
       "notes": "MAC-18 verified; running final Phase 4 regression, live read-only compatibility checks, documentation, and security evidence. Phase 4 full tests, vet, static build, node syntax, diff check, security-focused handler tests, README operations/security matrix, and workflow validation pass. Installed beta live read checks returned 200 for health/provider/model/plugin/integration/MCP/resources/active-permissions. Live credential/MCP/saved-rule mutations, browser cache/log inspection, OAuth/device flows, and 375/390px accessibility remain explicit acceptance gaps. Phase 5 remains unauthorized."
-    },
-    {
-      "id": "MAC-20",
-      "seq": 20,
-      "title": "Phase 5 release and version foundation",
-      "file": "tasks/20-phase-5-release-and-version-foundation.md",
-      "status": "Not started",
-      "dependsOn": [
-        "MAC-19"
-      ],
-      "updated": "2026-09-21"
-    },
-    {
-      "id": "MAC-21",
-      "seq": 21,
-      "title": "Phase 5 native Windows compatibility",
-      "file": "tasks/21-phase-5-native-windows-compatibility.md",
-      "status": "Not started",
-      "dependsOn": [
-        "MAC-20"
-      ],
-      "updated": "2026-09-21"
-    },
-    {
-      "id": "MAC-22",
-      "seq": 22,
-      "title": "Phase 5 cross-platform release automation",
-      "file": "tasks/22-phase-5-cross-platform-release-automatio.md",
-      "status": "Not started",
-      "dependsOn": [
-        "MAC-21"
-      ],
-      "updated": "2026-09-21"
-    },
-    {
-      "id": "MAC-23",
-      "seq": 23,
-      "title": "Phase 5 package manager distribution",
-      "file": "tasks/23-phase-5-package-manager-distribution.md",
-      "status": "Not started",
-      "dependsOn": [
-        "MAC-22"
-      ],
-      "updated": "2026-09-21"
-    },
-    {
-      "id": "MAC-24",
-      "seq": 24,
-      "title": "Phase 5 clean-machine verification",
-      "file": "tasks/24-phase-5-clean-machine-verification.md",
-      "status": "Not started",
-      "dependsOn": [
-        "MAC-23"
-      ],
-      "updated": "2026-09-21"
     },
     {
       "id": "MAC-25",
@@ -900,6 +845,97 @@
       "status": "Test",
       "updated": "2026-09-24",
       "notes": "Replacing the dense Compact SVG with a simpler compression glyph and explicitly retaining its stroke and opacity while disabled. Replaced Compact’s dense multi-direction SVG with a simple two-line inward-compression glyph and explicitly retained full SVG opacity/stroke in the disabled state. Focused tests, full tests, vet, JS syntax, validation, build, diff, and LAN-served markup/CSS checks pass. Physical verification exposed the root cause: renderChatLifecycle assigns compact.textContent after load, deleting the SVG node. Updating only a dedicated label node instead. Fixed the actual icon loss: renderChatLifecycle previously assigned compact.textContent after session state loaded, deleting the SVG node. Compact now has a dedicated label span and lifecycle updates only that label, preserving the icon across every refresh and pending-state transition. Added a regression assertion forbidding compact.textContent replacement. Full tests, vet, JS syntax, validation, build, diff, and LAN-served checks pass."
+    },
+    {
+      "id": "MAC-76",
+      "seq": 76,
+      "title": "Center Chat context-ring options control",
+      "file": "tasks/76-center-chat-context-ring-options-control.md",
+      "status": "Test",
+      "updated": "2026-09-24",
+      "notes": "Normalizing the Options control to one borderless 44px box, making the context ring fill it exactly, and replacing the font ellipsis with geometrically centered CSS dots. Normalized the closed Options control to one borderless 44px square with grid centering. The context ring now fills 100% of that exact box instead of drawing a 44px child inside a bordered 44px parent, eliminating asymmetric clipping. Replaced the font ellipsis with three geometrically centered CSS dots and uses the same centered element for the open-state X. Full tests, vet, JS syntax, validation, build, diff, and LAN-served checks pass."
+    },
+    {
+      "id": "MAC-77",
+      "seq": 77,
+      "title": "Right-align desktop breadcrumb menu",
+      "file": "tasks/77-right-align-desktop-breadcrumb-menu.md",
+      "status": "Test",
+      "updated": "2026-09-24",
+      "notes": "Anchoring the desktop breadcrumb dropdown to the right edge while retaining the compact full-width fixed override. The desktop breadcrumb dropdown now anchors with right: 0 and left: auto beneath the right-aligned location trigger. The compact breakpoint still explicitly uses fixed positioning with left: 0, right: 0, and width: 100vw, preserving mobile behavior. Focused tests, full tests, vet, JS syntax, validation, build, diff, and LAN-served CSS checks pass."
+    },
+    {
+      "id": "MAC-78",
+      "seq": 78,
+      "title": "Integrate choice questions into Chat composer",
+      "file": "tasks/78-integrate-choice-questions-into-chat-com.md",
+      "status": "Test",
+      "updated": "2026-09-24",
+      "notes": "Adding a composer-hosted pending-form mode with polling-safe state, icon-only navigation, UI dismissal, and custom choice answers. Pending forms now mount into a sibling host inside the floating composer shell, replacing the prompt without nested forms and retaining step/answer state across transcript polls. Navigation is icon-only with Previous left, dismiss-only Close centered, and Next/Submit right; dismissal restores the prompt without replying or altering the change. Choice fields include an Other text input whose value is selected, validated, restored, reviewed, and submitted as the answer. Removed the compact fullscreen form mode. Full tests, vet, JS syntax, validation, build, diff, and LAN-served asset checks pass."
+    },
+    {
+      "id": "MAC-79",
+      "seq": 79,
+      "title": "Make question Close interrupt cleanly",
+      "file": "tasks/79-make-question-close-interrupt-cleanly.md",
+      "status": "Test",
+      "updated": "2026-09-24",
+      "notes": "Routing question dismissal through session interrupt and correcting bare error-finish projection. Question Close and Escape dismissal now call the same session interrupt mutation as Stop while preserving dismiss-only form behavior. Interrupt requests show Stopping status. A bare assistant finish:error no longer invents a provider failure; structured provider errors remain sanitized and visible. Added regression contracts. Full tests, vet, JS syntax, validation, build, diff, and LAN-served checks pass."
+    },
+    {
+      "id": "MAC-20",
+      "seq": 20,
+      "title": "Phase 5 release and version foundation",
+      "file": "tasks/20-phase-5-release-and-version-foundation.md",
+      "status": "Cancelled",
+      "dependsOn": [
+        "MAC-19"
+      ],
+      "updated": "2026-09-24"
+    },
+    {
+      "id": "MAC-21",
+      "seq": 21,
+      "title": "Phase 5 native Windows compatibility",
+      "file": "tasks/21-phase-5-native-windows-compatibility.md",
+      "status": "Cancelled",
+      "dependsOn": [
+        "MAC-20"
+      ],
+      "updated": "2026-09-24"
+    },
+    {
+      "id": "MAC-22",
+      "seq": 22,
+      "title": "Phase 5 cross-platform release automation",
+      "file": "tasks/22-phase-5-cross-platform-release-automatio.md",
+      "status": "Cancelled",
+      "dependsOn": [
+        "MAC-21"
+      ],
+      "updated": "2026-09-24"
+    },
+    {
+      "id": "MAC-24",
+      "seq": 24,
+      "title": "Phase 5 clean-machine verification",
+      "file": "tasks/24-phase-5-clean-machine-verification.md",
+      "status": "Cancelled",
+      "dependsOn": [
+        "MAC-23"
+      ],
+      "updated": "2026-09-24"
+    },
+    {
+      "id": "MAC-23",
+      "seq": 23,
+      "title": "Phase 5 package manager distribution",
+      "file": "tasks/23-phase-5-package-manager-distribution.md",
+      "status": "Cancelled",
+      "dependsOn": [
+        "MAC-22"
+      ],
+      "updated": "2026-09-24"
     }
   ]
 }

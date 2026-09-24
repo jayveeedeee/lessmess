@@ -8,9 +8,15 @@ sweep over everything else — no functional changes.
 
 ## Current behavior
 
-- The chat overlay already has 840px/480px rules; explorer stacks under 720px; the header densifies
-  under 480px. Modals (detail, commit, notifications) center with fixed max-widths and feel cramped
-  on phones; settings, setup, and the opencode page have partial 640px rules; no safe-area insets
+- The chat surface was reshaped by change 2026-09-21-aw36x (commit be42a6c): the composer floats
+  over the transcript with ResizeObserver-tracked clearance; its options expand in place as a
+  quick-action grid (Plan / Tasks / Runtime / Compact) toggled by a button carrying the
+  context-usage ring (MAC-76 centers that control); send/interrupt is one stateful icon button;
+  the controls sheet split into a compact Runtime variant plus `.chat-controls-extended` sections;
+  transcript standalone events render as compact rows. The app bar gained the `#location-back`
+  chevron beside the location dropdown. Explorer stacks under 720px; the header densifies under
+  480px. Modals (detail, commit, notifications) center with fixed max-widths and feel cramped on
+  phones; settings, setup, and the opencode page have partial 640px rules; no safe-area insets
   despite `viewport-fit=cover`.
 
 ## Target behavior
@@ -18,9 +24,10 @@ sweep over everything else — no functional changes.
 - Modals (`.modal` — task/plan/review/ledger detail, commit window, notifications): near-full-screen
   sheets on ≤640px with sticky headers/footers where content scrolls; the TOC rail stays hidden
   there (it already hides under 2 headings).
-- Chat: verify the composer, sheets (Work / Sessions / Agents / Controls), reference picker, and
-  inbox remain thumb-friendly after UI-01's additions; touch targets ≥44px on rows, chips, and
-  menu items.
+- Chat: verify the floating composer, quick-action grid, Sessions sheet (UI-01), Work panel,
+  Agents drawer, Runtime variant + extended controls, reference picker, and inbox remain
+  thumb-friendly; touch targets ≥44px on rows, chips, quick actions, and the composer buttons (the
+  options control's 44px box lands with MAC-76 — build on it, don't resize it again).
 - Explorer: tree/detail stacking and the per-directory chat button at 390px; Settings: scope bar,
   section nav, field rows, swatches; Setup: step nav and controls; opencode status page: existing
   640px rules extended to the new layout.

@@ -1335,6 +1335,13 @@
     if (prompt && cstate.session) cstate.drafts[cstate.session] = prompt.value;
     var transcript = document.getElementById("chat-transcript");
     if (transcript && cstate.session) cstate.scrolls[cstate.session] = transcript.scrollTop;
+    captureChatForms();
+    var formHost = document.getElementById("chat-form-host");
+    if (formHost) {
+      formHost.replaceChildren();
+      formHost.hidden = true;
+      formHost.closest(".chat-composer").classList.remove("form-open");
+    }
     clearTimeout(cstate.timer);
     if (cstate.request) cstate.request.abort();
     if (cstate.inboxRequest) cstate.inboxRequest.abort();
@@ -1421,6 +1428,7 @@
           });
           transcript.innerHTML = html;
           settlePendingUserBoundary(transcript, sessionID);
+          mountChatForm();
           restoreChatForms();
           var root = transcript.querySelector(".chat-snapshot");
           if (root && cstate.lifecycle) {
@@ -1601,6 +1609,12 @@
     return cstate.session + "/" + (form.dataset.formId || form.dataset.chatForm);
   }
 
+  function chatCustomAnswer(form, name) {
+    return Array.prototype.find.call(form.querySelectorAll("[data-chat-custom-answer]"), function (field) {
+      return field.dataset.chatCustomAnswer === name;
+    });
+  }
+
   function collectChatFormAnswers(form) {
     var answers = {};
     form.querySelectorAll("[name]").forEach(function (field) {
@@ -1610,9 +1624,15 @@
         if (Object.prototype.hasOwnProperty.call(answers, field.name)) return;
         answers[field.name] = Array.prototype.filter.call(form.querySelectorAll('[name]'), function (option) {
           return option.name === field.name && option.dataset.fieldType === "multiselect" && option.checked;
-        }).map(function (option) { return option.value; });
+        }).map(function (option) {
+          var custom = chatCustomAnswer(form, option.name);
+          return option.value === "__lessmess_custom__" && custom ? custom.value.trim() : option.value;
+        }).filter(Boolean);
       } else if (field.type === "radio") {
-        if (field.checked) answers[field.name] = field.value;
+        if (field.checked) {
+          var custom = chatCustomAnswer(form, field.name);
+          answers[field.name] = field.value === "__lessmess_custom__" && custom ? custom.value.trim() : field.value;
+        }
         else if (!Object.prototype.hasOwnProperty.call(answers, field.name)) answers[field.name] = "";
       } else if (type === "integer") {
         answers[field.name] = field.value === "" ? null : parseInt(field.value, 10);
@@ -1636,7 +1656,7 @@
   }
 
   function captureChatForms() {
-    document.querySelectorAll("#chat-transcript form[data-form-id], #chat-transcript form[data-chat-form]").forEach(captureChatForm);
+    document.querySelectorAll(".chat-window form[data-form-id], .chat-window form[data-chat-form]").forEach(captureChatForm);
   }
 
   function restoreChatFormAnswers(form, answers) {
@@ -1644,8 +1664,23 @@
       if (!Object.prototype.hasOwnProperty.call(answers, field.name)) return;
       var answer = answers[field.name];
       if (field.dataset.fieldType === "boolean") field.checked = !!answer;
-      else if (field.dataset.fieldType === "multiselect") field.checked = Array.isArray(answer) && answer.indexOf(field.value) >= 0;
-      else if (field.type === "radio") field.checked = answer === field.value;
+      else if (field.dataset.fieldType === "multiselect") {
+        var selected = Array.isArray(answer) ? answer : [];
+        if (field.value === "__lessmess_custom__") {
+          var known = Array.prototype.filter.call(form.querySelectorAll("[name]"), function (option) { return option.name === field.name; }).map(function (option) { return option.value; }).filter(function (value) { return value !== "__lessmess_custom__"; });
+          var customValues = selected.filter(function (value) { return known.indexOf(value) < 0; });
+          field.checked = customValues.length > 0;
+          var custom = chatCustomAnswer(form, field.name);
+          if (custom) custom.value = customValues[0] || "";
+        } else field.checked = selected.indexOf(field.value) >= 0;
+      } else if (field.type === "radio") {
+        if (field.value === "__lessmess_custom__") {
+          var options = Array.prototype.filter.call(form.querySelectorAll("[name]"), function (option) { return option.name === field.name; }).map(function (option) { return option.value; });
+          field.checked = answer !== "" && options.indexOf(answer) < 0;
+          var customRadio = chatCustomAnswer(form, field.name);
+          if (customRadio) customRadio.value = field.checked ? answer : "";
+        } else field.checked = answer === field.value;
+      }
       else field.value = answer == null ? "" : String(answer);
     });
   }
@@ -1666,6 +1701,11 @@
     if (field.dataset.fieldType === "multiselect" || field.type === "radio") {
       var selected = Array.isArray(answer) ? answer : answer === "" ? [] : [answer];
       var labels = Array.prototype.map.call(step.querySelectorAll(".chat-choice input"), function (option) {
+        if (option.value === "__lessmess_custom__") {
+          var custom = chatCustomAnswer(step.closest("form"), option.name);
+          var value = custom && custom.value.trim();
+          return value && selected.indexOf(value) >= 0 ? value : "";
+        }
         if (selected.indexOf(option.value) < 0) return "";
         var label = option.closest(".chat-choice");
         var text = label && label.querySelector("strong");
@@ -1725,6 +1765,10 @@
       var valid = !!multi.querySelector("input:checked");
       if (first) first.setCustomValidity(valid ? "" : "Select at least one option.");
     }
+    step.querySelectorAll('[value="__lessmess_custom__"]').forEach(function (option) {
+      var custom = chatCustomAnswer(form, option.name);
+      if (custom) custom.setCustomValidity(option.checked && !custom.value.trim() ? "Enter a custom answer." : "");
+    });
     var invalid = Array.prototype.find.call(step.querySelectorAll("input"), function (field) { return !field.checkValidity(); });
     if (!invalid) return true;
     if (report !== false) {
@@ -1743,19 +1787,25 @@
       button.disabled = status === "submitting" || status === "submitted";
     });
     var submit = form.querySelector("[data-chat-form-submit]");
-    if (submit) submit.textContent = status === "submitting" ? "Submitting..." : status === "submitted" ? "Submitted" : "Submit";
+    if (submit) {
+      var submitLabel = submit.querySelector("[data-chat-form-submit-label]");
+      var label = status === "submitting" ? "Submitting" : status === "submitted" ? "Submitted" : "Submit answers";
+      if (submitLabel) submitLabel.textContent = label;
+      submit.setAttribute("aria-label", label);
+      submit.title = label;
+    }
     setChatFormError(form, state.error);
   }
 
   function currentChatForm(formID) {
-    return Array.prototype.find.call(document.querySelectorAll("#chat-transcript form[data-form-id], #chat-transcript form[data-chat-form]"), function (form) {
+    return Array.prototype.find.call(document.querySelectorAll(".chat-window form[data-form-id], .chat-window form[data-chat-form]"), function (form) {
       return (form.dataset.formId || form.dataset.chatForm) === formID;
     });
   }
 
   function restoreChatForms() {
     var seen = {};
-    document.querySelectorAll("#chat-transcript form[data-form-id], #chat-transcript form[data-chat-form]").forEach(function (form) {
+    document.querySelectorAll(".chat-window form[data-form-id], .chat-window form[data-chat-form]").forEach(function (form) {
       var key = chatFormKey(form);
       seen[key] = true;
       var state = cstate.formStates[key];
@@ -1768,6 +1818,40 @@
     Object.keys(cstate.formStates).forEach(function (key) {
       if (key.indexOf(prefix) === 0 && !seen[key]) delete cstate.formStates[key];
     });
+  }
+
+  function mountChatForm() {
+    var host = document.getElementById("chat-form-host");
+    var shell = host.closest(".chat-composer");
+    var fresh = document.querySelector("#chat-transcript form[data-form-id], #chat-transcript form[data-chat-form]");
+    host.replaceChildren();
+    shell.classList.remove("form-open");
+    host.hidden = true;
+    if (!fresh) return;
+    var state = cstate.formStates[chatFormKey(fresh)] || {};
+    if (state.dismissed) {
+      fresh.hidden = true;
+      return;
+    }
+    closeChatMore(false);
+    var picker = document.getElementById("chat-reference-picker");
+    if (picker) picker.hidden = true;
+    var referenceButton = document.getElementById("chat-reference-btn");
+    if (referenceButton) referenceButton.setAttribute("aria-expanded", "false");
+    host.appendChild(fresh);
+    host.hidden = false;
+    shell.classList.add("form-open");
+  }
+
+  function dismissChatForm(form) {
+    var state = captureChatForm(form);
+    state.dismissed = true;
+    var host = document.getElementById("chat-form-host");
+    host.replaceChildren();
+    host.hidden = true;
+    host.closest(".chat-composer").classList.remove("form-open");
+    document.getElementById("chat-prompt").focus({ preventScroll: true });
+    chatMutation("interrupt").catch(function () {});
   }
 
   function chatBusy() {
@@ -1968,7 +2052,7 @@
     var sessionID = cstate.session;
     cstate.mutation = true;
     if (control) control.disabled = true;
-    setChatStatus("Sending…");
+    setChatStatus(path === "interrupt" ? "Stopping…" : "Sending…");
     var options = { method: "POST", headers: { Accept: "application/json" } };
     if (body instanceof FormData) {
       options.body = body;
@@ -2899,7 +2983,6 @@
     menu.hidden = true;
     menu.closest(".chat-compose-row").classList.remove("options-open");
     button.setAttribute("aria-expanded", "false");
-    button.querySelector(".chat-more-glyph").textContent = "⋮";
     renderChatUsage(cstate.usage || {});
     if (returnFocus !== false && button.isConnected) button.focus({ preventScroll: true });
     return true;
@@ -2913,7 +2996,6 @@
     button.setAttribute("aria-expanded", "true");
     button.setAttribute("aria-label", "Close chat options");
     button.title = "Close chat options";
-    button.querySelector(".chat-more-glyph").textContent = "×";
     var first = menu.querySelector('[role="menuitem"]:not([disabled])');
     if (first) first.focus({ preventScroll: true });
   }
@@ -2929,11 +3011,12 @@
     var referencePicker = document.getElementById("chat-reference-picker");
     var referenceButton = document.getElementById("chat-reference-btn");
 
+    var composerShell = document.getElementById("chat-composer-shell");
     function syncChatComposerHeight() {
-      if (composer.offsetHeight) composer.parentElement.style.setProperty("--chat-composer-height", composer.offsetHeight + "px");
+      if (composerShell.offsetHeight) composerShell.parentElement.style.setProperty("--chat-composer-height", composerShell.offsetHeight + "px");
     }
     syncChatComposerHeight();
-    if (window.ResizeObserver) new ResizeObserver(syncChatComposerHeight).observe(composer);
+    if (window.ResizeObserver) new ResizeObserver(syncChatComposerHeight).observe(composerShell);
 
     function closeChatReferences(returnFocus) {
       if (referencePicker.hidden) return false;
@@ -3351,8 +3434,13 @@
   })();
 
   document.addEventListener("input", function (e) {
-    var form = e.target.closest && e.target.closest("#chat-transcript form[data-form-id], #chat-transcript form[data-chat-form]");
+    var form = e.target.closest && e.target.closest("form[data-form-id], form[data-chat-form]");
     if (!form) return;
+    if (e.target.matches("[data-chat-custom-answer]")) {
+      var customOption = Array.prototype.find.call(form.querySelectorAll('[value="__lessmess_custom__"]'), function (option) { return option.name === e.target.dataset.chatCustomAnswer; });
+      if (customOption) customOption.checked = true;
+      e.target.setCustomValidity("");
+    }
     if (e.target.dataset.fieldType === "multiselect") e.target.setCustomValidity("");
     var state = captureChatForm(form);
     if (state.status === "error") state.status = "pending";
@@ -3361,12 +3449,18 @@
   });
 
   document.addEventListener("change", function (e) {
-    var form = e.target.closest && e.target.closest("#chat-transcript form[data-form-id], #chat-transcript form[data-chat-form]");
+    var form = e.target.closest && e.target.closest("form[data-form-id], form[data-chat-form]");
     if (form) captureChatForm(form);
   });
 
   document.addEventListener("click", function (e) {
-    var formNav = e.target.closest("#chat-transcript [data-chat-form-prev], #chat-transcript [data-chat-form-next]");
+    var formClose = e.target.closest(".chat-window [data-chat-form-close]");
+    if (formClose) {
+      e.preventDefault();
+      dismissChatForm(formClose.closest("form[data-form-id], form[data-chat-form]"));
+      return;
+    }
+    var formNav = e.target.closest(".chat-window [data-chat-form-prev], .chat-window [data-chat-form-next]");
     if (formNav) {
       var wizard = formNav.closest("form[data-form-id], form[data-chat-form]");
       if (!wizard || formNav.disabled) return;
@@ -3563,7 +3657,7 @@
       ).catch(function () {});
       return;
     }
-    var form = e.target.closest("#chat-transcript form[data-form-id], #chat-transcript form[data-chat-form]");
+    var form = e.target.closest(".chat-window form[data-form-id], .chat-window form[data-chat-form]");
     if (!form) return;
     e.preventDefault();
     var steps = form.querySelectorAll("[data-chat-form-step]");
@@ -3916,9 +4010,10 @@
       return;
     }
     if (chatOpen()) {
-      var requiredForm = document.querySelector('#chat-transcript form[data-chat-form] [required]');
-      if (compactChatUI() && requiredForm) {
+      var activeForm = document.querySelector('#chat-form-host:not([hidden]) form[data-chat-form]');
+      if (activeForm) {
         e.preventDefault();
+        dismissChatForm(activeForm);
         return;
       }
       if (!closeTopChatAuxiliary()) closeChat();

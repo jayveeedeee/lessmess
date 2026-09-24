@@ -36,6 +36,13 @@ decided to remove it outright; deep links into it must land in the new chat-firs
 - Docs/comments that describe board behavior (web doc pairs, README section on the board) are
   updated; the close-out gardener refreshes doc pairs afterwards regardless.
 
+## Coordination
+
+- Change 2026-09-21-aw36x actively reshapes the same files (its MAC-76 composer-control work is
+  uncommitted at planning time; its remaining open tasks are release/packaging only). Start this
+  task only after MAC-76 lands, and rebase on whatever aw36x committed by then — its board-header
+  title work (task 63) is superseded by this removal.
+
 ## Verification
 
 - `grep -ri 'board' web/templates web/static/app.js` finds no kanban remnants (allowed: the Work

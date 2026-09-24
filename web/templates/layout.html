@@ -62,7 +62,9 @@ document.documentElement.dataset.theme = localStorage.getItem("tt-theme") || "da
          <div id="chat-transcript" class="chat-transcript" aria-live="polite" aria-busy="false"></div>
         <section id="chat-inbox" class="chat-inbox" aria-label="Pending follow-ups" aria-live="polite" hidden></section>
         <div id="chat-status" class="chat-status" role="status" aria-live="polite"></div>
-        <form id="chat-composer" class="chat-composer">
+         <div id="chat-composer-shell" class="chat-composer">
+          <div id="chat-form-host" class="chat-form-host" hidden></div>
+          <form id="chat-composer" class="chat-composer-form">
           <div id="chat-skill-chips" class="chat-draft-files" aria-label="Attached skills" aria-live="polite" hidden></div>
           <div id="chat-draft-files" class="chat-draft-files" aria-label="Attached files and references" aria-live="polite"></div>
            <div id="chat-reference-picker" class="chat-reference-picker" role="region" aria-label="Project references" hidden>
@@ -70,9 +72,9 @@ document.documentElement.dataset.theme = localStorage.getItem("tt-theme") || "da
              <label class="sr-only" for="chat-reference-search">Filter project references</label>
              <input id="chat-reference-search" type="search" placeholder="Filter references" autocomplete="off">
              <div id="chat-reference-list" class="chat-reference-list"></div>
-           </div>
+            </div>
            <div class="chat-compose-row">
-             <label class="sr-only" for="chat-prompt">Message</label>
+              <label class="sr-only" for="chat-prompt">Message</label>
                <textarea id="chat-prompt" rows="2" placeholder="Message this session" enterkeyhint="send"></textarea>
                <div id="chat-more-menu" class="chat-more-menu" role="menu" aria-label="Chat options" hidden>
                 <a id="chat-plan-btn" class="chat-quick-action" role="menuitem" hx-target="#detail" hx-swap="innerHTML" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l3 3v15H6zM9 11h6M9 15h6M15 3v4h4"/></svg><span>Plan</span></a>
@@ -82,14 +84,15 @@ document.documentElement.dataset.theme = localStorage.getItem("tt-theme") || "da
               </div>
                <div class="chat-compose-actions">
                    <div class="chat-more-wrap">
-                     <button id="chat-more-btn" type="button" class="btn-ghost" aria-label="Chat options, active context usage unavailable" title="Chat options. Active context usage unavailable" aria-haspopup="menu" aria-expanded="false" aria-controls="chat-more-menu"><span id="chat-context-usage" class="chat-context-usage unavailable" aria-hidden="true" style="--usage: 0"></span><span class="chat-more-glyph" aria-hidden="true">⋮</span><span class="chat-more-label">Close</span></button>
+                     <button id="chat-more-btn" type="button" class="btn-ghost" aria-label="Chat options, active context usage unavailable" title="Chat options. Active context usage unavailable" aria-haspopup="menu" aria-expanded="false" aria-controls="chat-more-menu"><span id="chat-context-usage" class="chat-context-usage unavailable" aria-hidden="true" style="--usage: 0"></span><span class="chat-more-glyph" aria-hidden="true"></span><span class="chat-more-label">Close</span></button>
                   </div>
                  <input id="chat-file-input" class="sr-only" type="file" multiple accept="text/*,application/json,application/xml,application/javascript,application/yaml,application/toml,image/png,image/jpeg,image/gif,image/webp,image/svg+xml">
                  <span class="chat-compose-spacer"></span>
                <button id="chat-send-btn" type="submit" class="btn-accent chat-action-button" data-action="send" aria-label="Send message" title="Send message"><span class="chat-action-icon" aria-hidden="true"></span></button>
              </div>
            </div>
-         </form>
+          </form>
+         </div>
          <button id="chat-agents-btn" class="chat-internal-toggle" type="button" aria-controls="chat-agents" aria-expanded="false" aria-hidden="true" tabindex="-1" hidden></button>
         </div>
        <aside id="chat-agents" class="chat-agents" data-chat-view-panel="agents" hidden aria-label="Child agent activity" aria-hidden="true" inert></aside>
