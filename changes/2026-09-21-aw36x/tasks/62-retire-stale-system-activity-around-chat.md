@@ -1,9 +1,9 @@
-# MAC-62: Retire stale System activity around Chat forms
+# MAC-62: Modernize standalone Chat event rows
 
 ## Objective
 
-Keep stale System activity from lingering in live Chat or competing visually
-with permission and multiple-choice interactions.
+Remove the old block presentation from standalone Chat events without removing
+expandable System activity or its reasoning, tool, and shell history.
 
 ## Dependencies
 
@@ -11,18 +11,20 @@ with permission and multiple-choice interactions.
 
 ## Scope
 
-- Show only current System progress in the live snapshot while preserving shell
-  records as durable command output.
-- Hide all System activity while Chat is waiting for a permission or form.
-- Preserve settled System activity in paged transcript history.
-- Base the decision on OpenCode lifecycle state, not elapsed time.
+- Preserve every expandable System activity group in the live transcript.
+- Mark activity as running only when its latest item is explicitly running.
+- Render compaction, explicit system, and unknown top-level events as compact,
+  transparent rows instead of legacy blocks.
+- Keep pending forms visually dominant without deleting transcript history.
 
 ## Implementation steps
 
 1. Carry explicit running state from reasoning, tool, and shell activity.
-2. Filter settled reasoning and tool activity from live snapshots.
-3. Suppress even running activity while a user interaction is pending.
-4. Add regression coverage for stale turns, pending forms, and history.
+2. Preserve all activity groups while preventing stale running indicators.
+3. Neutralize block chrome for all non-user/non-assistant event messages.
+4. Scope global navigation-header styling to the page header so it cannot turn
+   semantic transcript headers into sticky blocks.
+5. Add regression coverage for prior turns, pending forms, and compaction.
 
 ## Verification
 
@@ -32,17 +34,20 @@ with permission and multiple-choice interactions.
 
 ## Completion criteria
 
-Pending forms are never visually competed with by a System block, stale
-reasoning and tool activity is absent from the live transcript, shell records
-remain readable, and historical activity remains available through
-older-message pages.
+Reasoning, tools, and shell activity remain expandable; stale activity is not
+shown as running; and standalone events use a compact transparent row rather
+than the old gray block.
 
 ## Files affected
 
 - `internal/server/chat.go`
 - `internal/server/chat_test.go`
+- `web/static/app.css`
 
 ## Notes
 
-Clock time is deliberately excluded from stale detection, so day changes,
-device clock corrections, and long-running sessions cannot revive old blocks.
+The event-row renderer covers three categories: compaction, explicit system,
+and unknown future top-level message types. Clock time remains excluded from
+running-state detection. The black compaction block was caused by the global
+`header` selector applying page-navigation dimensions and background to a
+semantic header inside the transcript.

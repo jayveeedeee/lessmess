@@ -1,0 +1,63 @@
+{
+  "version": 1,
+  "id": "2026-09-24-ic3l8",
+  "title": "Mobile-first chat-first UI",
+  "prefix": "UI",
+  "branch": "main",
+  "status": {
+    "value": "Planned",
+    "derived": true
+  },
+  "created": "2026-09-24",
+  "updated": "2026-09-24",
+  "tasks": [
+    {
+      "id": "UI-00",
+      "seq": 0,
+      "title": "Give the chat Work panel its own JSON task feed",
+      "file": "tasks/00-give-the-chat-work-panel-its-own-json-ta.md",
+      "status": "Not started",
+      "updated": "2026-09-24"
+    },
+    {
+      "id": "UI-01",
+      "seq": 1,
+      "title": "Add a Sessions sheet to the chat options menu with change actions",
+      "file": "tasks/01-add-a-sessions-sheet-to-the-chat-options.md",
+      "status": "Not started",
+      "updated": "2026-09-24"
+    },
+    {
+      "id": "UI-02",
+      "seq": 2,
+      "title": "Add Resume session to the breadcrumb location menu",
+      "file": "tasks/02-add-resume-session-to-the-breadcrumb-loc.md",
+      "status": "Not started",
+      "updated": "2026-09-24"
+    },
+    {
+      "id": "UI-03",
+      "seq": 3,
+      "title": "Redesign the changes list as mobile cards with tap-to-resume",
+      "file": "tasks/03-redesign-the-changes-list-as-mobile-card.md",
+      "status": "Not started",
+      "updated": "2026-09-24"
+    },
+    {
+      "id": "UI-04",
+      "seq": 4,
+      "title": "Remove the kanban board and reroute /changes/{id}",
+      "file": "tasks/04-remove-the-kanban-board-and-reroute-chan.md",
+      "status": "Not started",
+      "updated": "2026-09-24"
+    },
+    {
+      "id": "UI-05",
+      "seq": 5,
+      "title": "Responsive polish pass across all pages",
+      "file": "tasks/05-responsive-polish-pass-across-all-pages.md",
+      "status": "Not started",
+      "updated": "2026-09-24"
+    }
+  ]
+}

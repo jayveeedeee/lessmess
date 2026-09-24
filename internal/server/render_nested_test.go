@@ -36,6 +36,9 @@ func TestNestedBoardMarkup(t *testing.T) {
 	// Drill-down: breadcrumb and scoped board marker.
 	w = htmlGet(t, h, "/changes/2026-09-10-0?task=FIX-00", false)
 	body = w.Body.String()
+	if !strings.Contains(body, `>Fixture change</a>`) {
+		t.Fatalf("task-board root breadcrumb did not use the change title: %s", body)
+	}
 	for _, want := range []string{
 		`class="crumbs"`,
 		`href="/changes/2026-09-10-0"`,

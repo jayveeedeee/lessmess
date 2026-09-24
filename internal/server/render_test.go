@@ -52,14 +52,37 @@ func TestIndexHTML(t *testing.T) {
 			t.Errorf("index HTML missing %q", want)
 		}
 	}
-	optionsAt := strings.Index(body, `id="chat-more-btn"`)
+	menuAt := strings.Index(body, `id="chat-more-menu"`)
 	compactAt := strings.Index(body, `id="chat-compact-btn"`)
 	menuEnd := -1
-	if optionsAt >= 0 {
-		menuEnd = strings.Index(body[optionsAt:], `</div>`)
+	if menuAt >= 0 {
+		menuEnd = strings.Index(body[menuAt:], `</div>`)
 	}
-	if optionsAt < 0 || compactAt < optionsAt || menuEnd < 0 || compactAt > optionsAt+menuEnd {
+	if menuAt < 0 || compactAt < menuAt || menuEnd < 0 || compactAt > menuAt+menuEnd {
 		t.Errorf("compact action is not inside the options menu")
+	}
+}
+
+func TestExpandableLocationBreadcrumbContract(t *testing.T) {
+	st, _ := fixtureStore(t)
+	h := New(st).Handler()
+	page := htmlGet(t, h, "/changes/2026-09-10-0", false).Body.String()
+	for _, want := range []string{`id="app-header" class="has-location"`, `id="location-nav"`, `data-change-title="Fixture change"`, `id="location-back"`, `class="location-back-icon"`, `id="location-toggle"`, `aria-controls="location-menu"`, `id="location-current">Fixture change`, `id="location-menu"`, `id="location-trail"`, `class="location-actions"`} {
+		if !strings.Contains(page, want) {
+			t.Errorf("location breadcrumb markup missing %q", want)
+		}
+	}
+	js := do(t, h, "GET", "/static/app.js", "").Body.String()
+	for _, want := range []string{`function locationBaseTrail()`, `function syncLocationFromChat()`, `function activateLocation(index)`, `function setDetailLocation(url, parentTrail)`, `current.textContent = locationTrail[locationTrail.length - 1].label`, `back.setAttribute("aria-label", parent ? "Back to " + parent.label`, `activateLocation(locationTrail.length - 2)`, `trail.push({ kind: "chat", label: "Chat" })`, `labels = { work: "Work", agents: "Agents", controls: "Controls" }`, `sibling.id !== "app-header"`, `child.id !== "app-header"`} {
+		if !strings.Contains(js, want) {
+			t.Errorf("location breadcrumb controller missing %q", want)
+		}
+	}
+	css := do(t, h, "GET", "/static/app.css", "").Body.String()
+	for _, want := range []string{`.has-location > .brand { display: none; }`, `.location-nav {`, `#location-back {`, `.location-back-icon {`, `justify-content: flex-end`, `text-align: right`, `#location-menu {`, `#location-trail {`, `.location-actions {`, `width: 100vw`, `.modal-head {`, `.chat-head {`, `@keyframes location-slide`, `inset: var(--app-header-height) 0 0`, `top: calc(var(--chat-viewport-top, 0px) + var(--app-header-height))`} {
+		if !strings.Contains(css, want) {
+			t.Errorf("location breadcrumb CSS missing %q", want)
+		}
 	}
 }
 
@@ -217,10 +240,13 @@ func TestBoardHTML(t *testing.T) {
 		t.Fatalf("code = %d", w.Code)
 	}
 	body := w.Body.String()
+	if !strings.Contains(body, "<h2>Fixture change</h2>") || strings.Contains(body, "<h2>2026-09-10-0</h2>") {
+		t.Fatalf("board header did not use the change title: %s", body)
+	}
 	for _, want := range []string{"Not started", "In progress", "Blocked", "Test", "Done", "Cancelled",
 		"First", "Second", "data-task=\"FIX-00\"", `data-change="2026-09-10-0"`,
 		`sessions-btn`, `sessions-panel`,
-		`chat-overlay`, `chat-transcript`, `chat-composer`, `chat-interrupt-btn`,
+		`chat-overlay`, `chat-transcript`, `chat-composer`, `chat-send-btn`,
 		`chat-file-input`, `chat-draft-files`, `chat-reference-picker`, `chat-reference-list`,
 		`chat-controls-btn`, `chat-controls-sheet`, `chat-controls-search`, `chat-agent-select`, `chat-model-select`, `chat-variant-select`,
 		`chat-command-select`, `chat-command-args`, `chat-skill-list`, `chat-skill-chips`, `chat-usage`} {
@@ -263,11 +289,12 @@ func TestChatComposerUIContract(t *testing.T) {
 	h := New(st).Handler()
 	page := htmlGet(t, h, "/changes/2026-09-10-0", false).Body.String()
 	for _, want := range []string{
-		`id="chat-prompt" rows="2"`, `id="chat-send-btn" type="submit" class="btn-accent"`,
-		`id="chat-more-btn"`, `aria-label="Chat options"`, `aria-haspopup="menu"`, `aria-expanded="false"`, `aria-controls="chat-more-menu">⋮</button>`,
-		`id="chat-more-menu"`, `role="menu"`, `id="chat-more-backdrop"`, `aria-label="Close chat options"`,
-		`id="chat-compact-btn" type="button" role="menuitem"`, `disabled>Compact</button>`,
-		`id="chat-interrupt-btn" type="button" class="btn-ghost" hidden`,
+		`id="chat-prompt" rows="2"`, `id="chat-send-btn" type="submit" class="btn-accent chat-action-button" data-action="send"`, `aria-label="Send message"`, `class="chat-action-icon"`,
+		`id="chat-more-btn"`, `aria-label="Chat options, active context usage unavailable"`, `aria-haspopup="menu"`, `aria-expanded="false"`, `aria-controls="chat-more-menu"`, `class="chat-more-glyph" aria-hidden="true">⋮</span>`, `class="chat-more-label">Close</span>`,
+		`id="chat-more-menu"`, `role="menu"`, `aria-label="Chat options"`,
+		`id="chat-plan-btn" class="chat-quick-action" role="menuitem"`, `id="chat-tasks-btn" class="chat-quick-action"`,
+		`id="chat-controls-btn" class="chat-quick-action"`, `<span>Runtime</span>`,
+		`id="chat-compact-btn" class="chat-quick-action" type="button" role="menuitem"`, `M4 7h16M4 17h16M8 3l4 4 4-4M8 21l4-4 4 4`, `id="chat-compact-label">Compact</span>`,
 	} {
 		if !strings.Contains(page, want) {
 			t.Errorf("chat composer missing %q", want)
@@ -276,11 +303,17 @@ func TestChatComposerUIContract(t *testing.T) {
 
 	js := do(t, h, "GET", "/static/app.js", "").Body.String()
 	for _, want := range []string{
-		`document.getElementById("chat-interrupt-btn").hidden = !busy`,
-		`function closeChatMore(returnFocus)`, `moreBackdrop.addEventListener("click"`,
+		`function syncChatComposerHeight()`, `new ResizeObserver(syncChatComposerHeight).observe(composer)`, `"--chat-composer-height"`,
+		`function openChatControls(opener, runtimeOnly)`, `sheet.classList.toggle("runtime-only", !!runtimeOnly)`, `runtimeOnly ? "Runtime" : "Session controls"`,
+		`openChatControls(moreButton, true).then`, `document.getElementById("chat-agent-select").focus`,
+		`function updateChatActionButton()`, `document.activeElement === prompt && prompt.value.trim() !== ""`,
+		`button.dataset.action = send ? "send" : "stop"`, `button.type = send ? "submit" : "button"`,
+		`prompt.addEventListener("focus", updateChatActionButton)`, `prompt.addEventListener("blur"`,
+		`chatMutation("interrupt", undefined, send)`,
+		`function closeChatMore(returnFocus)`, `menu.closest(".chat-compose-row").classList.add("options-open")`, `button.querySelector(".chat-more-glyph").textContent = "×"`,
 		`closeChatMessageActions(true) || closeChatMore(true) || closeChatReferences(true)`,
 		`loadChatReferences().then`, `openChatControls(moreButton).then`,
-		`var usage = cstate.usage || {}`, `setChatStatus("Compaction failed: " + err.message, true)`,
+		`var usage = cstate.usage || {}`, `var compactLabel = document.getElementById("chat-compact-label")`, `compactLabel.textContent = pending ? "Compacting..." : "Compact"`, `setChatStatus("Compaction failed: " + err.message, true)`,
 		`data-remove-chat-file`, `data-remove-chat-reference`, `data-remove-chat-skill`,
 		`files.length + refs.length >= 10`, `20 * 1024 * 1024`, `promptDeliveryFiles`, `promptDeliverySkills`,
 	} {
@@ -291,6 +324,9 @@ func TestChatComposerUIContract(t *testing.T) {
 	if strings.Contains(js, `!cstate.controls || !cstate.controls.usage.contextAvailable`) {
 		t.Error("compact click still depends on opening Controls")
 	}
+	if strings.Contains(js, `compact.textContent =`) {
+		t.Error("compact lifecycle rendering replaces and deletes the icon node")
+	}
 	for _, removed := range []string{`chat-actions-btn`, `chat-actions-sheet`, `chat-actions-backdrop`, `closeChatActions`} {
 		if strings.Contains(page, removed) || strings.Contains(js, removed) {
 			t.Errorf("chat composer retained split action control %q", removed)
@@ -299,6 +335,18 @@ func TestChatComposerUIContract(t *testing.T) {
 	for _, unrequested := range []string{`class="chat-add-file"`, `Attach files`, `id="chat-reference-btn"`, `id="chat-skill-btn"`, `Reference project file`, `Use skill`} {
 		if strings.Contains(page, unrequested) {
 			t.Errorf("chat options retained unrequested entry %q", unrequested)
+		}
+	}
+	if strings.Contains(page, `id="chat-interrupt-btn"`) || strings.Contains(page, `>Send</button>`) || strings.Contains(page, `>Interrupt</button>`) {
+		t.Error("chat composer retained separate written Send/Interrupt controls")
+	}
+	if strings.Contains(page, `id="chat-more-backdrop"`) {
+		t.Error("integrated Chat options retained the popover backdrop")
+	}
+	css := do(t, h, "GET", "/static/app.css", "").Body.String()
+	for _, want := range []string{`.chat-main {`, `--chat-composer-height: 142px`, `.chat-transcript {`, `calc(var(--chat-composer-height) + 1rem)`, `.chat-status {`, `bottom: var(--chat-composer-height)`, `.chat-inbox {`, `bottom: calc(var(--chat-composer-height) + 1.4rem)`, `.chat-composer {`, `position: absolute`, `pointer-events: none`, `.chat-composer > * { pointer-events: auto; }`, `border-top: 0`, `.chat-compose-row {`, `min-height: calc(64px + 44px + 0.7rem)`, `border-radius: 22px`, `overflow: hidden`, `.chat-compose-row:focus-within {`, `.chat-compose-actions {`, `padding: 0.1rem 0.45rem 0.45rem`, `#chat-prompt {`, `min-height: 64px`, `border: 0`, `background: transparent`, `.chat-action-button {`, `.chat-action-button[data-action="send"] .chat-action-icon`, `.chat-action-button[data-action="stop"] .chat-action-icon`, `.chat-quick-action {`, `height: 76px`, `border-radius: 0`, `.chat-quick-action svg {`, `.chat-quick-action:disabled { opacity: 1`, `.chat-quick-action:disabled svg { opacity: 1; stroke: currentColor; }`, `grid-template-columns: repeat(auto-fit, minmax(120px, 1fr))`, `grid-template-columns: repeat(2, minmax(0, 1fr))`, `.chat-compose-row.options-open #chat-send-btn`, `.chat-compose-row.options-open .chat-context-usage { display: none; }`, `.chat-compose-row.options-open .chat-more-wrap > #chat-more-btn {`, `.chat-compose-row.options-open .chat-more-label { display: inline; }`} {
+		if !strings.Contains(css, want) {
+			t.Errorf("chat action styling missing %q", want)
 		}
 	}
 }
@@ -320,6 +368,9 @@ func TestChatNavigationUIContract(t *testing.T) {
 		`"/navigation"`,
 		`var ancestors = data.ancestors || []`,
 		`bar.hidden = ancestors.length === 0`,
+		`function chatDisplayTitle(title)`,
+		`var prefix = change ? change + " — " : ""`,
+		`cstate.title = chatDisplayTitle(data.current.title)`,
 		`pending input`,
 	} {
 		if !strings.Contains(asset, want) {
@@ -367,7 +418,7 @@ func TestChatCompactViewStackUIContract(t *testing.T) {
 	css := do(t, h, "GET", "/static/app.css", "").Body.String()
 	for _, want := range []string{
 		`@media (max-width: 840px)`, `[data-chat-view-panel]`, `.chat-window[data-chat-view="work"]`,
-		`top: var(--chat-viewport-top, 0)`, `left: var(--chat-viewport-left, 0)`,
+		`top: calc(var(--chat-viewport-top, 0px) + var(--app-header-height))`, `left: var(--chat-viewport-left, 0)`,
 		`width: var(--chat-viewport-width, 100%)`, `#chat-overlay { background: var(--bg); }`,
 	} {
 		if !strings.Contains(css, want) {
@@ -382,7 +433,7 @@ func TestChatFormCompactFullscreenContract(t *testing.T) {
 	css := do(t, h, "GET", "/static/app.css", "").Body.String()
 	for _, want := range []string{
 		`@media (max-width: 840px)`, `.chat-form {`, `position: fixed`, `inset: 0`,
-		`height: var(--chat-viewport-height, 100dvh)`, `max-height: none`,
+		`height: calc(var(--chat-viewport-height, 100dvh) - var(--app-header-height))`, `max-height: none`,
 		`env(safe-area-inset-top)`, `env(safe-area-inset-right)`,
 		`env(safe-area-inset-bottom)`, `env(safe-area-inset-left)`,
 		`.chat-form-body`, `overflow-y: auto`, `.chat-form-nav`,
@@ -400,7 +451,7 @@ func TestChatDesktopAuxiliaryPanelUIContract(t *testing.T) {
 	for _, want := range []string{
 		`function requestChatAuxiliary(name)`, `if (compactChatUI()) return false`,
 		`requestChatAuxiliary("work")`, `requestChatAuxiliary("agents")`, `requestChatAuxiliary("controls")`,
-		`function openChatTasks(opener)`, `function openChatAgents(opener)`, `function openChatControls(opener)`,
+		`function openChatTasks(opener)`, `function openChatAgents(opener)`, `function openChatControls(opener, runtimeOnly)`,
 	} {
 		if !strings.Contains(js, want) {
 			t.Errorf("desktop chat auxiliary arbiter missing %q", want)
@@ -411,7 +462,7 @@ func TestChatDesktopAuxiliaryPanelUIContract(t *testing.T) {
 	for _, want := range []string{
 		`@media (min-width: 841px)`, `.chat-main { min-width: 600px; }`,
 		`.chat-tasks[hidden], .chat-tasks:not(.open)`, `.chat-agents[hidden], .chat-agents:not(.open)`,
-		`.chat-more-wrap { position: relative; display: block; flex: none; }`,
+		`.chat-more-wrap { display: block; flex: none; }`,
 		`clamp(220px, 24vw, 280px)`, `clamp(240px, 24vw, 300px)`, `clamp(240px, 25vw, 320px)`,
 		`calc((100% - 860px) / 2)`,
 	} {
@@ -428,11 +479,11 @@ func TestChatComposerNavigationUIContract(t *testing.T) {
 	for _, want := range []string{
 		`class="modal-close chat-back" data-close-chat aria-label="Back"><span class="back-chevron"`,
 		`class="chat-heading"`, `id="chat-session-state"`, `role="status"`,
-		`id="chat-more-btn"`, `aria-label="Chat options"`, `aria-haspopup="menu"`,
+		`id="chat-more-btn"`, `aria-label="Chat options, active context usage unavailable"`, `aria-haspopup="menu"`,
 		`aria-expanded="false"`, `aria-controls="chat-more-menu"`,
-		`id="chat-more-menu"`, `role="menu"`, `id="chat-more-backdrop"`,
+		`id="chat-more-menu"`, `role="menu"`,
 		`id="chat-compact-btn"`,
-		`id="chat-controls-btn"`, `id="chat-tasks-btn"`, `id="chat-agents-btn"`, `id="chat-variant-select"`,
+		`id="chat-controls-btn"`, `id="chat-tasks-btn"`, `id="chat-plan-btn"`, `id="chat-agents-btn"`, `id="chat-variant-select"`,
 	} {
 		if !strings.Contains(page, want) {
 			t.Errorf("chat composer navigation missing %q", want)
@@ -447,23 +498,26 @@ func TestChatComposerNavigationUIContract(t *testing.T) {
 		t.Fatal("chat composer end not found")
 	}
 	composer := page[composerStart : composerStart+composerEnd]
-	for _, want := range []string{`id="chat-tasks-btn"`, `id="chat-agents-btn"`, `id="chat-controls-btn"`, `id="chat-more-btn"`, `id="chat-context-usage"`, `id="chat-send-btn"`} {
+	for _, want := range []string{`id="chat-plan-btn"`, `id="chat-tasks-btn"`, `id="chat-controls-btn"`, `id="chat-compact-btn"`, `id="chat-more-btn"`, `id="chat-context-usage"`, `id="chat-send-btn"`} {
 		if !strings.Contains(composer, want) {
 			t.Errorf("chat composer missing navigation control %q", want)
 		}
 	}
-	controlsEnd := strings.Index(composer, `class="chat-more-wrap"`)
+	optionsStart := strings.Index(composer, `id="chat-more-btn"`)
+	optionsEnd := -1
+	if optionsStart >= 0 {
+		optionsEnd = strings.Index(composer[optionsStart:], `</button>`)
+	}
 	usageAt := strings.Index(composer, `id="chat-context-usage"`)
-	spacerAt := strings.Index(composer, `class="chat-compose-spacer"`)
-	if controlsEnd < 0 || usageAt < controlsEnd || spacerAt < usageAt {
-		t.Errorf("context usage is not positioned after navigation controls and before the composer spacer")
+	if optionsStart < 0 || optionsEnd < 0 || usageAt < optionsStart || usageAt > optionsStart+optionsEnd {
+		t.Errorf("context usage ring is not integrated inside the Options button")
 	}
 
 	js := do(t, h, "GET", "/static/app.js", "").Body.String()
 	for _, want := range []string{
 		`function closeChatMore(returnFocus)`, `function openChatMore()`,
 		`button.setAttribute("aria-expanded", "false")`, `button.setAttribute("aria-expanded", "true")`,
-		`moreBackdrop.addEventListener("click"`, `closeChatMessageActions(true) || closeChatMore(true) || closeChatReferences(true)`,
+		`menu.closest(".chat-compose-row").classList.remove("options-open")`, `closeChatMessageActions(true) || closeChatMore(true) || closeChatReferences(true)`,
 		`closeChatMore(false);`, `openChatControls(moreButton)`, `e.target.closest('[role="menuitem"]')`,
 		`setChatHeaderState(busy ? "Working" : "Idle"`, `setChatHeaderState("Disconnected", "error")`,
 		`panel.hidden = !change`, `toggle.hidden = !change`, `toggle.hidden = descendants.length === 0`,
@@ -478,9 +532,10 @@ func TestChatComposerNavigationUIContract(t *testing.T) {
 	css := do(t, h, "GET", "/static/app.css", "").Body.String()
 	for _, want := range []string{
 		`.chat-back`, `.back-chevron`, `border-left: 2px solid currentColor`,
-		`@media (max-width: 840px)`, `.chat-more-wrap { position: relative; display: block; flex: none; }`,
+		`@media (max-width: 840px)`, `.chat-more-wrap { display: block; flex: none; }`,
 		`.chat-heading {`, `min-width: 5.5rem`, `.chat-session-state { display: block`,
-		`.chat-more-menu button {`, `bottom: calc(100% + 0.5rem)`, `min-height: 44px`, `.chat-more-menu[hidden], .chat-more-backdrop[hidden]`,
+		`.chat-more-menu {`, `width: 100%`, `.chat-compose-row.options-open #chat-prompt { display: none; }`, `.chat-quick-action {`, `min-height: 76px`, `.chat-more-menu[hidden]`,
+		`.chat-more-wrap > #chat-more-btn {`, `border-radius: 50%`, `.chat-more-glyph { position: relative; z-index: 1; }`,
 	} {
 		if !strings.Contains(css, want) {
 			t.Errorf("chat composer navigation CSS missing %q", want)
@@ -493,7 +548,7 @@ func TestChatAccessibilityContract(t *testing.T) {
 	h := New(st).Handler()
 	page := htmlGet(t, h, "/changes/2026-09-10-0", false).Body.String()
 	for _, want := range []string{
-		`class="chat-window" role="dialog" aria-modal="true"`,
+		`class="chat-window" role="dialog" aria-labelledby="chat-title"`,
 		`id="chat-agents"`, `aria-label="Child agent activity" aria-hidden="true" inert`,
 		`id="chat-controls-sheet"`, `aria-label="Session controls" aria-hidden="true" inert`,
 		`for="chat-controls-search">Filter session controls`,
@@ -501,7 +556,7 @@ func TestChatAccessibilityContract(t *testing.T) {
 		`aria-label="Attached files and references" aria-live="polite"`,
 		`role="region" aria-label="Project references"`,
 		`id="chat-reference-close"`, `for="chat-reference-search">Filter project references`,
-		`id="chat-context-usage"`, `class="chat-context-usage unavailable"`, `aria-label="Active context usage unavailable"`,
+		`id="chat-context-usage"`, `class="chat-context-usage unavailable"`, `aria-hidden="true"`,
 	} {
 		if !strings.Contains(page, want) {
 			t.Errorf("accessible Chat shell missing %q", want)
@@ -526,7 +581,7 @@ func TestChatAccessibilityContract(t *testing.T) {
 		`/chat/usage`, `setTimeout(function () { loadChatUsage(true); }, 15000)`, `cstate.usageRequest.abort()`,
 		`function settlePendingUserBoundary(transcript, sessionID)`, `running.classList.remove("is-running")`,
 		`latestUser !== boundary.user`, `activityKey !== boundary.activity`,
-		`header.style.setProperty("--usage"`, `"Active context " + percent + " percent`,
+		`header.style.setProperty("--usage"`, `"Active context " + percent + " percent`, `options.setAttribute("aria-label", optionsOpen ? "Close chat options" : "Chat options, " + usageTitle.toLowerCase())`,
 		`setChatStatus("");`,
 	} {
 		if !strings.Contains(js, want) {
@@ -536,8 +591,9 @@ func TestChatAccessibilityContract(t *testing.T) {
 
 	css := do(t, h, "GET", "/static/app.css", "").Body.String()
 	for _, want := range []string{
-		`height: var(--chat-viewport-height, 100dvh)`,
+		`height: calc(var(--chat-viewport-height, 100dvh) - var(--app-header-height))`,
 		`background: conic-gradient(var(--usage-color) calc(var(--usage) * 1%)`, `.chat-context-usage::before`,
+		`width: 44px`, `height: 44px`,
 		`.chat-window :where(button, a[href], input, select, textarea, [tabindex]):focus-visible`,
 		`outline: 2px solid var(--accent)`, `.chat-controls-sheet select`, `min-height: 44px`,
 		`.chat-agents-head { display: none; }`, `.chat-controls-head { display: none; }`,
@@ -576,7 +632,7 @@ func TestChatCompactWorkUIContract(t *testing.T) {
 	h := New(st).Handler()
 	page := htmlGet(t, h, "/changes/2026-09-10-0", false).Body.String()
 	for _, want := range []string{
-		`id="chat-tasks-btn"`, `aria-controls="chat-tasks"`, `hidden>Work</button>`,
+		`id="chat-plan-btn"`, `id="chat-tasks-btn"`, `aria-controls="chat-tasks"`, `<span>Tasks</span></button>`,
 		`id="chat-tasks"`, `data-chat-view-panel="work"`, `aria-label="Work"`,
 	} {
 		if !strings.Contains(page, want) {
@@ -586,7 +642,7 @@ func TestChatCompactWorkUIContract(t *testing.T) {
 
 	asset := do(t, h, "GET", "/static/app.js", "").Body.String()
 	for _, want := range []string{
-		`if (!change) closeChatTasks()`, `panel.hidden = !change`, `toggle.hidden = !change`,
+		`if (!change) closeChatTasks()`, `panel.hidden = !change`, `toggle.hidden = !change`, `plan.hidden = !change`, `plan.setAttribute("hx-get", planURL)`,
 		`function openChatTasks(opener)`, `openChatView("work", opener)`, `var chatWork = panel.id === "chat-tasks"`,
 		`ttp-plan ttp-plan-first`, `data-work-document="plan"`, `data-work-document="task"`,
 		`src.querySelectorAll(".cards[data-status]")`, `cards.length`, `ttp-subtask-marker`,
@@ -745,7 +801,7 @@ func TestDetailReadingViewContract(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			body := htmlGet(t, s.Handler(), tc.path, true).Body.String()
-			for _, want := range []string{`role="dialog"`, `aria-modal="true"`, `aria-labelledby="detail-title"`, `id="detail-title"`, `class="modal-close detail-back"`, `aria-label="Back"`, `class="modal-panes"`, `class="modal-toc" hidden`, `class="modal-body prose"`} {
+			for _, want := range []string{`role="dialog"`, `aria-labelledby="detail-title"`, `id="detail-title"`, `class="modal-close detail-back"`, `aria-label="Back"`, `class="modal-panes"`, `class="modal-toc" hidden`, `class="modal-body prose"`} {
 				if !strings.Contains(body, want) {
 					t.Errorf("%s detail missing %q", tc.name, want)
 				}
@@ -783,7 +839,7 @@ func TestDetailReadingViewContract(t *testing.T) {
 		`@media (max-width: 840px)`, `#detail .modal.has-toc`,
 		`#detail .modal-panes { flex-direction: column`, `#detail .modal-toc`,
 		`position: sticky`, `min-height: 44px`, `env(safe-area-inset-bottom)`,
-		`height: var(--detail-viewport-height, 100dvh)`,
+		`height: calc(var(--detail-viewport-height, 100dvh) - var(--app-header-height))`,
 	} {
 		if !strings.Contains(css, want) {
 			t.Errorf("compact detail CSS missing %q", want)

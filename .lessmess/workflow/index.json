@@ -283,6 +283,13 @@
       "prefix": "MCL",
       "branch": "main",
       "created": "2026-09-21"
+    },
+    {
+      "id": "2026-09-24-ic3l8",
+      "title": "Mobile-first chat-first UI",
+      "prefix": "UI",
+      "branch": "main",
+      "created": "2026-09-24"
     }
   ]
 }

@@ -15,6 +15,181 @@
 
   function boardEl() { return document.getElementById("board"); }
 
+  var locationTrail = [];
+  var detailReturnTrail = null;
+
+  function locationBaseTrail() {
+    var nav = document.getElementById("location-nav");
+    if (!nav) return [];
+    var trail = [{ kind: "changes", label: "Changes", url: "/" }];
+    if (nav.dataset.change) {
+      trail.push({ kind: "change", label: nav.dataset.changeTitle || nav.dataset.change, url: "/changes/" + encodeURIComponent(nav.dataset.change) });
+    }
+    return trail;
+  }
+
+  function closeLocationMenu(returnFocus) {
+    var menu = document.getElementById("location-menu");
+    var toggle = document.getElementById("location-toggle");
+    if (!menu || menu.hidden) return false;
+    menu.hidden = true;
+    var header = document.getElementById("app-header");
+    if (header) header.classList.remove("location-open");
+    if (toggle) {
+      toggle.setAttribute("aria-expanded", "false");
+      if (returnFocus) toggle.focus({ preventScroll: true });
+    }
+    return true;
+  }
+
+  function renderLocationTrail() {
+    var current = document.getElementById("location-current");
+    var back = document.getElementById("location-back");
+    var nav = document.getElementById("location-nav");
+    var trailHost = document.getElementById("location-trail");
+    if (!current || !nav || !trailHost || !locationTrail.length) return;
+    current.textContent = locationTrail[locationTrail.length - 1].label;
+    var parent = locationTrail.length > 1 ? locationTrail[locationTrail.length - 2] : null;
+    if (back) {
+      back.disabled = !parent;
+      back.setAttribute("aria-label", parent ? "Back to " + parent.label : "No previous location");
+      back.title = parent ? "Back to " + parent.label : "No previous location";
+    }
+    trailHost.innerHTML = "";
+    locationTrail.forEach(function (item, index) {
+      var button = document.createElement("button");
+      button.type = "button";
+      button.dataset.locationIndex = String(index);
+      button.textContent = item.label;
+      if (index === locationTrail.length - 1) button.setAttribute("aria-current", "page");
+      trailHost.appendChild(button);
+    });
+  }
+
+  function setLocationTrail(trail) {
+    locationTrail = trail.slice();
+    renderLocationTrail();
+  }
+
+  function activeChatLocationView() {
+    if (compactChatUI()) return currentChatView();
+    var controls = document.getElementById("chat-controls-sheet");
+    var agents = document.getElementById("chat-agents");
+    var work = document.getElementById("chat-tasks");
+    if (controls && !controls.hidden) return "controls";
+    if (agents && agents.classList.contains("open")) return "agents";
+    if (work && work.classList.contains("open")) return "work";
+    return "chat";
+  }
+
+  function syncLocationFromChat() {
+    var detail = document.getElementById("detail");
+    if (detail && !detail.hidden) return;
+    if (!chatOpen()) {
+      setLocationTrail(locationBaseTrail());
+      return;
+    }
+    var trail = locationBaseTrail();
+    trail.push({ kind: "chat", label: "Chat" });
+    var view = activeChatLocationView();
+    var labels = { work: "Work", agents: "Agents", controls: "Controls" };
+    if (view !== "chat") trail.push({ kind: view, label: labels[view] });
+    setLocationTrail(trail);
+  }
+
+  function detailLocationItem(url) {
+    var title = document.querySelector("#detail #detail-title");
+    return { kind: "detail", label: title ? title.textContent.trim() : "Document", url: url || "" };
+  }
+
+  function setDetailLocation(url, parentTrail) {
+    var trail = (parentTrail || locationTrail).slice();
+    trail.push(detailLocationItem(url));
+    setLocationTrail(trail);
+  }
+
+  function loadBreadcrumbDetail(item, parentTrail) {
+    if (!item.url) return;
+    var detail = document.getElementById("detail");
+    fetch(item.url, { headers: { Accept: "text/html" } })
+      .then(function (r) {
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.text();
+      })
+      .then(function (html) {
+        detail.innerHTML = html;
+        detail.hidden = false;
+        if (chatOpen()) syncChatModalInert(true);
+        buildDetailTOC();
+        setDetailLocation(item.url, parentTrail);
+      })
+      .catch(function (err) { alert("Could not open " + item.url + " (" + err.message + ")"); });
+  }
+
+  function activateLocation(index) {
+    var item = locationTrail[index];
+    if (!item || index === locationTrail.length - 1) { closeLocationMenu(true); return; }
+    closeLocationMenu(false);
+    if (item.kind === "changes" || item.kind === "change") {
+      location.href = item.url;
+      return;
+    }
+    var detail = document.getElementById("detail");
+    if (item.kind === "detail") {
+      loadBreadcrumbDetail(item, locationTrail.slice(0, index));
+      return;
+    }
+    if (detail && !detail.hidden) closeDetail();
+    if (item.kind === "chat") {
+      closeChatTasks(false);
+      closeChatAgents(false);
+      closeChatControls(false);
+      resetChatViews();
+    } else if (item.kind === "work") openChatTasks(document.getElementById("location-toggle"));
+    else if (item.kind === "agents") openChatAgents(document.getElementById("location-toggle"));
+    else if (item.kind === "controls") openChatControls(document.getElementById("location-toggle"));
+    syncLocationFromChat();
+  }
+
+  function initLocationNav() {
+    var nav = document.getElementById("location-nav");
+    var back = document.getElementById("location-back");
+    var toggle = document.getElementById("location-toggle");
+    var menu = document.getElementById("location-menu");
+    if (!nav || !toggle || !menu) return;
+    setLocationTrail(locationBaseTrail());
+    back.addEventListener("click", function () {
+      if (locationTrail.length > 1) activateLocation(locationTrail.length - 2);
+    });
+    toggle.addEventListener("click", function () {
+      var opening = menu.hidden;
+      menu.hidden = !opening;
+      toggle.setAttribute("aria-expanded", String(opening));
+      document.getElementById("app-header").classList.toggle("location-open", opening);
+      if (opening) {
+        renderLocationTrail();
+        var current = menu.querySelector('[aria-current="page"]');
+        if (current) current.focus({ preventScroll: true });
+      }
+    });
+    menu.addEventListener("click", function (event) {
+      var button = event.target.closest("[data-location-index]");
+      if (button) activateLocation(parseInt(button.dataset.locationIndex, 10));
+      else if (event.target.closest(".location-actions")) requestAnimationFrame(function () { closeLocationMenu(false); });
+    });
+    document.addEventListener("click", function (event) {
+      if (!menu.hidden && !nav.contains(event.target)) closeLocationMenu(false);
+    });
+    document.addEventListener("keydown", function (event) {
+      if (event.key === "Escape" && closeLocationMenu(true)) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+      }
+    }, true);
+  }
+
+  initLocationNav();
+
   // --- drag and drop -----------------------------------------------------
 
   function initSortable() {
@@ -535,6 +710,13 @@
     return b ? b.getAttribute("data-change") : null;
   }
 
+  function chatDisplayTitle(title) {
+    var value = title || "";
+    var change = changeID();
+    var prefix = change ? change + " — " : "";
+    return prefix && value.indexOf(prefix) === 0 ? value.slice(prefix.length) : value;
+  }
+
   // The board's drill-down task ("" on the change's root board).
   function boardTask() {
     var b = boardEl();
@@ -925,6 +1107,7 @@
     if (title) title.textContent = labels[view] || cstate.title || "";
     if (state) state.hidden = view !== "chat";
     if (close) close.setAttribute("aria-label", view === "chat" ? "Close chat" : "Close " + labels[view].toLowerCase());
+    syncLocationFromChat();
   }
 
   function saveChatViewPosition(name) {
@@ -1080,7 +1263,7 @@
         var parent = path.parentElement;
         if (!parent) break;
         Array.prototype.forEach.call(parent.children, function (sibling) {
-          if (sibling !== path) ownInert(sibling, "data-chat-detail-inert-owned");
+          if (sibling !== path && sibling.id !== "app-header") ownInert(sibling, "data-chat-detail-inert-owned");
         });
         path = parent;
       }
@@ -1088,7 +1271,7 @@
     }
     if (chatOpen()) {
       Array.prototype.forEach.call(document.body.children, function (child) {
-        if (child.id !== "chat-overlay") ownInert(child, "data-chat-inert-owned");
+        if (child.id !== "chat-overlay" && child.id !== "app-header") ownInert(child, "data-chat-inert-owned");
       });
     }
   }
@@ -1098,7 +1281,7 @@
     closeChat(true, true);
     cstate.opener = opener;
     cstate.session = sessionID;
-    cstate.title = title || sessionID;
+    cstate.title = chatDisplayTitle(title || sessionID);
     cstate.snapshot = null;
     cstate.pendingUserBoundary = null;
     cstate.controls = null;
@@ -1170,9 +1353,7 @@
     cstate.session = null;
     cstate.pendingUserBoundary = null;
     var send = document.getElementById("chat-send-btn");
-    var interrupt = document.getElementById("chat-interrupt-btn");
     if (send) send.disabled = false;
-    if (interrupt) interrupt.disabled = false;
     sessionTasksChange = null;
     var overlay = document.getElementById("chat-overlay");
     if (overlay) overlay.hidden = true;
@@ -1182,6 +1363,7 @@
     closeChatAgents(false);
     closeChatControls(false);
     cstate.auxiliaryFocus = {};
+    syncLocationFromChat();
     if (!suppressFocus) {
       var opener = cstate.opener;
       cstate.opener = null;
@@ -1593,6 +1775,17 @@
     return root ? root.dataset.busy === "true" : !!(cstate.lifecycle && cstate.lifecycle.busy);
   }
 
+  function updateChatActionButton() {
+    var button = document.getElementById("chat-send-btn");
+    var prompt = document.getElementById("chat-prompt");
+    if (!button || !prompt) return;
+    var send = !chatBusy() || (document.activeElement === prompt && prompt.value.trim() !== "");
+    button.dataset.action = send ? "send" : "stop";
+    button.type = send ? "submit" : "button";
+    button.setAttribute("aria-label", send ? "Send message" : "Stop response");
+    button.title = send ? "Send message" : "Stop response";
+  }
+
   function setChatHeaderState(label, state) {
     var el = document.getElementById("chat-session-state");
     if (!el) return;
@@ -1611,7 +1804,7 @@
     document.getElementById("chat-file-input").disabled = busy && !files;
     var reference = document.getElementById("chat-reference-btn");
     if (reference) reference.disabled = busy && !files;
-    document.getElementById("chat-interrupt-btn").hidden = !busy;
+    updateChatActionButton();
     renderChatControlsAvailability();
   }
 
@@ -1958,8 +2151,10 @@
     return true;
   }
 
-  function openChatControls(opener) {
+  function openChatControls(opener, runtimeOnly) {
     var sheet = document.getElementById("chat-controls-sheet");
+    sheet.classList.toggle("runtime-only", !!runtimeOnly);
+    document.getElementById("chat-controls-title").textContent = runtimeOnly ? "Runtime" : "Session controls";
     if (!compactChatUI()) requestChatAuxiliary("controls");
     if (!compactChatUI()) cstate.auxiliaryFocus.controls = opener || document.activeElement;
     sheet.hidden = false;
@@ -2000,12 +2195,14 @@
     usage = usage || {};
     cstate.usage = usage;
     var header = document.getElementById("chat-context-usage");
+    var options = document.getElementById("chat-more-btn");
     var available = !!usage.contextAvailable && !!usage.contextLimit;
     var percent = Math.max(0, Number(usage.percent) || 0);
-    header.querySelector("span").textContent = available ? String(percent) : "–";
     header.style.setProperty("--usage", String(available ? Math.min(100, percent) : 0));
-    header.title = available ? conciseTokens(usage.estimatedContext) + " / " + conciseTokens(usage.contextLimit) : "Active context usage unavailable";
-    header.setAttribute("aria-label", available ? "Active context " + percent + " percent, " + header.title : header.title);
+    var usageTitle = available ? "Active context " + percent + " percent, " + conciseTokens(usage.estimatedContext) + " / " + conciseTokens(usage.contextLimit) : "Active context usage unavailable";
+    var optionsOpen = options.getAttribute("aria-expanded") === "true";
+    options.title = optionsOpen ? "Close chat options" : "Chat options. " + usageTitle;
+    options.setAttribute("aria-label", optionsOpen ? "Close chat options" : "Chat options, " + usageTitle.toLowerCase());
     header.classList.toggle("unavailable", !available);
     header.classList.toggle("warning", available && !!usage.warning);
 
@@ -2217,7 +2414,7 @@
         if (cstate.session !== sessionID) return null;
         cstate.navigation = data;
         if (data.current && data.current.title) {
-          cstate.title = data.current.title;
+          cstate.title = chatDisplayTitle(data.current.title);
           syncChatHeader();
         }
         renderChatNavigation();
@@ -2325,6 +2522,7 @@
     var state = document.getElementById("chat-lifecycle-state");
     var panel = document.getElementById("chat-revert-panel");
     var compact = document.getElementById("chat-compact-btn");
+    var compactLabel = document.getElementById("chat-compact-label");
     var compactNote = document.getElementById("chat-compact-note");
     panel.innerHTML = "";
     if (cstate.lifecycleError) state.textContent = "Session state unavailable: " + cstate.lifecycleError;
@@ -2428,7 +2626,7 @@
     var pending = !!(cstate.session && cstate.compactPending[cstate.session]);
     var canCompact = !!(data && cap.compact && !data.busy && usage.contextAvailable && usage.contextLimit && !pending && !cstate.lifecycleAction);
     compact.disabled = !canCompact;
-    compact.textContent = pending ? "Compacting..." : "Compact";
+    compactLabel.textContent = pending ? "Compacting..." : "Compact";
     if (pending) compactNote.textContent = "Progress and any failure appear asynchronously in the transcript.";
     else if (!cap.compact && data) compactNote.textContent = "Manual compaction is unavailable on this OpenCode service.";
     else if (data && data.busy) compactNote.textContent = "Wait for the active response to finish before compacting.";
@@ -2674,11 +2872,22 @@
   function setChatTasks(src, change, task) {
     var panel = document.getElementById("chat-tasks");
     var toggle = document.getElementById("chat-tasks-btn");
-    if (!panel || !toggle) return;
+    var plan = document.getElementById("chat-plan-btn");
+    if (!panel || !toggle || !plan) return;
     if (!change) closeChatTasks();
     panel.innerHTML = "";
     panel.hidden = !change;
     toggle.hidden = !change;
+    plan.hidden = !change;
+    if (change) {
+      var planURL = "/changes/" + encodeURIComponent(change) + "/plan";
+      plan.href = planURL;
+      plan.setAttribute("hx-get", planURL);
+      if (window.htmx) htmx.process(plan);
+    } else {
+      plan.removeAttribute("href");
+      plan.removeAttribute("hx-get");
+    }
     if (task === undefined && src && src.matches && src.matches("#board")) task = src.dataset.task || "";
     if (change) renderTaskPanel(panel, src, change, task || "");
   }
@@ -2686,11 +2895,12 @@
   function closeChatMore(returnFocus) {
     var button = document.getElementById("chat-more-btn");
     var menu = document.getElementById("chat-more-menu");
-    var backdrop = document.getElementById("chat-more-backdrop");
     if (!button || !menu || menu.hidden) return false;
     menu.hidden = true;
-    backdrop.hidden = true;
+    menu.closest(".chat-compose-row").classList.remove("options-open");
     button.setAttribute("aria-expanded", "false");
+    button.querySelector(".chat-more-glyph").textContent = "⋮";
+    renderChatUsage(cstate.usage || {});
     if (returnFocus !== false && button.isConnected) button.focus({ preventScroll: true });
     return true;
   }
@@ -2698,10 +2908,12 @@
   function openChatMore() {
     var button = document.getElementById("chat-more-btn");
     var menu = document.getElementById("chat-more-menu");
-    var backdrop = document.getElementById("chat-more-backdrop");
     menu.hidden = false;
-    backdrop.hidden = false;
+    menu.closest(".chat-compose-row").classList.add("options-open");
     button.setAttribute("aria-expanded", "true");
+    button.setAttribute("aria-label", "Close chat options");
+    button.title = "Close chat options";
+    button.querySelector(".chat-more-glyph").textContent = "×";
     var first = menu.querySelector('[role="menuitem"]:not([disabled])');
     if (first) first.focus({ preventScroll: true });
   }
@@ -2714,9 +2926,14 @@
     var fileInput = document.getElementById("chat-file-input");
     var moreButton = document.getElementById("chat-more-btn");
     var moreMenu = document.getElementById("chat-more-menu");
-    var moreBackdrop = document.getElementById("chat-more-backdrop");
     var referencePicker = document.getElementById("chat-reference-picker");
     var referenceButton = document.getElementById("chat-reference-btn");
+
+    function syncChatComposerHeight() {
+      if (composer.offsetHeight) composer.parentElement.style.setProperty("--chat-composer-height", composer.offsetHeight + "px");
+    }
+    syncChatComposerHeight();
+    if (window.ResizeObserver) new ResizeObserver(syncChatComposerHeight).observe(composer);
 
     function closeChatReferences(returnFocus) {
       if (referencePicker.hidden) return false;
@@ -2732,7 +2949,6 @@
         openChatMore();
       }
     });
-    moreBackdrop.addEventListener("click", function () { closeChatMore(true); });
     moreMenu.addEventListener("click", function (e) {
       var item = e.target.closest('[role="menuitem"]');
       if (!item) return;
@@ -2744,7 +2960,10 @@
         delete cstate.deliveryIDs[cstate.session];
       }
       resizeChatPrompt();
+      updateChatActionButton();
     });
+    prompt.addEventListener("focus", updateChatActionButton);
+    prompt.addEventListener("blur", function () { requestAnimationFrame(updateChatActionButton); });
     prompt.addEventListener("keydown", function (e) {
       if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
         e.preventDefault();
@@ -2809,7 +3028,12 @@
         }
       }).catch(function () {
         if (cstate.pendingUserBoundary && cstate.pendingUserBoundary.session === sessionID) cstate.pendingUserBoundary = null;
-      });
+      }).finally(updateChatActionButton);
+    });
+    send.addEventListener("click", function (e) {
+      if (send.dataset.action !== "stop") return;
+      e.preventDefault();
+      chatMutation("interrupt", undefined, send).catch(function () {}).finally(updateChatActionButton);
     });
     fileInput.addEventListener("change", function () { addChatFiles(fileInput.files); fileInput.value = ""; });
     document.getElementById("chat-draft-files").addEventListener("click", function (e) {
@@ -2877,12 +3101,11 @@
       delete cstate.deliveryIDs[cstate.session];
       renderChatDraftFiles();
     });
-    document.getElementById("chat-interrupt-btn").addEventListener("click", function (e) {
-      chatMutation("interrupt", undefined, e.currentTarget).catch(function () {});
-    });
     document.getElementById("chat-controls-btn").addEventListener("click", function (e) {
       var sheet = document.getElementById("chat-controls-sheet");
-      if (sheet.hidden || compactChatUI()) openChatControls(moreButton);
+      if (sheet.hidden || compactChatUI()) openChatControls(moreButton, true).then(function () {
+        document.getElementById("chat-agent-select").focus({ preventScroll: true });
+      });
       else closeChatControls();
     });
     document.getElementById("chat-controls-close").addEventListener("click", closeChatControls);
@@ -2916,7 +3139,7 @@
       sessionManagementRequest("", "PATCH", { title: value }).then(function () {
         if (!cstate.lifecycle) return;
         cstate.lifecycle.session.title = value;
-        cstate.title = value;
+        cstate.title = chatDisplayTitle(value);
         syncChatHeader();
         setChatStatus("Session renamed. The persisted fallback title was updated.");
         return loadChatNavigation();
@@ -3116,7 +3339,8 @@
       var detail = document.getElementById("detail");
       if (detail && !detail.hidden) return;
       var win = document.querySelector(".chat-window");
-      var focusable = Array.prototype.filter.call(win.querySelectorAll('button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])'), function (item) {
+      var scope = document.querySelectorAll('#app-header button:not([disabled]), #app-header a[href], .chat-window button:not([disabled]), .chat-window input:not([disabled]), .chat-window select:not([disabled]), .chat-window textarea:not([disabled]), .chat-window a[href], .chat-window [tabindex]:not([tabindex="-1"])');
+      var focusable = Array.prototype.filter.call(scope, function (item) {
         return !item.hidden && !item.closest("[hidden], [inert]") && item.getClientRects().length > 0;
       });
       if (!focusable.length) return;
@@ -3651,6 +3875,9 @@
     cstate.detailViewportHandler = null;
     cstate.detailTOCMedia = null;
     cstate.detailTOCHandler = null;
+    if (detailReturnTrail) setLocationTrail(detailReturnTrail);
+    else syncLocationFromChat();
+    detailReturnTrail = null;
     var opener = cstate.detailOpener;
     cstate.detailOpener = null;
     if (opener && opener.isConnected) requestAnimationFrame(function () { opener.focus({ preventScroll: true }); });
@@ -3670,6 +3897,8 @@
     var opener = e.detail && e.detail.elt;
     if (opener && opener.matches('[hx-target="#detail"]')) {
       cstate.detailOpener = opener;
+      var detail = document.getElementById("detail");
+      if (!detail || detail.hidden) detailReturnTrail = locationTrail.slice();
     }
   });
 
@@ -3703,6 +3932,8 @@
       e.target.hidden = false;
       if (chatOpen()) syncChatModalInert(true);
       buildDetailTOC();
+      var opener = cstate.detailOpener;
+      setDetailLocation(opener && opener.getAttribute("hx-get"), detailReturnTrail || locationTrail);
       requestAnimationFrame(function () {
         var close = e.target.querySelector("[data-close-detail]");
         if (close) close.focus({ preventScroll: true });
@@ -3931,8 +4162,10 @@
         return r.text();
       })
       .then(function (html) {
+        var parentTrail = locationTrail.slice();
         d.innerHTML = html;
         buildDetailTOC();
+        setDetailLocation(t.url, parentTrail);
         if (t.frag) {
           var body = d.querySelector(".modal-body");
           var el = body && body.querySelector('[id="' + CSS.escape(t.frag) + '"]');

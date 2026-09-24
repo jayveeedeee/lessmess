@@ -46,7 +46,6 @@
     </details>
     {{else}}{{with .Message}}
   <article class="chat-message chat-message-{{.Type}}"{{if .Copyable}} data-chat-message-actions data-chat-message-id="{{.ID}}" tabindex="0" aria-haspopup="menu" aria-expanded="false"{{end}}>
-    {{if and (ne .Type "assistant") (ne .Type "user")}}<header>{{.Label}}</header>{{end}}
     {{if .Text}}<div class="chat-markdown prose">{{.Text}}</div>{{if and .Markdown (or (eq .Type "assistant") (eq .Type "user"))}}<span class="chat-markdown-source" hidden>{{.Markdown}}</span>{{end}}{{end}}
     {{if .Files}}<div class="chat-message-files">{{range .Files}}
       <div class="chat-message-file {{if .Reference}}is-reference{{end}}">
@@ -152,7 +151,7 @@
 {{end}}
 
 {{define "taskDetail"}}
-<div class="modal" data-doc="{{.Doc}}" role="dialog" aria-modal="true" aria-labelledby="detail-title">
+<div class="modal" data-doc="{{.Doc}}" role="dialog" aria-labelledby="detail-title">
   <div class="modal-head">
     <button type="button" class="modal-close detail-back" data-close-detail aria-label="Back"><span class="back-chevron" aria-hidden="true"></span></button>
     <span class="chip">{{.Task.ID}}</span>
@@ -171,7 +170,7 @@
 {{end}}
 
 {{define "planDetail"}}
-<div class="modal" role="dialog" aria-modal="true" aria-labelledby="detail-title">
+<div class="modal" role="dialog" aria-labelledby="detail-title">
   <div class="modal-head">
     <button type="button" class="modal-close detail-back" data-close-detail aria-label="Back"><span class="back-chevron" aria-hidden="true"></span></button>
     <span class="chip">{{.ID}}</span>
@@ -185,7 +184,7 @@
 {{end}}
 
 {{define "reviewDetail"}}
-<div class="modal" role="dialog" aria-modal="true" aria-labelledby="detail-title">
+<div class="modal" role="dialog" aria-labelledby="detail-title">
   <div class="modal-head">
     <button type="button" class="modal-close detail-back" data-close-detail aria-label="Back"><span class="back-chevron" aria-hidden="true"></span></button>
     <span class="chip">{{.ID}}</span>
@@ -199,7 +198,7 @@
 {{end}}
 
 {{define "ledgerDetail"}}
-<div class="modal" data-doc="{{.Doc}}" role="dialog" aria-modal="true" aria-labelledby="detail-title">
+<div class="modal" data-doc="{{.Doc}}" role="dialog" aria-labelledby="detail-title">
   <div class="modal-head">
     <button type="button" class="modal-close detail-back" data-close-detail aria-label="Back"><span class="back-chevron" aria-hidden="true"></span></button>
     <span class="chip">{{.ID}}</span>

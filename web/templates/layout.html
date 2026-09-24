@@ -19,10 +19,18 @@ document.documentElement.dataset.theme = localStorage.getItem("tt-theme") || "da
 <script src="/static/app.js?v={{.AssetsV}}" defer></script>
 </head>
 <body data-page="{{.Page}}">
-<header>
+<header id="app-header"{{if or (eq .Page "index") (eq .Page "board")}} class="has-location"{{end}}>
   <a class="brand" href="/" aria-label="lessmess home"><img class="brand-icon" src="/icon.svg" alt="lessmess" width="28" height="28"><span class="brand-name">{{.ProjectName}}</span></a>
   {{if ne .Page "setup"}}
-  <nav class="topnav">
+  {{if or (eq .Page "index") (eq .Page "board")}}
+  <div id="location-nav" class="location-nav"{{if eq .Page "board"}} data-change="{{.Data.ID}}" data-change-title="{{.Data.Title}}"{{end}}>
+    <button id="location-back" type="button" aria-label="Back" title="Back"><span class="location-back-icon" aria-hidden="true"></span></button>
+    <button id="location-toggle" type="button" aria-expanded="false" aria-controls="location-menu"><span id="location-current">{{if eq .Page "board"}}{{.Data.Title}}{{else}}Changes{{end}}</span><span class="location-chevron" aria-hidden="true"></span></button>
+    <nav id="location-menu" aria-label="Current location" hidden>
+      <div id="location-trail"></div>
+      <div class="location-actions">
+  {{end}}
+  <nav class="topnav topnav-primary">
     <a href="/"{{if or (eq .Page "index") (eq .Page "board")}} class="active"{{end}}>Changes</a>
     <a href="/explorer"{{if eq .Page "explorer"}} class="active"{{end}}>Explorer</a>
   </nav>
@@ -33,6 +41,7 @@ document.documentElement.dataset.theme = localStorage.getItem("tt-theme") || "da
   <button id="notif-bell" type="button" title="Docs notifications" aria-label="Docs notifications" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg><span id="notif-badge"></span></button>
   {{end}}
   <button id="theme-toggle" type="button" title="Toggle theme" aria-label="Toggle theme">☾</button>
+  {{if or (eq .Page "index") (eq .Page "board")}}</div></nav></div>{{end}}
 </header>
 {{if ne .Page "setup"}}<div id="banner" class="banner" hidden></div>{{end}}
 <main>
@@ -40,7 +49,7 @@ document.documentElement.dataset.theme = localStorage.getItem("tt-theme") || "da
 </main>
 {{if or (eq .Page "index") (eq .Page "board")}}<div id="detail" hidden></div>{{end}}
 <div id="chat-overlay" hidden>
-  <section class="chat-window" role="dialog" aria-modal="true" aria-labelledby="chat-title" data-chat-view="chat">
+  <section class="chat-window" role="dialog" aria-labelledby="chat-title" data-chat-view="chat">
     <div class="chat-head">
        <button type="button" class="modal-close chat-back" data-close-chat aria-label="Back"><span class="back-chevron" aria-hidden="true"></span></button>
       <img class="brand-icon" src="/icon.svg" alt="" width="28" height="28">
@@ -64,54 +73,52 @@ document.documentElement.dataset.theme = localStorage.getItem("tt-theme") || "da
            </div>
            <div class="chat-compose-row">
              <label class="sr-only" for="chat-prompt">Message</label>
-              <textarea id="chat-prompt" rows="2" placeholder="Message this session" enterkeyhint="send"></textarea>
-              <div class="chat-compose-actions">
-                  <div class="chat-more-wrap">
-                   <button id="chat-more-btn" type="button" class="btn-ghost" aria-label="Chat options" title="Chat options" aria-haspopup="menu" aria-expanded="false" aria-controls="chat-more-menu">⋮</button>
-                    <button id="chat-more-backdrop" class="chat-more-backdrop" type="button" aria-label="Close chat options" hidden></button>
-                    <div id="chat-more-menu" class="chat-more-menu" role="menu" aria-label="Chat options" hidden>
-                     <button id="chat-tasks-btn" type="button" role="menuitem" aria-controls="chat-tasks" aria-expanded="false" hidden>Work</button>
-                     <button id="chat-agents-btn" type="button" role="menuitem" aria-controls="chat-agents" aria-expanded="false" hidden>Agents</button>
-                     <button id="chat-controls-btn" type="button" role="menuitem" aria-controls="chat-controls-sheet" aria-expanded="false">Controls</button>
-                     <button id="chat-compact-btn" type="button" role="menuitem" title="Context usage is required before manual compaction" disabled>Compact</button>
-                   </div>
-                 </div>
+               <textarea id="chat-prompt" rows="2" placeholder="Message this session" enterkeyhint="send"></textarea>
+               <div id="chat-more-menu" class="chat-more-menu" role="menu" aria-label="Chat options" hidden>
+                <a id="chat-plan-btn" class="chat-quick-action" role="menuitem" hx-target="#detail" hx-swap="innerHTML" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l3 3v15H6zM9 11h6M9 15h6M15 3v4h4"/></svg><span>Plan</span></a>
+                <button id="chat-tasks-btn" class="chat-quick-action" type="button" role="menuitem" aria-controls="chat-tasks" aria-expanded="false" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 7 1.5 1.5L9 5.5M12 7h7M5 13l1.5 1.5L9 11.5M12 13h7M5 19l1.5 1.5L9 17.5M12 19h7"/></svg><span>Tasks</span></button>
+                <button id="chat-controls-btn" class="chat-quick-action" type="button" role="menuitem" aria-controls="chat-controls-sheet" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h2M10 17h10M14 4v6M6 14v6"/></svg><span>Runtime</span></button>
+                <button id="chat-compact-btn" class="chat-quick-action" type="button" role="menuitem" title="Context usage is required before manual compaction" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 17h16M8 3l4 4 4-4M8 21l4-4 4 4"/></svg><span id="chat-compact-label">Compact</span></button>
+              </div>
+               <div class="chat-compose-actions">
+                   <div class="chat-more-wrap">
+                     <button id="chat-more-btn" type="button" class="btn-ghost" aria-label="Chat options, active context usage unavailable" title="Chat options. Active context usage unavailable" aria-haspopup="menu" aria-expanded="false" aria-controls="chat-more-menu"><span id="chat-context-usage" class="chat-context-usage unavailable" aria-hidden="true" style="--usage: 0"></span><span class="chat-more-glyph" aria-hidden="true">⋮</span><span class="chat-more-label">Close</span></button>
+                  </div>
                  <input id="chat-file-input" class="sr-only" type="file" multiple accept="text/*,application/json,application/xml,application/javascript,application/yaml,application/toml,image/png,image/jpeg,image/gif,image/webp,image/svg+xml">
-                <span id="chat-context-usage" class="chat-context-usage unavailable" role="img" aria-label="Active context usage unavailable" title="Active context usage unavailable" style="--usage: 0"><span>–</span></span>
-                <span class="chat-compose-spacer"></span>
-               <button id="chat-interrupt-btn" type="button" class="btn-ghost" hidden>Interrupt</button>
-               <button id="chat-send-btn" type="submit" class="btn-accent">Send</button>
+                 <span class="chat-compose-spacer"></span>
+               <button id="chat-send-btn" type="submit" class="btn-accent chat-action-button" data-action="send" aria-label="Send message" title="Send message"><span class="chat-action-icon" aria-hidden="true"></span></button>
              </div>
            </div>
-        </form>
-       </div>
+         </form>
+         <button id="chat-agents-btn" class="chat-internal-toggle" type="button" aria-controls="chat-agents" aria-expanded="false" aria-hidden="true" tabindex="-1" hidden></button>
+        </div>
        <aside id="chat-agents" class="chat-agents" data-chat-view-panel="agents" hidden aria-label="Child agent activity" aria-hidden="true" inert></aside>
        <button id="chat-agent-backdrop" type="button" aria-label="Close agent drawer" hidden></button>
        <aside id="chat-controls-sheet" class="chat-controls-sheet" data-chat-view-panel="controls" hidden aria-label="Session controls" aria-hidden="true" inert>
-         <div class="chat-controls-head"><strong>Session controls</strong><button id="chat-controls-close" type="button" class="modal-close" aria-label="Close controls">✕</button></div>
-         <label class="sr-only" for="chat-controls-search">Filter session controls</label>
-         <input id="chat-controls-search" type="search" placeholder="Filter agents, models, commands, skills" autocomplete="off">
-         <div id="chat-usage" class="chat-usage"></div>
-          <p id="chat-compact-note" class="muted">Context usage is required before manual compaction.</p>
+          <div class="chat-controls-head"><strong id="chat-controls-title">Session controls</strong><button id="chat-controls-close" type="button" class="modal-close" aria-label="Close controls">✕</button></div>
+          <label class="sr-only chat-controls-extended" for="chat-controls-search">Filter session controls</label>
+          <input id="chat-controls-search" class="chat-controls-extended" type="search" placeholder="Filter agents, models, commands, skills" autocomplete="off">
+          <div id="chat-usage" class="chat-usage chat-controls-extended"></div>
+           <p id="chat-compact-note" class="muted chat-controls-extended">Context usage is required before manual compaction.</p>
          <label>Agent<select id="chat-agent-select"></select></label>
          <label>Model<select id="chat-model-select"></select></label>
          <label>Variant<select id="chat-variant-select"></select></label>
-        <div class="chat-control-group">
+         <div class="chat-control-group chat-controls-extended">
           <label>Command<select id="chat-command-select"></select></label>
           <label>Arguments<input id="chat-command-args" type="text" placeholder="Optional arguments"></label>
           <button id="chat-command-run" type="button">Run command</button>
         </div>
-        <div class="chat-control-group">
+         <div class="chat-control-group chat-controls-extended">
           <strong>Skills</strong>
           <div id="chat-skill-list" class="chat-skill-list"></div>
         </div>
-         <div id="chat-lifecycle" class="chat-control-group chat-lifecycle" aria-live="polite">
+          <div id="chat-lifecycle" class="chat-control-group chat-lifecycle chat-controls-extended" aria-live="polite">
           <div class="chat-lifecycle-heading"><strong>Conversation history</strong><button id="chat-lifecycle-refresh" type="button" class="btn-ghost">Refresh</button></div>
           <p id="chat-lifecycle-state" class="muted">Loading session state...</p>
           <div id="chat-revert-panel"></div>
            <p class="chat-lifecycle-warning">OpenCode does not provide an atomic revision guard. After clearing a files-enabled staged revert, file restoration is not guaranteed.</p>
          </div>
-         <div id="chat-management" class="chat-control-group chat-management" aria-live="polite">
+          <div id="chat-management" class="chat-control-group chat-management chat-controls-extended" aria-live="polite">
            <strong>Session management</strong>
            <label for="chat-rename-title">Title<input id="chat-rename-title" type="text" maxlength="256" autocomplete="off"></label>
            <button id="chat-rename-btn" type="button">Rename session</button>
@@ -122,7 +129,7 @@ document.documentElement.dataset.theme = localStorage.getItem("tt-theme") || "da
            <button id="chat-delete-preview-btn" type="button" class="danger">Review OpenCode deletion</button>
            <div id="chat-delete-preview" class="chat-delete-preview" hidden></div>
          </div>
-         <p id="chat-controls-note" class="muted"></p>
+          <p id="chat-controls-note" class="muted chat-controls-extended"></p>
       </aside>
       <aside id="chat-tasks" class="chat-tasks" data-chat-view-panel="work" hidden aria-label="Work" aria-hidden="true" inert></aside>
       <button id="chat-task-backdrop" type="button" aria-label="Close task drawer" hidden></button>

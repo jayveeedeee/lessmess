@@ -174,6 +174,7 @@ type tmplColumn struct {
 
 type boardView struct {
 	ID       string
+	Title    string
 	Overall  string
 	Error    string
 	Columns  []tmplColumn
@@ -244,10 +245,13 @@ func nodeRows(nodes []*store.TaskNode) []model.TaskState {
 }
 
 func newBoardView(c *store.Change) boardView {
-	v := boardView{ID: c.ID, BoardURL: "/changes/" + c.ID}
+	v := boardView{ID: c.ID, Title: c.ID, BoardURL: "/changes/" + c.ID}
 	if c.Err != nil || c.State == nil {
 		v.Error = "State unreadable: " + c.Err.Error()
 		return v
+	}
+	if c.State.Title != "" {
+		v.Title = c.State.Title
 	}
 	v.Overall = string(c.Overall())
 	v.Columns = columnsFromNodes(c.Roots)
@@ -259,8 +263,11 @@ func newBoardView(c *store.Change) boardView {
 // rollup.
 func newTaskBoardView(c *store.Change, n *store.TaskNode) boardView {
 	v := boardView{
-		ID: c.ID, BoardURL: "/changes/" + c.ID,
+		ID: c.ID, Title: c.ID, BoardURL: "/changes/" + c.ID,
 		Task: n.ID, NodeTitle: n.ID,
+	}
+	if c.State != nil && c.State.Title != "" {
+		v.Title = c.State.Title
 	}
 	if n.Task != nil && n.Task.Title != "" {
 		v.NodeTitle = n.Task.Title
@@ -268,7 +275,7 @@ func newTaskBoardView(c *store.Change, n *store.TaskNode) boardView {
 	v.Overall = string(c.Overall())
 	v.Columns = columnsFromNodes(n.Children)
 	// Breadcrumb: change root, then every ancestor, then this node.
-	v.Crumbs = append(v.Crumbs, crumbView{ID: c.ID, Title: c.ID, URL: "/changes/" + c.ID, Root: true})
+	v.Crumbs = append(v.Crumbs, crumbView{ID: c.ID, Title: v.Title, URL: "/changes/" + c.ID, Root: true})
 	var chain []*store.TaskNode
 	for p := n.Parent; p != nil; p = p.Parent {
 		chain = append([]*store.TaskNode{p}, chain...)

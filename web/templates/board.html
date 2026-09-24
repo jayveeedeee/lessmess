@@ -6,7 +6,7 @@
     <span class="crumb-here" title="{{.Data.NodeTitle}}">{{.Data.NodeTitle}}</span>
   </nav>
   {{else}}
-  <h2>{{.Data.ID}}</h2>
+  <h2>{{.Data.Title}}</h2>
   {{end}}
   <span class="pill status-{{.Data.Overall | statusClass}}">{{.Data.Overall}}</span>
   <button type="button" class="btn-accent" id="continue-session-btn">Continue session</button>

@@ -65,7 +65,7 @@ func TestChatSnapshotRendersSafeAuthoritativeState(t *testing.T) {
 	for _, want := range []string{
 		`data-session="ses_chat"`, `data-busy="true"`, `data-message="msg_user"`,
 		`data-chat-load-older`, `data-cursor="older-token"`,
-		"<strong>phone</strong>",
+		"<strong>phone</strong>", "Reasoning", "read", "completed", "data-chat-detail-url",
 		"Reference: note.txt", "/api/sessions/ses_chat/chat/messages/msg_user/files/0", "Download",
 		`data-permission="per_1"`, "Allow read?", `data-chat-form="frm_1"`,
 		`name="name"`, `value="Ada"`, `data-field-type="integer"`, "https://example.test",
@@ -74,7 +74,7 @@ func TestChatSnapshotRendersSafeAuthoritativeState(t *testing.T) {
 		`data-chat-form-step="0"`, `data-chat-form-step="1" hidden`, `data-chat-form-review hidden`,
 		`data-chat-form-progress role="status"`, `data-chat-form-prev hidden`, `data-chat-form-next`, `data-chat-form-submit hidden`,
 		`aria-label="Form navigation"`, `novalidate`, `Review your answers`,
-		"Unsupported message part:", "future-message", "chat-flow-unknown",
+		"Unsupported message part:", "future-message", "chat-flow-reasoning", "chat-flow-tool", "chat-flow-unknown",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("snapshot missing %q:\n%s", want, body)
@@ -120,8 +120,8 @@ func TestChatSnapshotRendersSafeAuthoritativeState(t *testing.T) {
 	if strings.Contains(body, "result") {
 		t.Fatalf("snapshot eagerly included tool output: %s", body)
 	}
-	if strings.Contains(body, `class="chat-system-group`) || strings.Contains(body, "Reasoning") {
-		t.Fatalf("pending interaction retained stale System activity: %s", body)
+	if strings.Contains(body, `class="chat-system-group is-running`) {
+		t.Fatalf("pending interaction left System activity marked as running: %s", body)
 	}
 	if strings.Count(body, `data-message="msg_assistant"`) != 1 {
 		t.Fatalf("split assistant emitted duplicate source markers: %s", body)
@@ -187,8 +187,8 @@ func TestChatSnapshotDoesNotReactivatePreviousActivity(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("code = %d body = %s", w.Code, body)
 	}
-	if strings.Contains(body, "old thought") || !strings.Contains(body, "new question") {
-		t.Fatalf("snapshot retained previous-turn activity or lost the new turn: %s", body)
+	if !strings.Contains(body, "old thought") || !strings.Contains(body, "new question") {
+		t.Fatalf("snapshot lost activity history or the new turn: %s", body)
 	}
 	for _, stale := range []string{`class="chat-system-group is-running"`, `class="spinner"`, "Thinking"} {
 		if strings.Contains(body, stale) {
@@ -211,7 +211,10 @@ func TestChatSnapshotDoesNotReactivateCompletedLatestActivity(t *testing.T) {
 		}
 	})
 	body := do(t, s.Handler(), "GET", "/api/sessions/ses_settled/chat", "").Body.String()
-	for _, stale := range []string{`class="chat-system-group`, `class="spinner"`, "Running read"} {
+	if !strings.Contains(body, `class="chat-system-group"`) || !strings.Contains(body, ">read<") {
+		t.Fatalf("completed activity was removed: %s", body)
+	}
+	for _, stale := range []string{`class="chat-system-group is-running`, `class="spinner"`, "Running read"} {
 		if strings.Contains(body, stale) {
 			t.Errorf("completed activity was reactivated by session status %q: %s", stale, body)
 		}
@@ -237,7 +240,10 @@ func TestChatSnapshotHidesRunningActivityWhileWaitingForForm(t *testing.T) {
 	if !strings.Contains(body, `data-chat-form="frm_wait"`) {
 		t.Fatalf("snapshot lost pending form: %s", body)
 	}
-	for _, stale := range []string{`class="chat-system-group`, `class="spinner"`, "Running question"} {
+	if !strings.Contains(body, `class="chat-system-group"`) || !strings.Contains(body, ">question<") {
+		t.Fatalf("pending form lost expandable activity history: %s", body)
+	}
+	for _, stale := range []string{`class="chat-system-group is-running`, `class="spinner"`, "Running question"} {
 		if strings.Contains(body, stale) {
 			t.Errorf("pending form was obscured by activity %q: %s", stale, body)
 		}
@@ -334,7 +340,7 @@ func TestChatExpansionJavaScriptContract(t *testing.T) {
 		}
 	}
 	css := do(t, s.Handler(), "GET", "/static/app.css", "").Body.String()
-	for _, want := range []string{`.chat-message-menu {`, `position: absolute`, `.chat-message-menu[hidden] { display: none; }`, `.chat-choice {`, `.chat-choice:has(input:checked)::before { content: "✓"; }`, `clip: rect(0, 0, 0, 0)`} {
+	for _, want := range []string{`.chat-message-menu {`, `position: absolute`, `.chat-message-menu[hidden] { display: none; }`, `.chat-choice {`, `.chat-choice:has(input:checked)::before { content: "✓"; }`, `clip: rect(0, 0, 0, 0)`, `.chat-message:not(.chat-message-user):not(.chat-message-assistant) {`, `background: transparent`, `box-shadow: none`} {
 		if !strings.Contains(css, want) {
 			t.Errorf("contextual message action CSS missing %q", want)
 		}
@@ -369,7 +375,7 @@ func TestChatFormWizardControllerContract(t *testing.T) {
 		`.chat-choice input {`, `position: absolute`, `opacity: 0`, `.chat-choice::before`,
 		`.chat-choice:has(input:focus-visible)`, `min-height: 44px`,
 		`.chat-form-body { min-height: 0; overflow-y: auto`, `.chat-form-nav {`,
-		`height: var(--chat-viewport-height, 100dvh)`, `env(safe-area-inset-bottom)`,
+		`height: calc(var(--chat-viewport-height, 100dvh) - var(--app-header-height))`, `env(safe-area-inset-bottom)`,
 	} {
 		if !strings.Contains(css, want) {
 			t.Errorf("chat form wizard CSS missing %q", want)
@@ -835,6 +841,9 @@ func TestChatTranscriptRetryProviderAndCompactionAreSanitized(t *testing.T) {
 		if strings.Contains(body, secret) {
 			t.Fatalf("transcript leaked %q: %s", secret, body)
 		}
+	}
+	if strings.Contains(body, "<header>Context compaction</header>") {
+		t.Fatalf("compaction retained redundant legacy event label: %s", body)
 	}
 }
 

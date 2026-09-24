@@ -782,7 +782,124 @@
       "file": "tasks/62-retire-stale-system-activity-around-chat.md",
       "status": "Test",
       "updated": "2026-09-24",
-      "notes": "Root cause identified: live snapshots retain completed System activity and infer a running state from session-level status, including while OpenCode is waiting on a permission or form. Implementing lifecycle-based filtering without wall-clock assumptions. Live Chat now removes settled reasoning/tool System groups, preserves durable shell output and paged history, and suppresses all System activity while permissions or forms await input. Running state comes from explicit message/tool lifecycle rather than session status or wall-clock age. Focused/full tests, vet, JS syntax, build, validation, diff, and LAN-served checks pass."
+      "notes": "Root cause identified: live snapshots retain completed System activity and infer a running state from session-level status, including while OpenCode is waiting on a permission or form. Implementing lifecycle-based filtering without wall-clock assumptions. Live Chat now removes settled reasoning/tool System groups, preserves durable shell output and paged history, and suppresses all System activity while permissions or forms await input. Running state comes from explicit message/tool lifecycle rather than session status or wall-clock age. Focused/full tests, vet, JS syntax, build, validation, diff, and LAN-served checks pass. Scope correction from device feedback: expandable System activity is required transcript functionality and must remain visible. Restoring all reasoning/tool activity while limiting the visual cleanup to compact standalone event rows such as compaction, system, and unknown top-level events. Corrected scope: all expandable System activity history is restored; only stale running indicators are prevented. The one shared standalone-event renderer covering compaction, explicit system, and unknown top-level events now has compact transparent styling with no border, background, radius, or shadow. Current served transcript exposes 14 expandable System groups and one compact compaction row. Full tests, vet, JS syntax, build, validation, diff, and LAN checks pass. Fixed the actual black block: the global sticky header selector was affecting semantic transcript headers. It is now scoped to body \u003e header, standalone event labels are removed, and compaction renders as one transparent line containing only Conversation context compacted. Expandable System history remains present (16 groups in the served transcript). Full tests, vet, build, validation, diff, and LAN-served markup/CSS checks pass."
+    },
+    {
+      "id": "MAC-63",
+      "seq": 63,
+      "title": "Show change title in board header",
+      "file": "tasks/63-show-change-title-in-board-header.md",
+      "status": "Test",
+      "updated": "2026-09-24",
+      "notes": "Adding the human-readable change title to root board headings and nested root breadcrumbs while preserving IDs in routes and data attributes. Root board header and nested root breadcrumb now use the human-readable change title while routes and data-change retain the change ID. Focused/full tests, vet, JS syntax, validation, build, diff, and LAN-served checks pass; served heading is Mobile API Chat. Follow-up identified the remaining string in the Chat header: the session API stores its title as change ID plus change title. Normalizing only the visible Chat title while preserving the stored session title. Corrected the remaining Chat-header source: mapped sessions retain their stored ID-prefixed title, but the visible Chat title now strips the current change ID on open, navigation refresh, and rename. Board heading also remains title-only. Full tests, vet, JS syntax, validation, build, diff, and LAN-served asset checks pass."
+    },
+    {
+      "id": "MAC-64",
+      "seq": 64,
+      "title": "Add expandable location breadcrumb to app bar",
+      "file": "tasks/64-add-expandable-location-breadcrumb-to-ap.md",
+      "status": "Test",
+      "updated": "2026-09-24",
+      "notes": "Confirmed path-based behavior: the app-bar breadcrumb will represent the actual route taken, including Chat auxiliary views and documents, rather than imposing a fixed Plan hierarchy. Implemented a persistent app-bar location control that expands into the actual root-to-current path. It tracks Changes, change, Chat, desktop/mobile Work/Agents/Controls, and Plan/task/detail openings; ancestor actions unwind or reload the corresponding location. Chat/forms/details now reserve the safe-area-aware app header, which remains interactive and participates in Chat focus handling. Full tests, vet, JS syntax, validation, build, diff, and LAN-served markup/asset checks pass. No browser automation runtime is installed; physical interaction remains user acceptance. Refined to one-bar behavior: the collapsed bar always shows the current change title; Chat and detail-local navigation headers are hidden. Changes, Explorer, Chat, Settings, notifications, and theme controls now live inside the breadcrumb dropdown and are absent while collapsed. The compact dropdown is fixed to full viewport width. Full tests, vet, JS syntax, validation, build, diff, and LAN-served markup/CSS checks pass. Final label clarification: the collapsed bar must show the active breadcrumb item, not always the change title. The change title remains its parent in the expanded path. Collapsed app bar now always mirrors the active breadcrumb item: change root shows Mobile API Chat, Chat shows Chat, auxiliary views show their names, and documents show Plan/task titles. The change remains the parent entry in the expanded path. Full tests, vet, JS syntax, validation, build, diff, and LAN-served asset checks pass."
+    },
+    {
+      "id": "MAC-65",
+      "seq": 65,
+      "title": "Merge Chat send and stop controls",
+      "file": "tasks/65-merge-chat-send-and-stop-controls.md",
+      "status": "Test",
+      "updated": "2026-09-24",
+      "notes": "Consolidating the composer action into a Play/Stop state machine driven by session busy state plus focused non-empty draft state; existing prompt and interrupt endpoints remain unchanged. Replaced separate written Send and Interrupt controls with one circular CSS-icon action. Idle is Play; busy is Stop; a focused busy composer with non-empty text becomes Play for durable queue delivery; clearing or blurring returns Stop. Stop reuses the existing interrupt endpoint, Enter submission remains intact, and labels/titles announce the active action. Full tests, vet, JS syntax, validation, build, diff, and LAN-served checks pass."
+    },
+    {
+      "id": "MAC-66",
+      "seq": 66,
+      "title": "Add breadcrumb back control to app bar",
+      "file": "tasks/66-add-breadcrumb-back-control-to-app-bar.md",
+      "status": "Test",
+      "updated": "2026-09-24",
+      "notes": "Adding a left one-level Back action backed by the existing actual-path ancestor activation, with the active-location dropdown moved to the right. Added a tail-free left Back control to the persistent app bar and right-aligned the active-location dropdown. Back dynamically labels its immediate parent and reuses actual-path ancestor activation for change, Chat auxiliary, and detail levels; it disables at the root. Full tests, vet, JS syntax, validation, build, diff, and LAN-served checks pass."
+    },
+    {
+      "id": "MAC-67",
+      "seq": 67,
+      "title": "Integrate context ring into Chat options",
+      "file": "tasks/67-integrate-context-ring-into-chat-options.md",
+      "status": "Test",
+      "updated": "2026-09-24",
+      "notes": "Moving active context usage into a 44px circular Options control, removing visible numeric content while preserving usage polling and accessible detail. Options is now a 44px circle matching Play/Stop, with the active-context conic ring filling its outer 3px border around the vertical-dots symbol. The standalone donut and visible numeric text are removed. Exact percent/token usage remains in the Options accessible label/title and Controls. Full tests, vet, JS syntax, validation, build, diff, and LAN-served checks pass."
+    },
+    {
+      "id": "MAC-68",
+      "seq": 68,
+      "title": "Embed Chat actions inside the input field",
+      "file": "tasks/68-embed-chat-actions-inside-the-input-fiel.md",
+      "status": "Test",
+      "updated": "2026-09-24",
+      "notes": "Styling the existing textarea/action structure as one 22px-radius composer surface while retaining a 64px initial text region plus the embedded 44px controls. Textarea, Options/context ring, and Play/Stop now render as one unified composer surface. The textarea retains its 64px initial writing height and existing 160px autosize cap; an embedded 44px action row is added below it. The outer field uses a 22px radius matching the buttons and owns the focus ring. Full tests, vet, JS syntax, validation, build, diff, and LAN-served CSS checks pass."
+    },
+    {
+      "id": "MAC-69",
+      "seq": 69,
+      "title": "Remove obsolete Chat composer tray",
+      "file": "tasks/69-remove-obsolete-chat-composer-tray.md",
+      "status": "Test",
+      "updated": "2026-09-24",
+      "notes": "Removing the outer composer divider and surface while preserving spacing and safe-area padding around the unified field. Removed the outer Chat composer tray divider and surface background while retaining its spacing and safe-area padding. The unified rounded input is now the only composer surface and sits directly on the thread background. Focused tests, full tests, vet, JS syntax, validation, build, diff, and LAN-served CSS checks pass; the docs-queue persistence test passed on immediate rerun after one transient timeout."
+    },
+    {
+      "id": "MAC-70",
+      "seq": 70,
+      "title": "Float Chat composer over the thread",
+      "file": "tasks/70-float-chat-composer-over-the-thread.md",
+      "status": "Test",
+      "updated": "2026-09-24",
+      "notes": "Converting the composer from a transparent flex row into a dynamic-height overlay on the scrollable transcript, with touch-through outer margins and safe bottom scroll clearance. The Chat composer is now an absolute bottom overlay on the full-height scrollable transcript. ResizeObserver synchronizes its changing height into transcript bottom padding and status/inbox placement, preserving access to the latest content as the prompt or attachments grow. Transparent outer padding passes pointer/touch input through so thread content remains visible and scrollable around the floating field. Focused tests, full tests, vet, JS syntax, validation, build, diff, and LAN-served checks pass."
+    },
+    {
+      "id": "MAC-71",
+      "seq": 71,
+      "title": "Expand Chat options inside the composer",
+      "file": "tasks/71-expand-chat-options-inside-the-composer.md",
+      "status": "Test",
+      "updated": "2026-09-24",
+      "notes": "Moving Options into the rounded composer flow, replacing the textarea while open, turning the context-ring dots into Close, and retaining Play/Stop in the bottom action row. Chat Options now opens as an in-composer mode: the menu replaces the textarea within the same rounded surface and expands the floating composer through its existing ResizeObserver sizing. The left context-ring button changes from dots to an accessible Close control, Play/Stop remains visible at bottom right, drafts are preserved, and the obsolete popover backdrop/panel chrome is removed. Focused tests, full tests, vet, JS syntax, validation, build, diff, and LAN-served checks pass."
+    },
+    {
+      "id": "MAC-72",
+      "seq": 72,
+      "title": "Turn Chat options into quick actions",
+      "file": "tasks/72-turn-chat-options-into-quick-actions.md",
+      "status": "Test",
+      "updated": "2026-09-24",
+      "notes": "Replacing the visible Work/Agents/Controls list with icon-led Plan, Tasks, Runtime, and Compact tiles; Runtime will open a focused Agent/Model/Variant selector view. Replaced the visible Work/Child Agents/Controls list with an icon-led quick-action grid: Plan, Tasks, Runtime, and Compact. Plan and Tasks appear only after the current session resolves to a change; engineering chats auto-fit Runtime and Compact. Runtime opens the existing panel in a focused mode showing only Agent, Model, and Variant, while extended controls remain available to internal lifecycle workflows. Desktop auto-fits actions in one row where space permits and compact UI uses two columns. Full tests, vet, JS syntax, validation, build, diff, and LAN-served checks pass."
+    },
+    {
+      "id": "MAC-73",
+      "seq": 73,
+      "title": "Square and normalize Chat quick actions",
+      "file": "tasks/73-square-and-normalize-chat-quick-actions.md",
+      "status": "Test",
+      "updated": "2026-09-24",
+      "notes": "Removing Play/Stop and the circular context ring from the open state, adding a flat Close row, and normalizing the quick-action grid to fixed-height square cells with shared one-pixel dividers. The open quick-actions state now hides Play/Stop and the circular context ring entirely, leaving a four-action menu plus a flat full-width Close row. All action cells have an explicit 76px height, zero radius, zero outer padding, and shared one-pixel dividers. Compact retains its SVG at full opacity while disabled, using muted color rather than fading the entire cell. The open composer itself is square. Full tests, vet, JS syntax, validation, build, diff, and LAN-served checks pass."
+    },
+    {
+      "id": "MAC-74",
+      "seq": 74,
+      "title": "Preserve rounded quick-action container",
+      "file": "tasks/74-preserve-rounded-quick-action-container.md",
+      "status": "Test",
+      "updated": "2026-09-24",
+      "notes": "Restoring the unchanged 22px outer composer radius in menu mode and clipping the square internal cells to that boundary. Restored the unchanged 22px outer composer radius for the quick-action state and added overflow clipping so zero-radius action cells and one-pixel dividers remain square internally without escaping the rounded boundary. Focused tests, full tests, vet, JS syntax, validation, build, diff, and LAN-served checks pass."
+    },
+    {
+      "id": "MAC-75",
+      "seq": 75,
+      "title": "Restore visible Compact action icon",
+      "file": "tasks/75-restore-visible-compact-action-icon.md",
+      "status": "Test",
+      "updated": "2026-09-24",
+      "notes": "Replacing the dense Compact SVG with a simpler compression glyph and explicitly retaining its stroke and opacity while disabled. Replaced Compact’s dense multi-direction SVG with a simple two-line inward-compression glyph and explicitly retained full SVG opacity/stroke in the disabled state. Focused tests, full tests, vet, JS syntax, validation, build, diff, and LAN-served markup/CSS checks pass. Physical verification exposed the root cause: renderChatLifecycle assigns compact.textContent after load, deleting the SVG node. Updating only a dedicated label node instead. Fixed the actual icon loss: renderChatLifecycle previously assigned compact.textContent after session state loaded, deleting the SVG node. Compact now has a dedicated label span and lifecycle updates only that label, preserving the icon across every refresh and pending-state transition. Added a regression assertion forbidding compact.textContent replacement. Full tests, vet, JS syntax, validation, build, diff, and LAN-served checks pass."
     }
   ]
 }

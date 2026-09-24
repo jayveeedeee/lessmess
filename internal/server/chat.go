@@ -289,37 +289,18 @@ func (s *Server) chatSnapshot(w http.ResponseWriter, r *http.Request) {
 	for _, form := range forms {
 		view.Forms = append(view.Forms, makeChatFormView(form))
 	}
-	view.Blocks = liveChatTranscriptBlocks(view.Blocks, view.Busy, len(view.Permissions) > 0 || len(view.Forms) > 0)
+	markRunningChatActivity(view.Blocks, view.Busy, len(view.Permissions) > 0 || len(view.Forms) > 0)
 	s.rend.render(w, s.rend.partial, "chatSnapshot", view)
 }
 
-func liveChatTranscriptBlocks(blocks []chatTranscriptBlockView, busy, waitingForInput bool) []chatTranscriptBlockView {
-	current := -1
+func markRunningChatActivity(blocks []chatTranscriptBlockView, busy, waitingForInput bool) {
 	if busy && !waitingForInput && len(blocks) > 0 {
 		latest := &blocks[len(blocks)-1]
 		if latest.Kind == "activity" && len(latest.Activity) > 0 && latest.Activity[len(latest.Activity)-1].Running {
-			current = len(blocks) - 1
 			latest.Running = true
 			latest.Summary = runningActivitySummary(latest.Activity[len(latest.Activity)-1])
 		}
 	}
-
-	filtered := blocks[:0]
-	for i := range blocks {
-		if blocks[i].Kind != "activity" || i == current || (!waitingForInput && containsShellActivity(blocks[i])) {
-			filtered = append(filtered, blocks[i])
-		}
-	}
-	return filtered
-}
-
-func containsShellActivity(block chatTranscriptBlockView) bool {
-	for _, activity := range block.Activity {
-		if activity.Kind == "shell" {
-			return true
-		}
-	}
-	return false
 }
 
 func makeChatTranscriptBlocks(messages []chatMessageView) []chatTranscriptBlockView {
