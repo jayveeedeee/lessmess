@@ -40,6 +40,7 @@ type Server struct {
 	sessions *mapping
 	mapErr   error
 	autos    *autosession   // once-only markers for auto-spawned task sessions
+	compacts *compactionWatch // compaction re-prime markers (memory-only)
 	docsQ    *docsQueue     // nil disables the docs system (no agentsdocs.json)
 	docsW    *docsWatcher   // nil when docs are disabled or the watcher failed
 	git      *gitops.Client // nil in setup mode; worktree mechanics + state
@@ -56,6 +57,7 @@ func New(st *store.Store) *Server {
 	m, err := loadMapping(filepath.Join(st.Dir, store.StateDirName, "sessions.json"))
 	s.sessions, s.mapErr = m, err
 	s.autos = loadAutosession(filepath.Join(st.Dir, store.StateDirName, "autosession.json"))
+	s.compacts = newCompactionWatch()
 
 	if cfg, err := docs.LoadConfig(st.Dir); err != nil {
 		slog.Warn("docs config unreadable; docs system disabled", "err", err)
@@ -99,6 +101,8 @@ func New(st *store.Store) *Server {
 	mux.HandleFunc("GET /workflow/instructions", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, instructionManifest())
 	})
+	mux.HandleFunc("GET /skills/index.json", s.skillIndex)
+	mux.HandleFunc("GET /skills/{name}/{file}", s.skillFile)
 	mux.HandleFunc("GET /api/sessions/{sessionID}/chat", s.chatSnapshot)
 	mux.HandleFunc("GET /api/sessions/{sessionID}/chat/references", s.chatReferences)
 	mux.HandleFunc("GET /api/sessions/{sessionID}/chat/controls", s.chatControls)
@@ -118,6 +122,7 @@ func New(st *store.Store) *Server {
 	mux.HandleFunc("GET /api/sessions/{sessionID}/navigation", s.sessionNavigation)
 	mux.HandleFunc("POST /api/sessions/{sessionID}/fork", s.sessionFork)
 	mux.HandleFunc("GET /api/sessions/{sessionID}/revert/preview", s.sessionRevertPreview)
+	mux.HandleFunc("POST /api/sessions/{sessionID}/revert", s.sessionRevert)
 	mux.HandleFunc("POST /api/sessions/{sessionID}/revert/stage", s.sessionRevertStage)
 	mux.HandleFunc("POST /api/sessions/{sessionID}/revert/commit", s.sessionRevertCommit)
 	mux.HandleFunc("POST /api/sessions/{sessionID}/revert/clear", s.sessionRevertClear)

@@ -27,6 +27,24 @@ func TestInstructionManifestValid(t *testing.T) {
 	}
 }
 
+func TestExpandInstructionMatchesRoute(t *testing.T) {
+	// The route table registers POST /changes/{id}/expand with the task id
+	// in the JSON body (server.go). Instructions must teach that shape — a
+	// per-task subpath path-matches GET /changes/{id}/tasks/{file...} with
+	// the wrong method and 405s.
+	for _, m := range instructions {
+		if !strings.Contains(m.Text, "/expand") {
+			continue
+		}
+		if !strings.Contains(m.Text, `/changes/{{changeId}}/expand {"task":"`) {
+			t.Errorf("module %s: expand instruction must use POST /changes/{{changeId}}/expand with a {\"task\":...} body", m.ID)
+		}
+		if strings.Contains(m.Text, "tasks/<task-id>/expand") || strings.Contains(m.Text, "tasks/<id>/expand") {
+			t.Errorf("module %s: expand instruction documents a nonexistent per-task expand route", m.ID)
+		}
+	}
+}
+
 func TestSelectionDeterministic(t *testing.T) {
 	base := primeContext{APIBase: "http://x", ChangeID: "c", SessionID: "s"}
 	cases := []struct {
@@ -35,11 +53,11 @@ func TestSelectionDeterministic(t *testing.T) {
 		want     string
 	}{
 		{"discussion", base, "discussion"},
-		{"chat", primeContext{}, "chat"},
-		{"change", base, "change.session,change.handoff,closeout"},
-		{"task", base, "task.session,closeout"},
-		{"change", primeContext{APIBase: "http://x", Worktree: "/wt", WorktreeBranch: "b"}, "change.session,change.handoff,worktree,closeout"},
-		{"task", primeContext{APIBase: "http://x", Worktree: "/wt", WorktreeBranch: "b"}, "worktree,task.session,closeout"},
+		{"chat", primeContext{SessionID: "s"}, "chat"},
+		{"change", base, "change.session"},
+		{"task", base, "task.session"},
+		{"change", primeContext{APIBase: "http://x", Worktree: "/wt", WorktreeBranch: "b"}, "change.session,worktree"},
+		{"task", primeContext{APIBase: "http://x", Worktree: "/wt", WorktreeBranch: "b"}, "worktree,task.session"},
 	}
 	for _, tc := range cases {
 		var ids []string
@@ -68,7 +86,6 @@ func TestRenderPrimePlaceholdersAndSnapshot(t *testing.T) {
 		t.Errorf("unsubstituted placeholder in prime:\n%s", text)
 	}
 	for _, want := range []string{
-		"http://127.0.0.1:9090/changes/2026-09-18-15tbl/tasks",
 		"JSI-04.00: implement the parser",
 		"tasks/04-instruction-injection.md",
 		"Current state (tool-injected; authoritative)",
@@ -92,17 +109,44 @@ func TestDiscussionPrimeTransitionsToExecution(t *testing.T) {
 		t.Fatalf("module ids = %v", ids)
 	}
 	for _, want := range []string{
-		"Before scaffolding, do not modify the repository",
-		"continue in this same session",
-		"In progress to Test",
-		"never mark tasks Done",
+		"Before the user approves, do not modify the repository",
+		"lessmess-scaffold",
+		"this session becomes the change's session",
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("discussion prime missing %q", want)
 		}
 	}
-	if strings.Contains(text, "Discussion only.") {
-		t.Error("discussion prime still imposes a permanent discussion-only restriction")
+	// The scaffold procedure lives in the skill, not the prime.
+	if strings.Contains(text, "curl -s -X POST") {
+		t.Error("discussion prime still carries the scaffold curl; procedures belong in the lessmess-scaffold skill")
+	}
+}
+
+func TestChatPrimePointsAtSkills(t *testing.T) {
+	// Free chats reach the workflow only through the skills: the prime
+	// must carry the pointers, the session's own ID (scaffold binds by
+	// it), and the never-hand-edit rule — and no procedures.
+	text, ids := renderPrime("chat", primeContext{SessionID: "ses_x"})
+	if len(ids) != 1 || ids[0] != "chat" {
+		t.Fatalf("module ids = %v", ids)
+	}
+	for _, want := range []string{
+		"lessmess-scaffold",
+		"lessmess-task",
+		"lessmess-closeout",
+		"lessmess-handoff",
+		"ses_x",
+		"Never hand-edit .lessmess/workflow/",
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("chat prime missing %q", want)
+		}
+	}
+	for _, banned := range []string{"{{", "curl -s -X POST"} {
+		if strings.Contains(text, banned) {
+			t.Errorf("chat prime carries %q; procedures belong in skills", banned)
+		}
 	}
 }
 

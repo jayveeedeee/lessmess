@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "id": "2026-09-25-2uey4",
+  "title": "Resilient chat polling under a slow service",
+  "prefix": "CHAT",
+  "branch": "main",
+  "status": {
+    "value": "Planned",
+    "derived": true
+  },
+  "created": "2026-09-25",
+  "updated": "2026-09-25",
+  "tasks": [
+    {
+      "id": "CHAT-00",
+      "seq": 0,
+      "title": "Parallel chat snapshot fan-out",
+      "file": "tasks/00-parallel-chat-snapshot-fan-out.md",
+      "status": "Not started",
+      "updated": "2026-09-25"
+    },
+    {
+      "id": "CHAT-01",
+      "seq": 1,
+      "title": "Degrade gracefully when auxiliary chat reads fail",
+      "file": "tasks/01-degrade-gracefully-when-auxiliary-chat-r.md",
+      "status": "Not started",
+      "updated": "2026-09-25"
+    },
+    {
+      "id": "CHAT-02",
+      "seq": 2,
+      "title": "Bound poll-path upstream latency",
+      "file": "tasks/02-bound-poll-path-upstream-latency.md",
+      "status": "Not started",
+      "updated": "2026-09-25"
+    },
+    {
+      "id": "CHAT-03",
+      "seq": 3,
+      "title": "Collapse redundant upstream reads",
+      "file": "tasks/03-collapse-redundant-upstream-reads.md",
+      "status": "Not started",
+      "updated": "2026-09-25"
+    }
+  ]
+}

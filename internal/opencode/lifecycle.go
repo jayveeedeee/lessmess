@@ -225,8 +225,14 @@ func (c *Client) CompactSession(ctx context.Context, cap LifecycleCapabilities, 
 	if err := unavailable(cap.Compact, "manual compaction"); err != nil {
 		return nil, err
 	}
+	// The service rejects an empty id ("Expected a string starting with
+	// \"msg_\""): omit the anchor unless one was supplied.
+	var body any = map[string]any{"delivery": delivery}
+	if messageID != "" {
+		body = map[string]any{"id": messageID, "delivery": delivery}
+	}
 	var item InboxItem
-	if err := c.do(ctx, http.MethodPost, "/api/session/"+id+"/compact", map[string]any{"id": messageID, "delivery": delivery}, &item); err != nil {
+	if err := c.do(ctx, http.MethodPost, "/api/session/"+id+"/compact", body, &item); err != nil {
 		return nil, err
 	}
 	return &item, nil

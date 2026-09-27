@@ -1,0 +1,55 @@
+{
+  "version": 1,
+  "id": "2026-09-24-rc9pd",
+  "title": "Experimental settings-gated docs and worktrees",
+  "prefix": "EXP",
+  "branch": "main",
+  "status": {
+    "value": "Planned",
+    "derived": true
+  },
+  "created": "2026-09-24",
+  "updated": "2026-09-24",
+  "tasks": [
+    {
+      "id": "EXP-00",
+      "seq": 0,
+      "title": "Settings plumbing for docs.enabled and the experimental badge",
+      "file": "tasks/00-settings-plumbing-for-docs-enabled-and-t.md",
+      "status": "Not started",
+      "updated": "2026-09-24"
+    },
+    {
+      "id": "EXP-01",
+      "seq": 1,
+      "title": "Server gating of the docs subsystem on docs.enabled",
+      "file": "tasks/01-server-gating-of-the-docs-subsystem-on-d.md",
+      "status": "Not started",
+      "updated": "2026-09-24"
+    },
+    {
+      "id": "EXP-02",
+      "seq": 2,
+      "title": "Initialize-coverage flow in the Settings Docs section",
+      "file": "tasks/02-initialize-coverage-flow-in-the-settings.md",
+      "status": "Not started",
+      "updated": "2026-09-24"
+    },
+    {
+      "id": "EXP-03",
+      "seq": 3,
+      "title": "De-docs the wizard and lessmess init",
+      "file": "tasks/03-de-docs-the-wizard-and-lessmess-init.md",
+      "status": "Not started",
+      "updated": "2026-09-24"
+    },
+    {
+      "id": "EXP-04",
+      "seq": 4,
+      "title": "Dogfood, README, and end-to-end verification",
+      "file": "tasks/04-dogfood-readme-and-end-to-end-verificati.md",
+      "status": "Not started",
+      "updated": "2026-09-24"
+    }
+  ]
+}

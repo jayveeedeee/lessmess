@@ -204,17 +204,13 @@ func TestCreateSessionEndpoint(t *testing.T) {
 	}
 	// Primed with the change-scoped prompt.
 	for _, want := range []string{
-		"permanently bound to change 2026-09-10-0",
+		"execution assistant for change 2026-09-10-0",
 		"changes/2026-09-10-0/plan.md",
 		"Current state (tool-injected; authoritative)",
 		"NEVER edit .lessmess/workflow/ files by hand",
-		"tasks/<task-id>/status",
-		"NEVER create a new change directory",
-		"/changes/scaffold",
+		"Never create a new change directory and never scaffold",
 		"offer a handoff",
 		"only with the user's explicit approval",
-		"changes/2026-09-10-0/spawn-change",
-		`"session":"ses_new"`,
 		"Delegation:",
 		"prefix the task tool's description with the task's real ID",
 		"becomes the subagent session's title verbatim",

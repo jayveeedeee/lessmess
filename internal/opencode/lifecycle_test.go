@@ -11,11 +11,15 @@ import (
 
 func TestLifecyclePublishedContracts(t *testing.T) {
 	seen := map[string]string{}
+	var compactBodies []string
 	c, _ := fakeServer(t, "opencode", "pw", func(w http.ResponseWriter, r *http.Request) {
 		seen[r.Method+" "+r.URL.RequestURI()] = readTestBody(r)
 		switch r.URL.Path {
 		case "/openapi.json":
 			w.Write([]byte(`{"paths":{"/api/session/{sessionID}/fork":{"post":{"requestBody":{"content":{"application/json":{"schema":{"properties":{"before":{"type":"string"}}}}}}}},"/api/session/{sessionID}/revert/stage":{"post":{}},"/api/session/{sessionID}/revert/commit":{"post":{}},"/api/session/{sessionID}/revert":{"delete":{}},"/api/session/{sessionID}/compact":{"post":{}},"/api/session/{sessionID}/prompt":{"post":{"requestBody":{"content":{"application/json":{"schema":{"properties":{"id":{},"text":{},"files":{},"skills":{},"delivery":{}}}}}}}},"/api/session/{sessionID}/inbox":{"get":{}},"/api/session/{sessionID}/inbox/{inboxID}":{"patch":{},"delete":{}},"/api/session/{sessionID}":{"patch":{},"delete":{}},"/api/experimental/session/{sessionID}/export":{"get":{}}}}`))
+		case "/api/session/ses_1/compact":
+			compactBodies = append(compactBodies, seen[r.Method+" "+r.URL.RequestURI()])
+			w.Write([]byte(`{"data":{"id":"msg_cp","sessionID":"ses_1","timeCreated":9,"type":"compaction","payload":{},"delivery":"queue"}}`))
 		case "/api/session/ses_1/fork":
 			w.Write([]byte(`{"data":{"id":"ses_child","time":{"created":1,"updated":2},"location":{"directory":"/repo"}}}`))
 		case "/api/session/ses_1/prompt":
@@ -40,6 +44,13 @@ func TestLifecyclePublishedContracts(t *testing.T) {
 	if err != nil || item.ID != "msg_in" || !item.Known {
 		t.Fatalf("delivery = %#v, %v", item, err)
 	}
+	compacted, err := c.CompactSession(ctx, cap, "ses_1", "", DeliveryQueue)
+	if err != nil || compacted.ID != "msg_cp" || !compacted.Known {
+		t.Fatalf("compact = %#v, %v", compacted, err)
+	}
+	if _, err := c.CompactSession(ctx, cap, "ses_1", "msg_anchor", DeliveryQueue); err != nil {
+		t.Fatal(err)
+	}
 	items, err := c.ListInbox(ctx, cap, "ses_1")
 	if err != nil || len(items) != 1 || items[0].Known || items[0].Text != "" || items[0].Description != "" {
 		t.Fatalf("unknown inbox = %#v, %v", items, err)
@@ -61,6 +72,9 @@ func TestLifecyclePublishedContracts(t *testing.T) {
 	}
 	if got := seen["POST /api/session/ses_1/prompt"]; !strings.Contains(got, `"id":"msg_stable"`) || !strings.Contains(got, `"files":[`) || !strings.Contains(got, `"skills":[{"id":"review"}]`) {
 		t.Errorf("rich delivery body = %s", got)
+	}
+	if len(compactBodies) != 2 || compactBodies[0] != `{"delivery":"queue"}` || compactBodies[1] != `{"delivery":"queue","id":"msg_anchor"}` {
+		t.Errorf("compact bodies = %q", compactBodies)
 	}
 	if _, ok := seen["DELETE /api/session/ses_1/revert"]; !ok {
 		t.Error("published revert clear not used")

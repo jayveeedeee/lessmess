@@ -24,7 +24,7 @@
       </div>
     </details>
     {{else}}{{with .Message}}
-  <article class="chat-message chat-message-{{.Type}}"{{if .Copyable}} data-chat-message-actions data-chat-message-id="{{.ID}}" tabindex="0" aria-haspopup="menu" aria-expanded="false"{{end}}>
+  <article class="chat-message chat-message-{{.Type}}"{{if .Copyable}} data-chat-message-actions data-chat-message-id="{{.ID}}" tabindex="0" role="button" aria-pressed="false"{{end}}>
     {{if .Text}}<div class="chat-markdown prose">{{.Text}}</div>{{if and .Markdown (or (eq .Type "assistant") (eq .Type "user"))}}<span class="chat-markdown-source" hidden>{{.Markdown}}</span>{{end}}{{end}}
     {{if .Files}}<div class="chat-message-files">{{range .Files}}
       <div class="chat-message-file {{if .Reference}}is-reference{{end}}">
@@ -40,11 +40,6 @@
     {{end}}
     {{if .Error}}<p class="chat-flow-line chat-flow-error chat-error">{{.Error}}</p>{{end}}
     {{if .DiffURL}}<details class="chat-flow-line chat-flow-diff chat-turn-diff" data-chat-expand-key="diff:{{.ID}}" data-chat-lazy-key="diff:{{.ID}}" data-chat-detail-url="{{.DiffURL}}"><summary>Review turn changes</summary><div class="chat-lazy-detail"><p class="chat-detail-prompt">Expand to load the affected files and diff.</p></div></details>{{end}}
-    {{if .Copyable}}<div class="chat-message-menu" role="menu" aria-label="Message actions" hidden>
-      <button type="button" role="menuitem" data-chat-copy-message>Copy</button>
-      {{if eq .Type "user"}}<button type="button" role="menuitem" data-chat-fork="{{.ID}}">Fork</button>
-      <button type="button" role="menuitem" data-chat-revert="{{.ID}}">Revert to here</button>{{end}}
-    </div>{{end}}
   </article>
     {{end}}{{end}}
   </div>

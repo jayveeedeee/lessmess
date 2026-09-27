@@ -41,24 +41,24 @@ func TestDiscussionSession(t *testing.T) {
 		t.Fatalf("unassigned = %+v", got)
 	}
 
-	// Prompt: read-only before scaffold, then execution-capable after approval,
-	// with the exact scaffold call and injected base/session ID.
+	// Prompt: read-only before approval, then the skill pointer — the
+	// scaffold procedure itself lives in the lessmess-scaffold skill,
+	// not in the prime.
 	for _, want := range []string{
-		"AGENTS.md",
-		"planning a NEW change",
+		"planning assistant for a NEW change",
 		"Empty state",
-		"do NOT investigate the repository",
+		"do not investigate the repository",
 		`"What would you like to build?"`,
-		"Before scaffolding, do not modify the repository",
-		"EXPLICITLY agrees",
-		"continue in this same session",
-		"curl -s -X POST http://127.0.0.1:9090/changes/scaffold",
-		`"session":"ses_disc"`,
-		"task-ID prefix",
+		"Before the user approves, do not modify the repository",
+		"lessmess-scaffold",
+		"this session becomes the change's session",
 	} {
 		if !strings.Contains(promptedText, want) {
 			t.Errorf("prompt missing %q:\n%s", want, promptedText)
 		}
+	}
+	if strings.Contains(promptedText, "curl -s -X POST") {
+		t.Errorf("discussion prime carries the scaffold curl; procedures belong in the skill:\n%s", promptedText)
 	}
 }
 
@@ -353,13 +353,11 @@ func TestSpawnChangeHandoff(t *testing.T) {
 	// The prime is the change prompt plus the handoff addendum naming the
 	// artifact, the source change, and the exact endpoint call.
 	for _, want := range []string{
-		"change execution assistant",
-		"permanently bound to change " + changeID,
+		"execution assistant for change " + changeID,
 		"This session was spawned by a handoff from change 2026-09-10-0",
 		"changes/2026-09-10-0/handoff-resilience.md",
 		"authoritative starting context",
-		"curl -s -X POST http://127.0.0.1:9090/changes/" + changeID + "/spawn-change",
-		`"session":"ses_new"`,
+		"Run the validator",
 	} {
 		if !strings.Contains(prompted, want) {
 			t.Errorf("prompt missing %q:\n%s", want, prompted)

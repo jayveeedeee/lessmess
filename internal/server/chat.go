@@ -263,6 +263,23 @@ func (s *Server) chatSnapshot(w http.ResponseWriter, r *http.Request) {
 	for i := len(page.Messages) - 1; i >= 0; i-- {
 		messages = append(messages, makeChatMessageView(s.Base, sessionID, page.Messages[i]))
 	}
+	// Observe completed compactions on the full snapshot: this is how
+	// service-side auto-compaction (which never passes through
+	// sessionCompact) becomes visible to the re-prime.
+	if cursor == "" && s.compacts != nil && s.mapErr == nil {
+		var newest *opencode.Message
+		for i := range page.Messages {
+			m := &page.Messages[i]
+			if m.Type == "compaction" && m.Status == "completed" && (newest == nil || m.Time.Created > newest.Time.Created) {
+				newest = m
+			}
+		}
+		if newest != nil {
+			if _, bound := s.sessions.changeOf(sessionID); bound {
+				s.compacts.observe(sessionID, newest.ID)
+			}
+		}
+	}
 	view.Blocks = makeChatTranscriptBlocks(messages)
 	if cursor != "" {
 		s.rend.render(w, s.rend.partial, "chatSnapshot", view)
@@ -940,7 +957,7 @@ func (s *Server) chatPrompt(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "text, a file, or a skill is required"})
 		return
 	}
-	if err := s.oc.PromptWithFilesAndSkills(r.Context(), sessionID, req.Text, files, skills); err != nil {
+	if err := s.oc.PromptWithFilesAndSkills(r.Context(), sessionID, s.maybeReprime(sessionID, req.Text), files, skills); err != nil {
 		writeChatUpstreamError(w, err)
 		return
 	}
@@ -1654,7 +1671,9 @@ func (s *Server) chatSession(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "create opencode session: " + err.Error()})
 		return
 	}
-	prime, modules := renderPrime("chat", primeContext{})
+	// The chat prime carries the session's own ID so the free chat can
+	// act on the workflow through skills (scaffold/handoff bind by it).
+	prime, modules := renderPrime("chat", primeContext{SessionID: sess.ID})
 	if err := s.oc.Prompt(ctx, sess.ID, prime); err != nil {
 		_ = s.oc.DeleteSession(context.Background(), sess.ID)
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "prime chat session: " + err.Error()})

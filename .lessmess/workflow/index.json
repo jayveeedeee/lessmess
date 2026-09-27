@@ -297,6 +297,55 @@
       "prefix": "MP",
       "branch": "main",
       "created": "2026-09-24"
+    },
+    {
+      "id": "2026-09-24-rc9pd",
+      "title": "Experimental settings-gated docs and worktrees",
+      "prefix": "EXP",
+      "branch": "main",
+      "created": "2026-09-24"
+    },
+    {
+      "id": "2026-09-25-2uey4",
+      "title": "Resilient chat polling under a slow service",
+      "prefix": "CHAT",
+      "branch": "main",
+      "created": "2026-09-25"
+    },
+    {
+      "id": "2026-09-25-u24ql",
+      "title": "Fix manual compaction empty message id",
+      "prefix": "CMP",
+      "branch": "main",
+      "created": "2026-09-25"
+    },
+    {
+      "id": "2026-09-27-a4e9c",
+      "title": "Workflow skills and compaction re-prime",
+      "prefix": "SKIL",
+      "branch": "main",
+      "created": "2026-09-27"
+    },
+    {
+      "id": "2026-09-27-768jw",
+      "title": "Provider filter for runtime model menu",
+      "prefix": "PMF",
+      "branch": "main",
+      "created": "2026-09-27"
+    },
+    {
+      "id": "2026-09-27-hc6f8",
+      "title": "One-click chat revert",
+      "prefix": "RVT",
+      "branch": "main",
+      "created": "2026-09-27"
+    },
+    {
+      "id": "2026-09-27-qiuh9",
+      "title": "Busy composer queue/steer pill",
+      "prefix": "PILL",
+      "branch": "main",
+      "created": "2026-09-27"
     }
   ]
 }

@@ -127,6 +127,7 @@ func runServe(args []string) int {
 		app := server.New(st)
 		app.Base = basePath
 		app.PublicBase = publicBase
+		app.EnsureSkillsCatalog()
 		if oc != nil {
 			app.SetOpencode(oc)
 		}

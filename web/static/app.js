@@ -299,7 +299,7 @@
       alert(msg);
       return;
     }
-    if (e.detail.elt.matches('form[hx-post="/changes/session"]')) {
+    if (e.detail.elt.matches('form[hx-post$="/changes/session"]')) {
       try {
         var j = JSON.parse(e.detail.xhr.responseText);
         loadDiscussions();
@@ -749,6 +749,8 @@
     references: {},
     referenceCatalog: [],
     controls: null,
+    providerFilter: "",
+    stagedControls: null,
     usage: null,
     skills: {},
     scrolls: {},
@@ -756,12 +758,12 @@
     lifecycle: null,
     lifecycleAction: false,
     lifecycleError: "",
-    revertTarget: null,
-    revertPreviewHTML: "",
-    revertPreviewValid: false,
+    revertDialog: null,
     compactPending: {},
     inbox: [],
     inboxRequest: null,
+    selectedPendingID: null,
+    selectedMessageID: null,
     deliveryIDs: {},
     navigation: null,
     navigationRequest: null,
@@ -785,27 +787,39 @@
   }
 
   function closeChatMessageActions(returnFocus) {
-    var menu = document.querySelector("#chat-transcript .chat-message-menu:not([hidden])");
-    if (!menu) return false;
-    var message = menu.closest("[data-chat-message-actions]");
-    menu.hidden = true;
-    if (message) {
-      message.setAttribute("aria-expanded", "false");
-      if (returnFocus) message.focus({ preventScroll: true });
-    }
+    if (!cstate.selectedMessageID) return false;
+    var message = selectedChatMessage();
+    cstate.selectedMessageID = null;
+    if (message) syncChatMessageSelection();
+    if (returnFocus && message) message.focus({ preventScroll: true });
+    updateChatActionButton();
     return true;
   }
 
-  function openChatMessageActions(message, focusMenu) {
-    var menu = message && message.querySelector(":scope > .chat-message-menu");
-    if (!menu) return;
-    closeChatMessageActions(false);
-    menu.hidden = false;
-    message.setAttribute("aria-expanded", "true");
-    if (focusMenu) {
-      var first = menu.querySelector("button:not([disabled])");
-      if (first) first.focus({ preventScroll: true });
+  function selectedChatMessage() {
+    return Array.prototype.find.call(document.querySelectorAll("#chat-transcript [data-chat-message-actions]"), function (message) {
+      return message.dataset.chatMessageId === cstate.selectedMessageID;
+    });
+  }
+
+  function syncChatMessageSelection() {
+    document.querySelectorAll("#chat-transcript [data-chat-message-actions]").forEach(function (message) {
+      var selected = message.dataset.chatMessageId === cstate.selectedMessageID;
+      message.classList.toggle("is-selected", selected);
+      message.setAttribute("aria-pressed", String(selected));
+    });
+  }
+
+  function openChatMessageActions(message) {
+    var id = message && message.dataset.chatMessageId;
+    if (!id) return;
+    cstate.selectedMessageID = cstate.selectedMessageID === id ? null : id;
+    if (cstate.selectedPendingID) {
+      cstate.selectedPendingID = null;
+      renderChatInbox();
     }
+    syncChatMessageSelection();
+    updateChatActionButton();
   }
 
   function chatViewPanel(name) {
@@ -1015,15 +1029,19 @@
     cstate.snapshot = null;
     cstate.pendingUserBoundary = null;
     cstate.controls = null;
+    cstate.providerFilter = "";
+    cstate.stagedControls = null;
     cstate.usage = null;
     cstate.inbox = [];
+    cstate.selectedPendingID = null;
+    cstate.selectedMessageID = null;
     cstate.lifecycle = null;
     cstate.navigation = null;
     cstate.deletePreview = null;
     cstate.lifecycleError = "";
-    cstate.revertTarget = null;
-    cstate.revertPreviewHTML = "";
-    cstate.revertPreviewValid = false;
+    cstate.revertDialog = null;
+    var revertDialog = document.getElementById("chat-revert-dialog");
+    if (revertDialog) revertDialog.hidden = true;
     cstate.restoreScroll = Object.prototype.hasOwnProperty.call(cstate.scrolls, sessionID) ? cstate.scrolls[sessionID] : null;
     var overlay = document.getElementById("chat-overlay");
     overlay.hidden = false;
@@ -1084,6 +1102,8 @@
     cstate.mutation = false;
     cstate.lifecycleAction = false;
     cstate.session = null;
+    cstate.selectedPendingID = null;
+    cstate.selectedMessageID = null;
     cstate.pendingUserBoundary = null;
     var send = document.getElementById("chat-send-btn");
     if (send) send.disabled = false;
@@ -1144,6 +1164,10 @@
         if (changed) {
           captureChatForms();
           var previousRoot = transcript.querySelector(".chat-snapshot");
+          var focusedPending = document.activeElement && document.activeElement.closest("#chat-pending-messages [data-inbox-id]");
+          var focusedPendingID = focusedPending && focusedPending.dataset.inboxId;
+          var focusedMessage = document.activeElement && document.activeElement.closest("#chat-transcript [data-chat-message-actions]");
+          var focusedMessageID = focusedMessage && focusedMessage.dataset.chatMessageId;
           var historyPages = previousRoot ? Array.prototype.slice.call(previousRoot.querySelectorAll(":scope > .chat-history-page")) : [];
           var historyLoaded = previousRoot && previousRoot.dataset.historyLoaded === "true";
           var historyCursor = historyLoaded ? (previousRoot.dataset.historyCursor || "") : null;
@@ -1189,6 +1213,16 @@
               loadChatDetail(detail, true);
             }
           });
+          renderChatInbox(false);
+          if (focusedPendingID) focusChatPending(focusedPendingID);
+          var selectedMessage = selectedChatMessage();
+          if (cstate.selectedMessageID && !selectedMessage) cstate.selectedMessageID = null;
+          syncChatMessageSelection();
+          updateChatActionButton();
+          if (focusedMessageID) {
+            var replacement = Array.prototype.find.call(transcript.querySelectorAll("[data-chat-message-actions]"), function (message) { return message.dataset.chatMessageId === focusedMessageID; });
+            if (replacement) replacement.focus({ preventScroll: true });
+          }
           cstate.snapshot = html;
           if (window.htmx) htmx.process(transcript);
           var compactions = transcript.querySelectorAll('[data-message-type="compaction"]');
@@ -1588,12 +1622,36 @@
   function updateChatActionButton() {
     var button = document.getElementById("chat-send-btn");
     var prompt = document.getElementById("chat-prompt");
-    if (!button || !prompt) return;
-    var send = !chatBusy() || (document.activeElement === prompt && prompt.value.trim() !== "");
+    var pill = document.getElementById("chat-action-pill");
+    var cancel = document.getElementById("chat-cancel-btn");
+    var steer = document.getElementById("chat-steer-btn");
+    var queue = document.getElementById("chat-queue-btn");
+    var copy = document.getElementById("chat-copy-message-btn");
+    var fork = document.getElementById("chat-fork-message-btn");
+    var revert = document.getElementById("chat-revert-message-btn");
+    if (!button || !prompt || !pill || !cancel || !steer || !queue || !copy || !fork || !revert) return;
+    var busy = chatBusy();
+    var hasDraft = prompt.value.trim() !== "" || chatDraftFiles().length || chatDraftReferences().length || chatDraftSkills().length;
+    var message = cstate.selectedMessageID && selectedChatMessage();
+    var userMessage = !!(message && message.classList.contains("chat-message-user"));
+    var mode = message ? "message" : cstate.selectedPendingID ? "pending" : busy && hasDraft ? "compose" : busy ? "stop" : "send";
+    var send = !busy && mode !== "pending";
     button.dataset.action = send ? "send" : "stop";
     button.type = send ? "submit" : "button";
     button.setAttribute("aria-label", send ? "Send message" : "Stop response");
     button.title = send ? "Send message" : "Stop response";
+    button.disabled = !!cstate.mutation || (mode === "pending" && !busy);
+    pill.dataset.mode = mode;
+    var segments = mode === "message" ? (userMessage ? 4 : 2) : mode === "compose" ? 3 : mode === "pending" ? 2 : 1;
+    pill.dataset.segments = String(segments);
+    pill.dataset.messageType = userMessage ? "user" : "assistant";
+    pill.style.setProperty("--chat-pill-width", 44 * segments + "px");
+    pill.dataset.expanded = segments > 1 ? "true" : "false";
+    steer.disabled = queue.disabled = mode !== "compose" || !!cstate.mutation;
+    var cap = cstate.lifecycle && cstate.lifecycle.capabilities || {};
+    cancel.disabled = mode !== "pending" || !cap.inboxCancel || !!cstate.mutation;
+    copy.disabled = mode !== "message" || !!cstate.mutation;
+    fork.disabled = revert.disabled = mode !== "message" || !userMessage || !!cstate.mutation;
   }
 
   function setChatHeaderState(label, state) {
@@ -1630,52 +1688,70 @@
     return ({ user: "Follow-up", synthetic: "Synthetic message", compaction: "Compaction", move: "Session move" })[item.type] || "Pending item";
   }
 
-  function renderChatInbox() {
-    var root = document.getElementById("chat-inbox");
-    if (!root) return;
-    root.innerHTML = "";
-    root.hidden = !cstate.inbox.length;
-    if (!cstate.inbox.length) return;
-    var heading = document.createElement("strong");
-    heading.textContent = "Pending in OpenCode (" + cstate.inbox.length + ")";
-    root.appendChild(heading);
-    var cap = cstate.lifecycle && cstate.lifecycle.capabilities || {};
-    cstate.inbox.forEach(function (item) {
-      var row = document.createElement("div");
-      row.className = "chat-inbox-item";
-      row.dataset.inboxID = item.id;
-      var copy = document.createElement("div");
-      copy.className = "chat-inbox-copy";
-      var label = document.createElement("small");
-      label.textContent = inboxTypeLabel(item);
-      copy.appendChild(label);
-      if (item.known && (item.text || item.description)) {
-        var text = document.createElement("p");
-        text.textContent = item.text || item.description;
-        copy.appendChild(text);
-      }
-      row.appendChild(copy);
-      var mode = document.createElement("select");
-      mode.setAttribute("aria-label", "Delivery mode for " + inboxTypeLabel(item));
-      ["queue", "steer"].forEach(function (value) {
-        var option = document.createElement("option");
-        option.value = value;
-        option.textContent = value === "queue" ? "Queued" : "Steering";
-        option.selected = item.delivery === value;
-        mode.appendChild(option);
-      });
-      mode.disabled = !cap.inboxDelivery;
-      mode.dataset.inboxDelivery = item.id;
-      row.appendChild(mode);
-      var cancel = document.createElement("button");
-      cancel.type = "button";
-      cancel.className = "btn-ghost";
-      cancel.textContent = "Cancel";
-      cancel.disabled = !cap.inboxCancel;
-      cancel.dataset.inboxCancel = item.id;
-      row.appendChild(cancel);
+  function renderChatInbox(preserveScroll) {
+    var transcript = document.getElementById("chat-transcript");
+    if (!transcript) return;
+    var nearBottom = preserveScroll !== false && transcript.scrollHeight - transcript.scrollTop - transcript.clientHeight < 96;
+    var root = transcript.querySelector("#chat-pending-messages");
+    var focused = document.activeElement && document.activeElement.closest("#chat-pending-messages [data-inbox-id]");
+    var focusedID = focused && focused.dataset.inboxId;
+    var delivered = new Set(Array.prototype.map.call(transcript.querySelectorAll(".chat-snapshot [data-message]"), function (marker) { return marker.dataset.message; }));
+    var pending = cstate.inbox.filter(function (item) { return !delivered.has(item.id); });
+    if (cstate.selectedPendingID && !pending.some(function (item) { return item.id === cstate.selectedPendingID; })) {
+      cstate.selectedPendingID = null;
+      updateChatActionButton();
+    }
+    var empty = transcript.querySelector(".chat-snapshot > .chat-empty");
+    if (empty) empty.hidden = pending.length > 0;
+    if (!pending.length) {
+      if (root) root.remove();
+      if (nearBottom) transcript.scrollTop = transcript.scrollHeight;
+      return;
+    }
+    if (!root) {
+      root = document.createElement("section");
+      root.id = "chat-pending-messages";
+      root.setAttribute("aria-label", "Pending follow-ups");
+      root.setAttribute("aria-live", "polite");
+      transcript.appendChild(root);
+    }
+    root.replaceChildren();
+    pending.forEach(function (item) {
+      var row = document.createElement("article");
+      row.className = "chat-message chat-message-pending" + (item.type === "user" ? " chat-message-user" : "");
+      row.dataset.inboxId = item.id;
+      row.classList.toggle("is-selected", cstate.selectedPendingID === item.id);
+      row.tabIndex = 0;
+      row.setAttribute("role", "button");
+      row.setAttribute("aria-pressed", String(cstate.selectedPendingID === item.id));
+      row.title = cstate.selectedPendingID === item.id ? "Deselect pending message" : "Select pending message to cancel";
+      var head = document.createElement("header");
+      head.className = "chat-pending-head";
+      var label = document.createElement("span");
+      label.textContent = (item.delivery === "steer" ? "Steering" : "Queued") + (item.type === "user" ? "" : " · " + inboxTypeLabel(item));
+      head.appendChild(label);
+      row.appendChild(head);
+      var text = document.createElement("p");
+      text.className = "chat-pending-text";
+      text.textContent = item.known && (item.text || item.description) || inboxTypeLabel(item);
+      row.appendChild(text);
       root.appendChild(row);
     });
+    if (focusedID) focusChatPending(focusedID);
+    if (nearBottom) transcript.scrollTop = transcript.scrollHeight;
+  }
+
+  function focusChatPending(itemID) {
+    var root = document.getElementById("chat-pending-messages");
+    var row = root && Array.prototype.find.call(root.querySelectorAll("[data-inbox-id]"), function (candidate) { return candidate.dataset.inboxId === itemID; });
+    if (row) row.focus({ preventScroll: true });
+  }
+
+  function toggleChatPendingSelection(itemID) {
+    closeChatMessageActions(false);
+    cstate.selectedPendingID = cstate.selectedPendingID === itemID ? null : itemID;
+    renderChatInbox();
+    updateChatActionButton();
   }
 
   function loadChatInbox(reportError, propagateError) {
@@ -1704,16 +1780,13 @@
       .finally(function () { if (cstate.inboxRequest === controller) cstate.inboxRequest = null; });
   }
 
-  function mutateChatInbox(itemID, method, body, control) {
+  function mutateChatInbox(itemID, control) {
     if (!cstate.session || cstate.mutation) return Promise.reject(new Error("A request is already in progress"));
     var sessionID = cstate.session;
     cstate.mutation = true;
     control.disabled = true;
-    var options = { method: method, headers: { Accept: "application/json" } };
-    if (body) {
-      options.headers["Content-Type"] = "application/json";
-      options.body = JSON.stringify(body);
-    }
+    updateChatActionButton();
+    var options = { method: "DELETE", headers: { Accept: "application/json" } };
     return fetch(lifecycleURL("/inbox/" + encodeURIComponent(itemID)), options)
       .then(lifecycleResponse)
       .then(function () {
@@ -1726,11 +1799,7 @@
       .then(function (data) {
         if (cstate.session !== sessionID) return;
         var pending = (data.items || []).some(function (item) { return item.id === itemID; });
-        if (method === "DELETE") {
-          setChatStatus(pending ? "Cancellation was requested, but the item is still pending." : "Item is no longer pending. It may have been delivered or cancelled.", pending);
-        } else {
-          setChatStatus(pending ? "Pending delivery mode refreshed." : "The item is no longer pending and may already have been delivered.");
-        }
+        setChatStatus(pending ? "Cancellation was requested, but the item is still pending." : "Item is no longer pending. It may have been delivered or cancelled.", pending);
         refreshChat();
       })
       .catch(function (err) {
@@ -1741,6 +1810,8 @@
         if (cstate.session === sessionID) {
           cstate.mutation = false;
           if (document.contains(control)) control.disabled = false;
+          renderChatInbox();
+          updateChatActionButton();
         }
       });
   }
@@ -1778,6 +1849,7 @@
     var sessionID = cstate.session;
     cstate.mutation = true;
     if (control) control.disabled = true;
+    updateChatActionButton();
     setChatStatus(path === "interrupt" ? "Stopping…" : "Sending…");
     var options = { method: "POST", headers: { Accept: "application/json" } };
     if (body instanceof FormData) {
@@ -1804,6 +1876,7 @@
         if (cstate.session === sessionID) {
           cstate.mutation = false;
           if (control && document.contains(control)) control.disabled = false;
+          updateChatActionButton();
         }
       });
   }
@@ -1818,6 +1891,7 @@
     var sessionID = cstate.session;
     cstate.mutation = true;
     control.disabled = true;
+    updateChatActionButton();
     setChatStatus("Submitting durable follow-up…");
     return fetch(BASE + "/api/sessions/" + encodeURIComponent(sessionID) + "/deliver", {
       method: "POST",
@@ -1842,6 +1916,7 @@
         if (cstate.session === sessionID) {
           cstate.mutation = false;
           if (document.contains(control)) control.disabled = false;
+          updateChatActionButton();
         }
       });
   }
@@ -1920,6 +1995,7 @@
       tray.appendChild(chip);
     });
     tray.hidden = !tray.children.length;
+    updateChatActionButton();
   }
 
   function renderChatSkillChips() {
@@ -1941,11 +2017,13 @@
       tray.appendChild(chip);
     });
     tray.hidden = !tray.children.length;
+    updateChatActionButton();
   }
 
   function closeChatControls(returnFocus) {
     var sheet = document.getElementById("chat-controls-sheet");
     var button = document.getElementById("chat-controls-btn");
+    if (cstate.stagedControls) { cstate.stagedControls = null; renderChatControlsDraft(); }
     if (compactChatUI() && cstate.viewStack[cstate.viewStack.length - 1] === "controls") closeChatView();
     if (sheet) sheet.hidden = true;
     if (button) button.setAttribute("aria-expanded", "false");
@@ -1989,6 +2067,7 @@
       option.value = item.value || item.id || item.name;
       option.textContent = optionLabel(item);
       option.dataset.search = ((item.name || "") + " " + (item.description || "") + " " + option.value).toLowerCase();
+      option.dataset.provider = item.providerID || "";
       option.selected = option.value === current;
       select.appendChild(option);
     });
@@ -2064,10 +2143,13 @@
 
   function renderChatControls(data) {
     cstate.controls = data;
-    fillChatSelect(document.getElementById("chat-agent-select"), data.agents || [], data.agent, "Choose agent");
-    fillChatSelect(document.getElementById("chat-model-select"), data.models || [], data.model, "Choose model");
+    fillChatSelect(document.getElementById("chat-agent-select"), data.agents || [], chatStagedValue("agent"), "Choose agent");
+    fillChatSelect(document.getElementById("chat-model-select"), data.models || [], chatStagedValue("model"), "Choose model");
     renderChatVariantSelect(data);
+    renderChatProviderSelect(data);
+    applyChatModelFilters(document.getElementById("chat-controls-search").value.toLowerCase());
     fillChatSelect(document.getElementById("chat-command-select"), data.commands || [], "", "Choose command");
+    renderChatControlsDraft();
     renderChatUsage(data.usage);
     var list = document.getElementById("chat-skill-list");
     list.innerHTML = "";
@@ -2102,7 +2184,7 @@
 
   function renderChatVariantSelect(data) {
     var select = document.getElementById("chat-variant-select");
-    var model = (data.models || []).find(function (item) { return item.value === data.model; });
+    var model = (data.models || []).find(function (item) { return item.value === chatStagedValue("model"); });
     var variants = model && model.variants || [];
     select.innerHTML = "";
     var fallback = document.createElement("option");
@@ -2113,10 +2195,78 @@
       var option = document.createElement("option");
       option.value = id;
       option.textContent = id;
-      option.selected = id === data.variant;
+      option.selected = id === chatStagedValue("variant");
       select.appendChild(option);
     });
     select.disabled = variants.length === 0;
+  }
+
+  function chatCurrentValue(key) {
+    var controls = cstate.controls || {};
+    return controls[key] || "";
+  }
+
+  function chatStagedValue(key) {
+    if (cstate.stagedControls && cstate.stagedControls[key] !== undefined) return cstate.stagedControls[key];
+    return chatCurrentValue(key);
+  }
+
+  function chatStageControl(key, value) {
+    if (!cstate.stagedControls) cstate.stagedControls = { agent: chatCurrentValue("agent"), model: chatCurrentValue("model"), variant: chatCurrentValue("variant") };
+    cstate.stagedControls[key] = value;
+    renderChatControlsDraft();
+    return cstate.stagedControls;
+  }
+
+  function renderChatControlsDraft() {
+    var staged = cstate.stagedControls;
+    var dirty = !!staged && ["agent", "model", "variant"].some(function (key) { return staged[key] !== chatCurrentValue(key); });
+    var row = document.getElementById("chat-controls-draft");
+    if (row) row.hidden = !dirty;
+    ["agent", "model", "variant"].forEach(function (key) {
+      var select = document.getElementById("chat-" + key + "-select");
+      if (select) select.classList.toggle("unsaved", !!staged && staged[key] !== "" && staged[key] !== chatCurrentValue(key));
+    });
+  }
+
+  function discardChatControlsDraft() {
+    cstate.stagedControls = null;
+    if (cstate.controls) renderChatControls(cstate.controls);
+    renderChatControlsDraft();
+  }
+
+  function renderChatProviderSelect(data) {
+    var select = document.getElementById("chat-provider-select");
+    var providers = [];
+    (data.models || []).forEach(function (item) {
+      if (item.providerID && providers.indexOf(item.providerID) < 0) providers.push(item.providerID);
+    });
+    providers.sort();
+    if (cstate.providerFilter && providers.indexOf(cstate.providerFilter) < 0) cstate.providerFilter = "";
+    select.innerHTML = "";
+    var all = document.createElement("option");
+    all.value = "";
+    all.textContent = "All providers";
+    select.appendChild(all);
+    providers.forEach(function (id) {
+      var option = document.createElement("option");
+      option.value = id;
+      option.textContent = id;
+      select.appendChild(option);
+    });
+    select.value = cstate.providerFilter || "";
+    select.disabled = providers.length === 0;
+  }
+
+  function applyChatModelFilters(query) {
+    var provider = cstate.providerFilter || "";
+    var current = cstate.controls && cstate.controls.model || "";
+    var stagedModel = cstate.stagedControls && cstate.stagedControls.model || "";
+    document.getElementById("chat-model-select").querySelectorAll("option[data-search]").forEach(function (option) {
+      if (option.value === current || option.value === stagedModel) { option.hidden = false; return; }
+      var visible = (!query || option.dataset.search.indexOf(query) >= 0) && (!provider || option.dataset.provider === provider);
+      option.hidden = !visible;
+    });
   }
 
   function lifecycleURL(path) {
@@ -2293,12 +2443,6 @@
       });
   }
 
-  function lifecycleFingerprint(data) {
-    var session = data && data.session;
-    var revert = session && session.revert;
-    return revert ? session.id + ":" + revert.messageID + ":" + session.updated : "";
-  }
-
   function appendRevertFiles(parent, files) {
     var list = document.createElement("div");
     list.className = "chat-revert-files";
@@ -2354,84 +2498,34 @@
       range.textContent = "Transcript range: " + staged.messageID + " through the current end of the conversation.";
       box.appendChild(range);
       appendRevertFiles(box, staged.files || []);
-      var fingerprint = lifecycleFingerprint(data);
-      var label = document.createElement("label");
-      label.className = "chat-revert-confirm";
-      label.textContent = cstate.revertPreviewValid ? "Type the fingerprint to confirm" : "Refresh this preview before committing";
-      var code = document.createElement("code");
-      code.textContent = fingerprint;
-      label.appendChild(code);
-      var input = document.createElement("input");
-      input.id = "chat-revert-fingerprint";
-      input.type = "text";
-      input.autocomplete = "off";
-      input.spellcheck = false;
-      label.appendChild(input);
-      box.appendChild(label);
+      var note = document.createElement("p");
+      note.className = "muted";
+      note.textContent = "A revert could not finish. Commit applies exactly the staged range; Cancel discards it.";
+      box.appendChild(note);
       var actions = document.createElement("div");
       actions.className = "chat-lifecycle-actions";
-      var refresh = document.createElement("button");
-      refresh.type = "button";
-      refresh.dataset.chatRevertRefresh = staged.messageID;
-      refresh.textContent = "Refresh preview";
-      refresh.hidden = cstate.revertPreviewValid;
       var commit = document.createElement("button");
       commit.type = "button";
       commit.dataset.chatRevertCommit = "1";
       commit.textContent = "Commit revert";
-      commit.disabled = !cstate.revertPreviewValid || !!(data && data.busy) || cstate.lifecycleAction;
+      commit.disabled = !!(data && data.busy) || cstate.lifecycleAction;
       var cancel = document.createElement("button");
       cancel.type = "button";
       cancel.className = "btn-ghost";
       cancel.dataset.chatRevertCancel = "1";
       cancel.textContent = "Cancel staged revert";
       cancel.disabled = cstate.lifecycleAction;
-      actions.appendChild(refresh);
       actions.appendChild(commit);
       actions.appendChild(cancel);
       box.appendChild(actions);
-      input.addEventListener("input", function () {
-        commit.disabled = input.value !== fingerprint || !!data.busy || cstate.lifecycleAction;
-        cancel.disabled = input.value !== fingerprint || cstate.lifecycleAction;
-      });
-      cancel.disabled = true;
       panel.appendChild(box);
-    } else if (cstate.revertTarget) {
-      var preview = document.createElement("div");
-      preview.className = "chat-revert-preview";
-      var title = document.createElement("strong");
-      title.textContent = "Read-only revert preview";
-      preview.appendChild(title);
-      var transcript = document.getElementById("chat-transcript");
-      var messages = Array.prototype.slice.call(transcript.querySelectorAll("[data-message]"));
-      var index = messages.findIndex(function (message) { return message.dataset.message === cstate.revertTarget; });
-      var affected = index < 0 ? [] : messages.slice(index);
-      var rangeText = document.createElement("p");
-      rangeText.textContent = "Transcript range: " + cstate.revertTarget + " through " + (affected.length ? affected[affected.length - 1].dataset.message : "the current end") + " (" + affected.length + " loaded messages).";
-      preview.appendChild(rangeText);
-      var diff = document.createElement("div");
-      diff.innerHTML = cstate.revertPreviewHTML || '<p class="muted">Loading affected files...</p>';
-      preview.appendChild(diff);
-      var files = document.createElement("label");
-      var check = document.createElement("input");
-      check.id = "chat-revert-files";
-      check.type = "checkbox";
-      files.appendChild(check);
-      files.appendChild(document.createTextNode(" Restore the displayed file changes as well as conversation history"));
-      preview.appendChild(files);
-      var stage = document.createElement("button");
-      stage.type = "button";
-      stage.dataset.chatRevertStage = cstate.revertTarget;
-      stage.textContent = "Stage this revert";
-      stage.disabled = !cstate.revertPreviewHTML || !data || data.busy || !cap.revertStage || cstate.lifecycleAction;
-      preview.appendChild(stage);
-      panel.appendChild(preview);
     } else {
       var hint = document.createElement("p");
       hint.className = "muted";
-      hint.textContent = cap.revertStage === false ? "Revert is unavailable on this OpenCode service." : "Choose Preview revert on a transcript message to inspect the affected range and files.";
+      hint.textContent = cap.revertStage === false || cap.revertCommit === false ? "Revert is unavailable on this OpenCode service." : "Choose Revert to here on one of your messages to move the conversation back to it.";
       panel.appendChild(hint);
     }
+    syncRevertDialog();
 
     var usage = cstate.usage || {};
     var pending = !!(cstate.session && cstate.compactPending[cstate.session]);
@@ -2528,32 +2622,142 @@
     return "session-" + sessionID.replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 128) + ".json";
   }
 
-  function previewChatRevert(messageID) {
+  function revertDialogOpen() {
+    var dialog = document.getElementById("chat-revert-dialog");
+    return !!(dialog && !dialog.hidden && cstate.revertDialog);
+  }
+
+  function syncRevertDialog() {
+    if (!revertDialogOpen()) return;
+    var data = cstate.lifecycle;
+    var cap = data && data.capabilities || {};
+    var unsupported = cap.revertStage === false || cap.revertCommit === false;
+    var blocked = !data || !!data.busy || cstate.lifecycleAction || unsupported;
+    var confirmBtn = document.getElementById("chat-revert-confirm-btn");
+    var cancelBtn = document.getElementById("chat-revert-cancel-btn");
+    if (confirmBtn) confirmBtn.disabled = blocked;
+    if (cancelBtn) cancelBtn.disabled = cstate.lifecycleAction;
+    var status = document.getElementById("chat-revert-status");
+    if (!status) return;
+    if (cstate.lifecycleAction && cstate.revertDialog) return; // submit set "Reverting…"
+    if (unsupported) status.textContent = "Revert is unavailable on this OpenCode service.";
+    else if (!data) status.textContent = "Loading session state…";
+    else if (data.busy) status.textContent = "Wait for the active response to finish.";
+    else status.textContent = "";
+  }
+
+  function setRevertDialogError(message) {
+    var err = document.getElementById("chat-revert-error");
+    if (!err) return;
+    err.textContent = message || "";
+    err.hidden = !message;
+  }
+
+  function openRevertDialog(messageID) {
     if (!cstate.session || cstate.lifecycleAction) return;
-    var sessionID = cstate.session;
-    cstate.lifecycleAction = true;
-    cstate.revertTarget = messageID;
-    cstate.revertPreviewHTML = "";
-    cstate.revertPreviewValid = false;
-    openChatControls();
-    renderChatLifecycle();
-    Promise.all([
-      loadChatLifecycle(),
-      fetch(lifecycleURL("/chat/diff?from=" + encodeURIComponent(messageID)), { headers: { Accept: "text/html" } }).then(function (r) {
-        if (!r.ok) throw new Error("Affected files unavailable (HTTP " + r.status + ")");
+    var dialog = document.getElementById("chat-revert-dialog");
+    if (!dialog) return;
+    var article = document.querySelector('#chat-transcript [data-message="' + (window.CSS && CSS.escape ? CSS.escape(messageID) : messageID) + '"]');
+    var text = "";
+    if (article) {
+      var source = article.querySelector(".chat-markdown-source");
+      var prose = article.querySelector(".chat-markdown");
+      text = ((source && source.textContent) || (prose && prose.textContent) || "").trim();
+    }
+    cstate.revertDialog = { messageID: messageID, text: text };
+    var excerpt = document.getElementById("chat-revert-message");
+    if (excerpt) excerpt.textContent = text.length > 400 ? text.slice(0, 400) + "…" : (text || "(message text unavailable)");
+    setRevertDialogError("");
+    var status = document.getElementById("chat-revert-status");
+    if (status) status.textContent = "";
+    var check = document.getElementById("chat-revert-files-check");
+    if (check) check.checked = false;
+    var detail = document.getElementById("chat-revert-files-detail");
+    if (detail) detail.open = false;
+    var body = document.getElementById("chat-revert-files-body");
+    if (body) {
+      body.innerHTML = "";
+      var loading = document.createElement("p");
+      loading.className = "muted";
+      loading.textContent = "Loading affected files…";
+      body.appendChild(loading);
+    }
+    syncRevertDialog();
+    dialog.hidden = false;
+    var confirmBtn = document.getElementById("chat-revert-confirm-btn");
+    if (confirmBtn && !confirmBtn.disabled) confirmBtn.focus({ preventScroll: true });
+    loadChatLifecycle();
+    fetch(lifecycleURL("/chat/diff?from=" + encodeURIComponent(messageID)), { headers: { Accept: "text/html" } })
+      .then(function (r) {
+        if (!r.ok) throw new Error("HTTP " + r.status);
         return r.text();
       })
-    ]).then(function (values) {
-      if (cstate.session !== sessionID) return;
-      cstate.revertPreviewHTML = values[1];
-      cstate.revertPreviewValid = true;
-    }).catch(function (err) {
-      if (cstate.session === sessionID) cstate.lifecycleError = err.message;
-    }).finally(function () {
+      .then(function (html) {
+        if (!cstate.revertDialog || cstate.revertDialog.messageID !== messageID) return;
+        var slot = document.getElementById("chat-revert-files-body");
+        if (!slot) return;
+        slot.innerHTML = html;
+      })
+      .catch(function (fetchErr) {
+        if (!cstate.revertDialog || cstate.revertDialog.messageID !== messageID) return;
+        var slot = document.getElementById("chat-revert-files-body");
+        if (!slot) return;
+        slot.innerHTML = "";
+        var failed = document.createElement("p");
+        failed.className = "muted";
+        failed.textContent = "Affected files unavailable (" + fetchErr.message + ").";
+        slot.appendChild(failed);
+      });
+  }
+
+  function closeRevertDialog(force) {
+    var dialog = document.getElementById("chat-revert-dialog");
+    if (!dialog || dialog.hidden) return false;
+    if (!force && cstate.lifecycleAction && cstate.revertDialog) return true; // a revert is being applied
+    dialog.hidden = true;
+    cstate.revertDialog = null;
+    var status = document.getElementById("chat-revert-status");
+    if (status) status.textContent = "";
+    setRevertDialogError("");
+    return true;
+  }
+
+  function submitRevert() {
+    var state = cstate.revertDialog;
+    var data = cstate.lifecycle;
+    if (!state || !data || !data.session || cstate.lifecycleAction) return;
+    var sessionID = cstate.session;
+    var files = !!(document.getElementById("chat-revert-files-check") || {}).checked;
+    var status = document.getElementById("chat-revert-status");
+    var request = runLifecycleAction("/revert", {
+      messageID: state.messageID,
+      files: files,
+      confirmation: { sessionID: data.session.id, updated: data.session.updated }
+    }, function () {
+      closeRevertDialog(true);
       if (cstate.session === sessionID) {
-        cstate.lifecycleAction = false;
-        renderChatLifecycle();
+        if (state.text) {
+          cstate.drafts[sessionID] = state.text;
+          var prompt = document.getElementById("chat-prompt");
+          if (prompt) prompt.value = state.text;
+          resizeChatPrompt();
+          updateChatActionButton();
+        }
+        setChatStatus("Conversation reverted to the selected message.");
+        refreshChat();
+        var promptInput = document.getElementById("chat-prompt");
+        if (promptInput) promptInput.focus({ preventScroll: true });
       }
+    });
+    setRevertDialogError("");
+    if (status) status.textContent = "Reverting…";
+    syncRevertDialog();
+    request.catch(function (err) {
+      if (cstate.session !== sessionID || !cstate.revertDialog) return;
+      if (status) status.textContent = "";
+      setRevertDialogError(err.message);
+      if (err.status === 409) loadChatLifecycle();
+      syncRevertDialog();
     });
   }
 
@@ -2572,10 +2776,6 @@
     }).catch(function (err) {
       if (cstate.session === sessionID) {
         cstate.lifecycleError = err.message;
-        if (err.status === 409) {
-          cstate.revertPreviewValid = false;
-          cstate.revertPreviewHTML = "";
-        }
       }
       throw err;
     }).finally(function () {
@@ -3108,6 +3308,9 @@
     if (!composer) return;
     var prompt = document.getElementById("chat-prompt");
     var send = document.getElementById("chat-send-btn");
+    var cancel = document.getElementById("chat-cancel-btn");
+    var steer = document.getElementById("chat-steer-btn");
+    var queue = document.getElementById("chat-queue-btn");
     var fileInput = document.getElementById("chat-file-input");
     var moreButton = document.getElementById("chat-more-btn");
     var moreMenu = document.getElementById("chat-more-menu");
@@ -3145,19 +3348,21 @@
         cstate.drafts[cstate.session] = prompt.value;
         delete cstate.deliveryIDs[cstate.session];
       }
+      if (cstate.selectedPendingID) {
+        cstate.selectedPendingID = null;
+        renderChatInbox();
+      }
+      closeChatMessageActions(false);
       resizeChatPrompt();
       updateChatActionButton();
     });
-    prompt.addEventListener("focus", updateChatActionButton);
-    prompt.addEventListener("blur", function () { requestAnimationFrame(updateChatActionButton); });
     prompt.addEventListener("keydown", function (e) {
       if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
         e.preventDefault();
         composer.requestSubmit();
       }
     });
-    composer.addEventListener("submit", function (e) {
-      e.preventDefault();
+    function submitChatDraft(delivery, control) {
       var text = prompt.value.trim();
       var files = chatDraftFiles(), refs = chatDraftReferences(), skills = chatDraftSkills();
       if ((!text && !files.length && !refs.length && !skills.length) || cstate.mutation) return;
@@ -3188,8 +3393,8 @@
       if (busy) {
         if (!cstate.deliveryIDs[sessionID]) cstate.deliveryIDs[sessionID] = newChatMessageID();
         body.append("id", cstate.deliveryIDs[sessionID]);
-        body.append("delivery", "queue");
-        request = deliverBusyPrompt(body, send);
+        body.append("delivery", delivery);
+        request = deliverBusyPrompt(body, control);
       } else {
         var userMarkers = document.querySelectorAll('#chat-transcript [data-message-type="user"]');
         var activities = document.querySelectorAll("#chat-transcript .chat-system-group");
@@ -3199,7 +3404,7 @@
           user: userMarkers.length ? userMarkers[userMarkers.length - 1].dataset.message : "",
           activity: activity ? activity.dataset.chatExpandKey : "",
         };
-        request = chatMutation("prompt", body, send);
+        request = chatMutation("prompt", body, control);
       }
       request.then(function () {
         cstate.drafts[sessionID] = "";
@@ -3215,6 +3420,15 @@
       }).catch(function () {
         if (cstate.pendingUserBoundary && cstate.pendingUserBoundary.session === sessionID) cstate.pendingUserBoundary = null;
       }).finally(updateChatActionButton);
+    }
+    composer.addEventListener("submit", function (e) {
+      e.preventDefault();
+      submitChatDraft("queue", chatBusy() ? queue : send);
+    });
+    steer.addEventListener("click", function () { submitChatDraft("steer", steer); });
+    cancel.addEventListener("click", function () {
+      if (!cstate.selectedPendingID) return;
+      mutateChatInbox(cstate.selectedPendingID, cancel).catch(function () { loadChatInbox(false); });
     });
     send.addEventListener("click", function (e) {
       if (send.dataset.action !== "stop") return;
@@ -3245,15 +3459,15 @@
       cstate.skills[cstate.session] = chatDraftSkills().filter(function (skill) { return skill.id !== button.dataset.removeChatSkill; });
       renderChatSkillChips();
     });
-    document.getElementById("chat-inbox").addEventListener("change", function (e) {
-      var select = e.target.closest("[data-inbox-delivery]");
-      if (!select) return;
-      mutateChatInbox(select.dataset.inboxDelivery, "PATCH", { delivery: select.value }, select).catch(function () { loadChatInbox(false); });
+    document.getElementById("chat-transcript").addEventListener("click", function (e) {
+      var row = e.target.closest("#chat-pending-messages [data-inbox-id]");
+      if (row) toggleChatPendingSelection(row.dataset.inboxId);
     });
-    document.getElementById("chat-inbox").addEventListener("click", function (e) {
-      var button = e.target.closest("[data-inbox-cancel]");
-      if (!button) return;
-      mutateChatInbox(button.dataset.inboxCancel, "DELETE", null, button).catch(function () { loadChatInbox(false); });
+    document.getElementById("chat-transcript").addEventListener("keydown", function (e) {
+      var row = e.target.closest("#chat-pending-messages [data-inbox-id]");
+      if (!row || row !== e.target || (e.key !== "Enter" && e.key !== " ")) return;
+      e.preventDefault();
+      toggleChatPendingSelection(row.dataset.inboxId);
     });
     if (referenceButton) {
       referenceButton.addEventListener("click", function (e) {
@@ -3415,17 +3629,32 @@
       });
     });
     document.getElementById("chat-agent-select").addEventListener("change", function (e) {
-      var select = e.currentTarget, prior = cstate.controls && cstate.controls.agent;
-      chatMutation("agent", { agent: select.value }, select).then(loadChatControls).catch(function () { select.value = prior || ""; });
+      chatStageControl("agent", e.currentTarget.value);
     });
     document.getElementById("chat-model-select").addEventListener("change", function (e) {
-      var select = e.currentTarget, prior = cstate.controls && cstate.controls.model;
-      chatMutation("model", { model: select.value, variant: "" }, select).then(loadChatControls).catch(function () { select.value = prior || ""; });
+      var staged = chatStageControl("model", e.currentTarget.value);
+      staged.variant = "";
+      if (cstate.controls) renderChatVariantSelect(cstate.controls);
+      renderChatControlsDraft();
     });
     document.getElementById("chat-variant-select").addEventListener("change", function (e) {
-      var select = e.currentTarget, prior = cstate.controls && cstate.controls.variant;
-      chatMutation("model", { model: cstate.controls.model, variant: select.value }, select).then(loadChatControls).catch(function () { select.value = prior || ""; });
+      chatStageControl("variant", e.currentTarget.value);
     });
+    document.getElementById("chat-controls-apply").addEventListener("click", function (e) {
+      var staged = cstate.stagedControls;
+      if (!staged) return;
+      var button = e.currentTarget;
+      var changed = ["agent", "model", "variant"].filter(function (key) { return staged[key] !== chatCurrentValue(key); });
+      if (!changed.length) { cstate.stagedControls = null; renderChatControlsDraft(); return; }
+      var calls = [];
+      if (staged.agent !== chatCurrentValue("agent")) calls.push(function () { return chatMutation("agent", { agent: staged.agent }, button); });
+      if (staged.model !== chatCurrentValue("model")) calls.push(function () { return chatMutation("model", { model: staged.model, variant: staged.variant || "" }, button); });
+      else if (staged.variant !== chatCurrentValue("variant")) calls.push(function () { return chatMutation("model", { model: chatCurrentValue("model"), variant: staged.variant }, button); });
+      calls.reduce(function (p, call) { return p.then(call); }, Promise.resolve()).then(function () {
+        if (cstate.session) { cstate.stagedControls = null; loadChatControls(); }
+      }).catch(function () {});
+    });
+    document.getElementById("chat-controls-discard").addEventListener("click", discardChatControlsDraft);
     document.getElementById("chat-command-run").addEventListener("click", function (e) {
       var command = document.getElementById("chat-command-select").value;
       if (!command) { setChatStatus("Choose a command first.", true); return; }
@@ -3449,11 +3678,16 @@
         chatMutation("skill", { skill: id }, activate).then(closeChatControls).catch(function () {});
       }
     });
+    document.getElementById("chat-provider-select").addEventListener("change", function (e) {
+      cstate.providerFilter = e.currentTarget.value;
+      applyChatModelFilters(document.getElementById("chat-controls-search").value.toLowerCase());
+    });
     document.getElementById("chat-controls-search").addEventListener("input", function (e) {
       var query = e.currentTarget.value.toLowerCase();
-      ["chat-agent-select", "chat-model-select", "chat-variant-select", "chat-command-select"].forEach(function (id) {
+      ["chat-agent-select", "chat-variant-select", "chat-command-select"].forEach(function (id) {
         document.getElementById(id).querySelectorAll("option[data-search]").forEach(function (option) { option.hidden = !!query && option.dataset.search.indexOf(query) < 0; });
       });
+      applyChatModelFilters(query);
       document.querySelectorAll("#chat-skill-list .chat-skill-row").forEach(function (row) { row.hidden = !!query && row.dataset.search.indexOf(query) < 0; });
     });
     document.getElementById("chat-agents-btn").addEventListener("click", function (e) {
@@ -3583,33 +3817,28 @@
       captureChatForm(wizard);
       return;
     }
-    var menu = e.target.closest("#chat-transcript .chat-message-menu");
-    if (menu) {
-      if (e.target.closest("button")) closeChatMessageActions(false);
-      return;
-    }
     var message = e.target.closest("#chat-transcript [data-chat-message-actions]");
     if (message && !e.target.closest("a, button, input, select, textarea, details, summary")) {
-      openChatMessageActions(message, false);
+      openChatMessageActions(message);
       return;
     }
-    closeChatMessageActions(false);
+    if (!e.target.closest("#chat-action-pill, #chat-pending-messages")) closeChatMessageActions(false);
   }, true);
 
   document.addEventListener("keydown", function (e) {
     var message = e.target.closest && e.target.closest("#chat-transcript [data-chat-message-actions]");
-    if (!message || (e.key !== "Enter" && e.key !== " ")) return;
-    if (e.target.closest(".chat-message-menu")) return;
+    if (!message || e.target !== message || (e.key !== "Enter" && e.key !== " ")) return;
     e.preventDefault();
-    openChatMessageActions(message, true);
+    openChatMessageActions(message);
   });
 
   document.addEventListener("click", function (e) {
-    var fork = e.target.closest("#chat-transcript [data-chat-fork]");
+    var fork = e.target.closest("#chat-action-pill #chat-fork-message-btn");
     if (fork) {
       e.preventDefault();
+      if (!cstate.selectedMessageID) return;
       var parentID = cstate.session;
-      runLifecycleAction("/fork", { before: fork.dataset.chatFork }, function (result) {
+      runLifecycleAction("/fork", { before: cstate.selectedMessageID }, function (result) {
         if (!result || !result.session) throw new Error("Fork response did not include the child session");
         cstate.scrolls[parentID] = document.getElementById("chat-transcript").scrollTop;
         markOpened(result.session.id);
@@ -3617,42 +3846,35 @@
       }).catch(function (err) { setChatStatus("Fork failed: " + err.message, true); });
       return;
     }
-    var revert = e.target.closest("#chat-transcript [data-chat-revert]");
+    var revert = e.target.closest("#chat-action-pill #chat-revert-message-btn");
     if (revert) {
       e.preventDefault();
-      previewChatRevert(revert.dataset.chatRevert);
+      if (cstate.selectedMessageID) openRevertDialog(cstate.selectedMessageID);
       return;
     }
-    var refreshRevert = e.target.closest("[data-chat-revert-refresh]");
-    if (refreshRevert) {
+    var revertConfirm = e.target.closest("[data-chat-revert-confirm]");
+    if (revertConfirm) {
       e.preventDefault();
-      previewChatRevert(refreshRevert.dataset.chatRevertRefresh);
+      submitRevert();
       return;
     }
-    var stageRevert = e.target.closest("[data-chat-revert-stage]");
-    if (stageRevert) {
+    var revertClose = e.target.closest("[data-close-revert]");
+    if (revertClose) {
       e.preventDefault();
-      var stageData = cstate.lifecycle;
-      if (!stageData || !cstate.revertPreviewValid) return;
-      runLifecycleAction("/revert/stage", {
-        messageID: stageRevert.dataset.chatRevertStage,
-        files: document.getElementById("chat-revert-files").checked,
-        confirmation: { sessionID: stageData.session.id, updated: stageData.session.updated }
-      }, function () {
-        cstate.revertPreviewValid = true;
-        setChatStatus("Revert staged. Review the authoritative staged state before committing or cancelling.");
-      }).catch(function () {});
+      closeRevertDialog(true);
+      return;
+    }
+    var revertDialogEl = document.getElementById("chat-revert-dialog");
+    if (revertDialogEl && !revertDialogEl.hidden && e.target === revertDialogEl) {
+      closeRevertDialog(true); // backdrop click
       return;
     }
     var finalRevert = e.target.closest("[data-chat-revert-commit], [data-chat-revert-cancel]");
     if (finalRevert) {
       e.preventDefault();
       var finalData = cstate.lifecycle;
-      var fingerprint = lifecycleFingerprint(finalData);
-      var fingerprintInput = document.getElementById("chat-revert-fingerprint");
-      if (!finalData || !finalData.session.revert || !fingerprintInput || fingerprintInput.value !== fingerprint) return;
+      if (!finalData || !finalData.session || !finalData.session.revert) return;
       var committing = finalRevert.hasAttribute("data-chat-revert-commit");
-      if (committing && !cstate.revertPreviewValid) return;
       var prompt = committing
         ? "Commit this staged revert? This applies exactly the displayed staged transcript and file operation."
         : "Cancel this staged revert? OpenCode may not restore files after clearing a files-enabled stage.";
@@ -3664,9 +3886,6 @@
           messageID: finalData.session.revert.messageID
         }
       }, function () {
-        cstate.revertTarget = null;
-        cstate.revertPreviewHTML = "";
-        cstate.revertPreviewValid = false;
         setChatStatus(committing ? "Revert committed." : "Staged revert cancelled.");
         refreshChat();
       }).catch(function () {});
@@ -3684,10 +3903,10 @@
       }).catch(function () { setChatStatus("Could not copy text.", true); });
       return;
     }
-    var copyMessage = e.target.closest("#chat-transcript [data-chat-copy-message]");
+    var copyMessage = e.target.closest("#chat-action-pill #chat-copy-message-btn");
     if (copyMessage) {
       e.preventDefault();
-      var message = copyMessage.closest("[data-chat-message-actions]");
+      var message = selectedChatMessage();
       var sources = message ? message.querySelectorAll(".chat-markdown-source") : [];
       var parts = sources.length ? sources : message ? message.querySelectorAll(".chat-markdown") : [];
       var text = Array.prototype.map.call(parts, function (part) {
@@ -4072,6 +4291,7 @@
 
   document.addEventListener("keydown", function (e) {
     if (e.key !== "Escape") return;
+    if (closeRevertDialog(false)) return;
     var d = document.getElementById("detail");
     if (d && !d.hidden) {
       if (!closeDetailContents(true)) closeDetail();

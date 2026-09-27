@@ -8,4 +8,6 @@
     { "action": "read", "resource": "*.env.example", "effect": "allow" },
     { "action": "shell", "resource": "git push *", "effect": "deny" }
   ]
+,
+  "skills": ["http://0.0.0.0:9090/p/tasktracker/skills/"]
 }

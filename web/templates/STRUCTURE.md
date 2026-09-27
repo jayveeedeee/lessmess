@@ -14,7 +14,7 @@ Go html/template files rendering the lessmess web UI.
 | `layout.html` | Base HTML shell with assets, header, and terminal overlay |
 | `opencode.html` | OpenCode management page with service status cards, connections, MCP servers, and permission request controls. |
 | `partials.html` | Reusable fragments for board, detail modals, and banner |
-| `projects.html` | — |
+| `projects.html` | Hub-only landing page listing registered projects with add and remove controls. |
 | `settings.html` | Settings editor page with per-section Save forms, a project/personal scope toggle, and value-source badges. |
 | `setup.html` | First-run setup wizard page with five steps (prereqs, bootstrap, agent, docs, finish) driven by client JS. |
 <!-- tasktracker:end -->

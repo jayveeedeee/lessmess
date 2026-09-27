@@ -4,11 +4,11 @@
   "title": "Worktree-per-change with gated PR and agent review",
   "prefix": "WTP",
   "status": {
-    "value": "In progress",
-    "derived": true
+    "value": "Done",
+    "derived": false
   },
   "created": "2026-09-17",
-  "updated": "2026-09-17",
+  "updated": "2026-09-24",
   "tasks": [
     {
       "id": "WTP-00",

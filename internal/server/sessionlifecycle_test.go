@@ -528,3 +528,129 @@ func TestSessionNavigationAncestorsOwnershipPendingAndRefresh(t *testing.T) {
 		t.Fatalf("refresh duplicated mappings: %#v", entries)
 	}
 }
+
+func TestLifecycleCombinedRevertStagesThenCommits(t *testing.T) {
+	staged := false
+	stageBodies := []map[string]any{}
+	commits := 0
+	s := mappingServer(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/openapi.json":
+			w.Write([]byte(`{"paths":{"/api/session/{sessionID}/revert/stage":{"post":{}},"/api/session/{sessionID}/revert/commit":{"post":{}}}}`))
+		case "/api/session/ses_life":
+			if staged {
+				w.Write([]byte(`{"data":{"id":"ses_life","revert":{"messageID":"msg_1"},"time":{"created":1,"updated":20}}}`))
+			} else {
+				w.Write([]byte(`{"data":{"id":"ses_life","time":{"created":1,"updated":20}}}`))
+			}
+		case "/api/session/active":
+			w.Write([]byte(`{"data":{}}`))
+		case "/api/session/ses_life/revert/stage":
+			var body map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Errorf("stage body decode: %v", err)
+			}
+			stageBodies = append(stageBodies, body)
+			staged = true
+			w.WriteHeader(http.StatusNoContent)
+		case "/api/session/ses_life/revert/commit":
+			commits++
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
+		}
+	})
+	w := do(t, s.Handler(), "POST", "/api/sessions/ses_life/revert", `{"messageID":"msg_1","files":true,"confirmation":{"sessionID":"ses_life","updated":20}}`)
+	if w.Code != http.StatusNoContent || commits != 1 || len(stageBodies) != 1 {
+		t.Fatalf("combined revert = %d commits=%d stages=%d %s", w.Code, commits, len(stageBodies), w.Body.String())
+	}
+	if stageBodies[0]["messageID"] != "msg_1" || stageBodies[0]["files"] != true {
+		t.Fatalf("stage body = %#v", stageBodies[0])
+	}
+}
+
+func TestLifecycleCombinedRevertGuards(t *testing.T) {
+	staged := false
+	s := mappingServer(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/openapi.json":
+			w.Write([]byte(`{"paths":{"/api/session/{sessionID}/revert/stage":{"post":{}},"/api/session/{sessionID}/revert/commit":{"post":{}}}}`))
+		case "/api/session/ses_life":
+			if staged {
+				w.Write([]byte(`{"data":{"id":"ses_life","revert":{"messageID":"msg_old"},"time":{"created":1,"updated":20}}}`))
+			} else {
+				w.Write([]byte(`{"data":{"id":"ses_life","time":{"created":1,"updated":20}}}`))
+			}
+		case "/api/session/active":
+			w.Write([]byte(`{"data":{}}`))
+		case "/api/session/ses_life/revert/stage":
+			staged = true
+			w.WriteHeader(http.StatusNoContent)
+		case "/api/session/ses_life/revert/commit":
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
+		}
+	})
+	cases := []struct {
+		body string
+		code int
+		note string
+	}{
+		{`{"messageID":"bad","files":false,"confirmation":{"sessionID":"ses_life","updated":20}}`, http.StatusBadRequest, "bad messageID"},
+		{`{"messageID":"msg_1","files":false}`, http.StatusPreconditionRequired, "missing confirmation"},
+		{`{"messageID":"msg_1","files":false,"confirmation":{"sessionID":"ses_other","updated":20}}`, http.StatusConflict, "wrong session"},
+		{`{"messageID":"msg_1","files":false,"confirmation":{"sessionID":"ses_life","updated":19}}`, http.StatusConflict, "stale updated"},
+	}
+	for _, tc := range cases {
+		w := do(t, s.Handler(), "POST", "/api/sessions/ses_life/revert", tc.body)
+		if w.Code != tc.code || staged {
+			t.Errorf("%s: %d staged=%v %s", tc.note, w.Code, staged, w.Body.String())
+		}
+	}
+	staged = true
+	w := do(t, s.Handler(), "POST", "/api/sessions/ses_life/revert", `{"messageID":"msg_1","files":false,"confirmation":{"sessionID":"ses_life","updated":20}}`)
+	if w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "already staged") {
+		t.Fatalf("stale stage present = %d %s", w.Code, w.Body.String())
+	}
+}
+
+func TestLifecycleCombinedRevertCapabilityAndCommitFailure(t *testing.T) {
+	failCommit := false
+	staged := false
+	s := mappingServer(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/openapi.json":
+			if failCommit {
+				w.Write([]byte(`{"paths":{"/api/session/{sessionID}/revert/stage":{"post":{}}}}`))
+			} else {
+				w.Write([]byte(`{"paths":{"/api/session/{sessionID}/revert/stage":{"post":{}},"/api/session/{sessionID}/revert/commit":{"post":{}}}}`))
+			}
+		case "/api/session/ses_life":
+			if staged {
+				w.Write([]byte(`{"data":{"id":"ses_life","revert":{"messageID":"msg_1"},"time":{"created":1,"updated":20}}}`))
+			} else {
+				w.Write([]byte(`{"data":{"id":"ses_life","time":{"created":1,"updated":20}}}`))
+			}
+		case "/api/session/active":
+			w.Write([]byte(`{"data":{}}`))
+		case "/api/session/ses_life/revert/stage":
+			staged = true
+			w.WriteHeader(http.StatusNoContent)
+		case "/api/session/ses_life/revert/commit":
+			w.WriteHeader(http.StatusInternalServerError)
+		default:
+			t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
+		}
+	})
+	failCommit = true
+	w := do(t, s.Handler(), "POST", "/api/sessions/ses_life/revert", `{"messageID":"msg_1","files":false,"confirmation":{"sessionID":"ses_life","updated":20}}`)
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("missing commit capability = %d %s", w.Code, w.Body.String())
+	}
+	failCommit = false
+	w = do(t, s.Handler(), "POST", "/api/sessions/ses_life/revert", `{"messageID":"msg_1","files":false,"confirmation":{"sessionID":"ses_life","updated":20}}`)
+	if w.Code != http.StatusBadGateway || !strings.Contains(w.Body.String(), "OpenCode could not complete") {
+		t.Fatalf("commit failure = %d %s", w.Code, w.Body.String())
+	}
+}

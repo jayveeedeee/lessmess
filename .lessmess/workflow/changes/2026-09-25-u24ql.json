@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "id": "2026-09-25-u24ql",
+  "title": "Fix manual compaction empty message id",
+  "prefix": "CMP",
+  "branch": "main",
+  "status": {
+    "value": "Done",
+    "derived": false
+  },
+  "created": "2026-09-25",
+  "updated": "2026-09-25",
+  "tasks": [
+    {
+      "id": "CMP-00",
+      "seq": 0,
+      "title": "Omit empty compact id and pin the request contract",
+      "file": "tasks/00-omit-empty-compact-id-and-pin-the-reques.md",
+      "status": "Done",
+      "updated": "2026-09-25",
+      "notes": "go vet clean; go test ./... all packages ok (opencode 1.8s, server 18.0s). New TestLifecyclePublishedContracts assertions pass with the fix and fail against the old code (stash/re-run: compact bodies got {\"delivery\":\"queue\",\"id\":\"\"}). Live probe on disposable session ses_f288b8f1dffeXL1b9n5IIDIqGA (created + deleted): POST compact with the exact new body {\"delivery\":\"queue\"} returned HTTP 200 with a compaction inbox item."
+    }
+  ]
+}

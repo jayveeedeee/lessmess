@@ -59,7 +59,6 @@ document.documentElement.dataset.theme = localStorage.getItem("tt-theme") || "da
        <div class="chat-main" data-chat-view-panel="chat">
          <nav id="chat-family-bar" class="chat-family-bar" aria-label="Session ancestry" hidden></nav>
          <div id="chat-transcript" class="chat-transcript" aria-live="polite" aria-busy="false"></div>
-        <section id="chat-inbox" class="chat-inbox" aria-label="Pending follow-ups" aria-live="polite" hidden></section>
         <div id="chat-status" class="chat-status" role="status" aria-live="polite"></div>
          <div id="chat-composer-shell" class="chat-composer">
           <div id="chat-form-host" class="chat-form-host" hidden></div>
@@ -88,7 +87,15 @@ document.documentElement.dataset.theme = localStorage.getItem("tt-theme") || "da
                   </div>
                  <input id="chat-file-input" class="sr-only" type="file" multiple accept="text/*,application/json,application/xml,application/javascript,application/yaml,application/toml,image/png,image/jpeg,image/gif,image/webp,image/svg+xml">
                  <span class="chat-compose-spacer"></span>
-               <button id="chat-send-btn" type="submit" class="btn-accent chat-action-button" data-action="send" aria-label="Send message" title="Send message"><span class="chat-action-icon" aria-hidden="true"></span></button>
+               <div id="chat-action-pill" class="chat-action-pill" data-mode="send" data-segments="1" data-expanded="false">
+                 <button id="chat-send-btn" type="submit" class="chat-action-button" data-action="send" aria-label="Send message" title="Send message"><span class="chat-action-icon" aria-hidden="true"></span></button>
+                 <button id="chat-cancel-btn" type="button" class="chat-action-button chat-pill-extra chat-pill-cancel" aria-label="Cancel selected message" title="Cancel selected message" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5l14 14M19 5 5 19"/></svg></button>
+                 <button id="chat-steer-btn" type="button" class="chat-action-button chat-pill-extra chat-pill-compose" aria-label="Steer response" title="Steer response" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19v-5a7 7 0 0 1 7-7h8m-4-4 4 4-4 4"/></svg></button>
+                  <button id="chat-queue-btn" type="submit" class="chat-action-button chat-pill-extra chat-pill-compose" aria-label="Queue message" title="Queue message" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h15M4 11h12M4 17h15m-4-4 4 4-4 4"/></svg></button>
+                  <button id="chat-copy-message-btn" type="button" class="chat-action-button chat-pill-extra chat-pill-message" aria-label="Copy selected message" title="Copy selected message" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg></button>
+                  <button id="chat-fork-message-btn" type="button" class="chat-action-button chat-pill-extra chat-pill-message chat-pill-user" aria-label="Fork from selected message" title="Fork from selected message" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="5" r="2"/><circle cx="18" cy="5" r="2"/><circle cx="12" cy="19" r="2"/><path d="M6 7v3a6 6 0 0 0 6 6v1m6-10v3a6 6 0 0 1-6 6"/></svg></button>
+                  <button id="chat-revert-message-btn" type="button" class="chat-action-button chat-pill-extra chat-pill-message chat-pill-user" aria-label="Revert to selected message" title="Revert to selected message" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11a8 8 0 1 1 2 7M4 5v6h6"/></svg></button>
+               </div>
              </div>
            </div>
           </form>
@@ -104,8 +111,13 @@ document.documentElement.dataset.theme = localStorage.getItem("tt-theme") || "da
           <div id="chat-usage" class="chat-usage chat-controls-extended"></div>
            <p id="chat-compact-note" class="muted chat-controls-extended">Context usage is required before manual compaction.</p>
          <label>Agent<select id="chat-agent-select"></select></label>
+         <label>Provider<select id="chat-provider-select"></select></label>
          <label>Model<select id="chat-model-select"></select></label>
          <label>Variant<select id="chat-variant-select"></select></label>
+         <div id="chat-controls-draft" class="chat-controls-draft" hidden>
+          <button id="chat-controls-apply" type="button" class="btn-accent">Apply changes</button>
+          <button id="chat-controls-discard" type="button" class="btn-ghost">Discard</button>
+        </div>
          <div class="chat-control-group chat-controls-extended">
           <label>Command<select id="chat-command-select"></select></label>
           <label>Arguments<input id="chat-command-args" type="text" placeholder="Optional arguments"></label>
@@ -119,7 +131,7 @@ document.documentElement.dataset.theme = localStorage.getItem("tt-theme") || "da
           <div class="chat-lifecycle-heading"><strong>Conversation history</strong><button id="chat-lifecycle-refresh" type="button" class="btn-ghost">Refresh</button></div>
           <p id="chat-lifecycle-state" class="muted">Loading session state...</p>
           <div id="chat-revert-panel"></div>
-           <p class="chat-lifecycle-warning">OpenCode does not provide an atomic revision guard. After clearing a files-enabled staged revert, file restoration is not guaranteed.</p>
+           <p class="chat-lifecycle-warning">A staged revert that could not finish stays listed above. Commit applies exactly the staged range; cancelling a files-enabled stage cannot guarantee file restoration.</p>
          </div>
           <div id="chat-management" class="chat-control-group chat-management chat-controls-extended" aria-live="polite">
            <strong>Session management</strong>
@@ -153,6 +165,30 @@ document.documentElement.dataset.theme = localStorage.getItem("tt-theme") || "da
       </aside>
       <aside id="chat-tasks" class="chat-tasks" data-chat-view-panel="work" hidden aria-label="Work" aria-hidden="true" inert></aside>
       <button id="chat-task-backdrop" type="button" aria-label="Close task drawer" hidden></button>
+    </div>
+    <div id="chat-revert-dialog" hidden>
+      <div class="modal chat-revert-window" role="dialog" aria-modal="true" aria-labelledby="chat-revert-title">
+        <div class="modal-head">
+          <span class="title" id="chat-revert-title">Revert to this message?</span>
+          <button type="button" class="modal-close" data-close-revert aria-label="Close">✕</button>
+        </div>
+        <div class="modal-body">
+          <p class="chat-revert-intro muted">The conversation and everything after this message is removed. The message returns to the composer so you can edit and resend it.</p>
+          <p id="chat-revert-message" class="chat-revert-message"></p>
+          <details id="chat-revert-files-detail">
+            <summary>Affected files</summary>
+            <div id="chat-revert-files-body" class="chat-revert-files-body"></div>
+          </details>
+          <label class="chat-revert-files-label"><input type="checkbox" id="chat-revert-files-check"> Also restore file changes made after this message</label>
+          <p class="muted chat-revert-note">File restoration is best effort: a files-enabled revert that is staged and later cancelled cannot guarantee the files come back.</p>
+          <p id="chat-revert-error" class="chat-error" hidden></p>
+          <div class="commit-actions chat-revert-actions">
+            <button id="chat-revert-confirm-btn" type="button" class="btn-accent" data-chat-revert-confirm>Revert conversation</button>
+            <button id="chat-revert-cancel-btn" type="button" class="btn-ghost" data-close-revert>Cancel</button>
+            <span id="chat-revert-status" class="muted"></span>
+          </div>
+        </div>
+      </div>
     </div>
   </section>
 </div>

@@ -90,16 +90,13 @@ func TestChatSnapshotRendersSafeAuthoritativeState(t *testing.T) {
 	if strings.Contains(body, `<select name="environment"`) || strings.Contains(body, `<select name="targets"`) {
 		t.Fatalf("choice questions regressed to native selects: %s", body)
 	}
-	for _, want := range []string{`data-chat-message-actions`, `class="chat-message-menu"`, `data-chat-copy-message`, `data-chat-fork="msg_user"`, `data-chat-revert="msg_user"`, `aria-haspopup="menu"`, `aria-expanded="false"`} {
+	for _, want := range []string{`data-chat-message-actions`, `data-chat-message-id="msg_user"`, `role="button" aria-pressed="false"`, `class="chat-markdown-source"`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("snapshot missing contextual message action %q: %s", want, body)
 		}
 	}
-	if strings.Count(body, `data-chat-message-actions`) != 2 || strings.Count(body, `class="chat-message-menu"`) != 2 || strings.Count(body, `data-chat-copy-message`) != 2 {
-		t.Fatalf("snapshot did not render user actions and assistant copy action: %s", body)
-	}
-	if strings.Contains(body, `data-chat-fork="msg_assistant"`) || strings.Contains(body, `data-chat-revert="msg_assistant"`) {
-		t.Fatalf("snapshot rendered lifecycle actions for an assistant message: %s", body)
+	if strings.Count(body, `data-chat-message-actions`) != 2 || strings.Contains(body, `chat-message-menu`) {
+		t.Fatalf("snapshot did not render selectable messages without popup menus: %s", body)
 	}
 	for _, source := range []string{`class="chat-markdown-source" hidden>working</span>`, `class="chat-markdown-source" hidden>hello **phone**</span>`} {
 		if !strings.Contains(body, source) {
@@ -327,9 +324,10 @@ func TestChatExpansionJavaScriptContract(t *testing.T) {
 		`detail.hasAttribute("data-chat-detail-url")`,
 		`historyPage.className = "chat-history-page"`,
 		`:scope > [data-chat-block]`,
-		`function openChatMessageActions(message, focusMenu)`,
+		`function openChatMessageActions(message)`,
 		`function closeChatMessageActions(returnFocus)`,
-		`[data-chat-copy-message]`,
+		`function syncChatMessageSelection()`,
+		`selectedChatMessage()`,
 		`message.querySelectorAll(".chat-markdown-source")`,
 		`navigator.clipboard.writeText(text)`,
 		`option.dataset.fieldType === "multiselect" && option.checked`,
@@ -341,7 +339,7 @@ func TestChatExpansionJavaScriptContract(t *testing.T) {
 		}
 	}
 	css := do(t, s.Handler(), "GET", "/static/app.css", "").Body.String()
-	for _, want := range []string{`.chat-message-menu {`, `position: absolute`, `.chat-message-menu[hidden] { display: none; }`, `.chat-choice {`, `.chat-choice:has(input:checked)::before { content: "✓"; }`, `clip: rect(0, 0, 0, 0)`, `.chat-message:not(.chat-message-user):not(.chat-message-assistant) {`, `background: transparent`, `box-shadow: none`} {
+	for _, want := range []string{`[data-chat-message-actions].is-selected {`, `.chat-choice {`, `.chat-choice:has(input:checked)::before { content: "✓"; }`, `clip: rect(0, 0, 0, 0)`, `.chat-message:not(.chat-message-user):not(.chat-message-assistant) {`, `background: transparent`, `box-shadow: none`} {
 		if !strings.Contains(css, want) {
 			t.Errorf("contextual message action CSS missing %q", want)
 		}
@@ -888,7 +886,7 @@ func TestGeneralChatSession(t *testing.T) {
 	if w.Code != http.StatusCreated {
 		t.Fatalf("code = %d body = %s", w.Code, w.Body.String())
 	}
-	if !strings.Contains(prime, "general-purpose coding assistant") || !strings.Contains(prime, "never call workflow endpoints") {
+	if !strings.Contains(prime, "general-purpose coding assistant") || !strings.Contains(prime, "Never hand-edit .lessmess/workflow/") || !strings.Contains(prime, "lessmess-scaffold") {
 		t.Fatalf("unexpected prime: %s", prime)
 	}
 	entries := s.sessions.listUnassigned()

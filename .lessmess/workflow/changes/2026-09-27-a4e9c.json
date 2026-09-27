@@ -1,0 +1,60 @@
+{
+  "version": 1,
+  "id": "2026-09-27-a4e9c",
+  "title": "Workflow skills and compaction re-prime",
+  "prefix": "SKIL",
+  "branch": "main",
+  "status": {
+    "value": "Done",
+    "derived": false
+  },
+  "created": "2026-09-27",
+  "updated": "2026-09-27",
+  "tasks": [
+    {
+      "id": "SKIL-00",
+      "seq": 0,
+      "title": "Rewrite base prompt modules as lean mission plus skill pointers",
+      "file": "tasks/00-rewrite-base-prompt-modules-as-lean-miss.md",
+      "status": "Test",
+      "updated": "2026-09-27",
+      "notes": "Modules rewritten to discussion/change.session/task.session v3 + chat v2 in internal/server/instructions.json; change.handoff and closeout retired as injected modules; worktree untouched; all selection/content pins updated across instructions_test, changesession_test, autosession_test, mapping_test, chat_test, settingswiring_test, settingschange_test; internal/server tests green."
+    },
+    {
+      "id": "SKIL-01",
+      "seq": 1,
+      "title": "Serve the four workflow skills via an HTTP catalog",
+      "file": "tasks/01-serve-the-four-workflow-skills-via-an-ht.md",
+      "status": "Test",
+      "updated": "2026-09-27",
+      "notes": "internal/server/skills.go + embedded skills.json serve GET /skills/index.json (4 skills, sha256 content-hash version) and GET /skills/\u003cname\u003e/\u003cname\u003e.md with frontmatter and apiBase substitution; handler tests cover manifest shape, hash stability, gates, unbound-session welcome and 404s; live smoke fetched index and scaffold markdown successfully."
+    },
+    {
+      "id": "SKIL-02",
+      "seq": 2,
+      "title": "Point the served opencode.json at the skills catalog",
+      "file": "tasks/02-point-the-served-opencode-json-at-the-sk.md",
+      "status": "Test",
+      "updated": "2026-09-27",
+      "notes": "internal/server/skillsconfig.go: order-preserving idempotent patch (adds, updates stale lessmess /skills/ URLs, preserves foreign entries, refuses JSONC); wired via Server.EnsureSkillsCatalog in the boot closure; table tests plus live smoke observed the entry written into opencode.json."
+    },
+    {
+      "id": "SKIL-03",
+      "seq": 3,
+      "title": "Snapshot-only compaction re-prime",
+      "file": "tasks/03-snapshot-only-compaction-re-prime.md",
+      "status": "Test",
+      "updated": "2026-09-27",
+      "notes": "internal/server/reprime.go compactionWatch + maybeReprime; hooks in sessionCompact (queue mark), chatSnapshot (observe completed compactions, covers auto-compaction), chatPrompt and sessionDeliver (wrap with binding line + fresh snapshot + skills reminder); tests cover queued, observed, unbound, fail-open and deliver parity."
+    },
+    {
+      "id": "SKIL-04",
+      "seq": 4,
+      "title": "Verification pass and end-to-end smoke",
+      "file": "tasks/04-verification-pass-and-end-to-end-smoke.md",
+      "status": "Test",
+      "updated": "2026-09-27",
+      "notes": "go vet ./... clean; go test ./... exit 0; lessmess validate: zero findings for a4e9c; end-to-end smoke on a temporary serve instance: catalog index + skill markdown fetched, opencode.json patched, OpenCode advertised lessmess-task and lessmess-handoff into a live session and dropped them when the catalog went away — both lifecycle directions confirmed. README updated."
+    }
+  ]
+}

@@ -1,7 +1,7 @@
 <!-- tasktracker:begin -->
 # Structure: internal/server
 
-<!-- tasktracker-meta: refreshed=2026-09-24 source=2026-09-24-0zyrp tree=b31c19cf6077 -->
+<!-- tasktracker-meta: refreshed=2026-09-27 source=2026-09-27-a4e9c tree=e45d22cb19ce -->
 
 HTTP server over the store: HTML pages, JSON endpoints, SSE updates, session mapping, PTY terminal, and the docs refresh queue
 
@@ -13,7 +13,7 @@ HTTP server over the store: HTML pages, JSON endpoints, SSE updates, session map
 | `accent_test.go` | Tests for the palette, roll-once resolution and persistence, fail-open ids, and accent validation, options, and allowlist wiring. |
 | `autosession.go` | Once-only auto-spawn markers (`.lessmess/autosession.json`) for decomposed-task sessions. |
 | `autosession_test.go` | Tests for auto-spawn-once semantics, retry after spawn failure, and the task session endpoints. |
-| `basepath_test.go` | — |
+| `basepath_test.go` | Tests for base-aware URL emission — prefixed redirects, `HX-Redirect`, tasks-feed links, and chat tool URLs — with legacy empty-base output pinned byte-for-byte. |
 | `board_nested_test.go` | Tests for nested task boards: drill-down, recursive counts, close gates, and subtask creation. |
 | `bootstrap_test.go` | Tests the full bootstrap loop against a real store, asserting hot-open after bootstrap. |
 | `brandassets.go` | Serves `/icon.svg`, `/favicon.ico`, and `/apple-touch-icon.png` rendered with the effective accent, with ETag and 304 revalidation. |
@@ -35,8 +35,8 @@ HTTP server over the store: HTML pages, JSON endpoints, SSE updates, session map
 | `explorer_test.go` | Tests for the explorer view, tree rendering, and chat endpoint. |
 | `gitcommit.go` | Read-only git status helper plus repo-wide commit-all endpoints and prompt. |
 | `gitcommit_test.go` | Tests for git status parsing and the repo-wide commit-all flow. |
-| `hub.go` | — |
-| `hub_test.go` | — |
+| `hub.go` | Hub mode: projects landing page and `/api/projects` at the root, every registry project mounted at `/p/<slug>/` with hot add/remove, registry-file reconciliation, and unavailable-slot retry. |
+| `hub_test.go` | Tests for hub mounting and isolation, setup hot-swap under a prefix, the add/remove API, trail data attributes, legacy trail preservation, registry self-heal, and unavailable-slot retry. |
 | `instructions.go` | Prime-composition engine: loads and validates the embedded instruction-module manifest and renders each session's prime from modules selected by audience and change state. |
 | `instructions.json` | Embedded manifest of versioned instruction modules (discussion, change.session, change.handoff, worktree, task.session, closeout) composed into session primes. |
 | `instructions_test.go` | Tests for manifest validity, deterministic audience selection, placeholder and snapshot rendering, and the instructions endpoint. |
@@ -60,6 +60,8 @@ HTTP server over the store: HTML pages, JSON endpoints, SSE updates, session map
 | `render.go` | HTML templates, markdown rendering, static assets |
 | `render_nested_test.go` | Tests for nested board markup, task-detail doc context, and the container ledger endpoint. |
 | `render_test.go` | Tests for rendering and HTML pages |
+| `reprime.go` | — |
+| `reprime_test.go` | — |
 | `server.go` | Server struct, routes, core handlers, SSE stream |
 | `server_test.go` | Tests for core routes and handlers |
 | `sessionlifecycle.go` | Session lifecycle endpoints: navigation, fork, staged revert, compact, queued delivery and inbox, children, rename, export, and delete confirmation. |
@@ -76,9 +78,14 @@ HTTP server over the store: HTML pages, JSON endpoints, SSE updates, session map
 | `setup_test.go` | Tests for the setup shell, its wizard page, and route guards. |
 | `setupseed.go` | Opt-in wizard docs-seed job: POST /api/setup/docs-seed runs one docs.Seed per repo, polled via GET /api/setup/docs-seed-status. |
 | `setupseed_test.go` | Tests for the seed job lifecycle and configured agent/model pass-through. |
+| `skills.go` | — |
+| `skills.json` | — |
+| `skills_test.go` | — |
+| `skillsconfig.go` | — |
+| `skillsconfig_test.go` | — |
 | `spawnfallback.go` | Persists de-escalated session spawns (`.lessmess/spawn-fallback.json`) behind the index banner, with fail-open reads and best-effort writes. |
 | `spawnfallback_test.go` | Tests for the spawn de-escalation ladder outcomes, the record lifecycle and fail-open reads, and the index fallback banner. |
-| `tasksfeed_test.go` | — |
+| `tasksfeed_test.go` | Tests for the chat Work panel's tasks feed: change-root rows, task scoping, and error shapes. |
 | `taskstate.go` | Deterministic task-state endpoints (task status, update, reorder, decisions) with workflow rules enforced server-side and the user-only Done transition gated on the X-Lessmess-UI header. |
 | `taskstate_test.go` | Tests for the task-state endpoints: status transitions with evidence, user-gated Done, update, reorder, and decisions. |
 | `touched.go` | Derives covered docs dirs touched by a change |

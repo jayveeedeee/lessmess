@@ -72,16 +72,17 @@ func TestTaskPromptContent(t *testing.T) {
 	}
 	p, modules := s.taskPrime("2026-09-10-0", n, "ses_task")
 	for _, want := range []string{
-		"bound to task FIX-00 of change 2026-09-10-0",
+		"planning and execution assistant for task FIX-00 of change 2026-09-10-0",
 		"tasks/00-first.md",
 		"PLAN ONLY",
-		"every subtask starts",
-		"stays exactly in the state it was in when the plan was built",
+		"Planning never changes any status",
 		"Execution of any subtask begins only when the user explicitly says so",
-		"NEVER set your task or its subtasks to Done",
-		"PROPOSE it when work reveals complexity",
+		"never set your task or a subtask to Done yourself",
+		"lessmess-task",
+		"lessmess-closeout",
+		"lessmess-handoff",
 		"FIX-00.00: implement the parser",
-		"NEVER create a new change directory",
+		"never scaffold",
 	} {
 		if !strings.Contains(p, want) {
 			t.Errorf("task prompt missing %q", want)
@@ -89,7 +90,7 @@ func TestTaskPromptContent(t *testing.T) {
 	}
 	// Deterministic selection: the task audience picks exactly these
 	// modules, and the state snapshot is injected.
-	if strings.Join(modules, ",") != "task.session,closeout" {
+	if strings.Join(modules, ",") != "task.session" {
 		t.Errorf("modules = %v, want [task.session closeout]", modules)
 	}
 	if !strings.Contains(p, "Current state (tool-injected; authoritative)") || !strings.Contains(p, "FIX-01") {
@@ -119,7 +120,7 @@ func TestAutoSpawnOncePerContainer(t *testing.T) {
 	// The prime was the task prompt.
 	select {
 	case p := <-fake.prompts:
-		if !strings.Contains(p, "bound to task FIX-00 of change 2026-09-10-0") {
+		if !strings.Contains(p, "for task FIX-00 of change 2026-09-10-0") {
 			t.Errorf("prime = %.120s", p)
 		}
 	default:
@@ -204,7 +205,7 @@ func TestCreateTaskSessionEndpoint(t *testing.T) {
 	if resp.Task != "FIX-01" {
 		t.Errorf("task = %q", resp.Task)
 	}
-	if !strings.Contains(prompted, "bound to task FIX-01 of change 2026-09-10-0") {
+	if !strings.Contains(prompted, "for task FIX-01 of change 2026-09-10-0") {
 		t.Errorf("prompt = %.120s", prompted)
 	}
 	// The manual creation satisfies the auto-spawn marker.

@@ -232,16 +232,27 @@ the binary (`internal/server/instructions.json`) — repositories carry only a
 short pointer in `AGENTS.md`, so refining an instruction needs no
 repository-file updates and can never go stale in downstream repos.
 
-- **Modules** (`discussion`, `change.session`, `change.handoff`, `worktree`,
-  `closeout`, `task.session`) are selected by session kind and change/task
-  state — e.g. the `worktree` module is injected only for worktree-backed
-  changes; a discussion session never sees task rules.
+- **Modules** (`discussion`, `change.session`, `worktree`, `task.session`,
+  `chat`) are selected by session kind and change/task state — e.g. the
+  `worktree` module is injected only for worktree-backed changes; a
+  discussion session never sees task rules. The procedure text that used to
+  live in injected modules (scaffold, task endpoints, handoff, closeout)
+  now lives in the four `lessmess-*` skills below.
 - **The current state is injected too**: change and task primes carry a
   deterministic view of the change's state (the same generated markdown the
   ledger modal shows), so agents never parse state files.
 - **Auditability**: every spawn logs and records the injected module IDs
   (`.lessmess/sessions.json`), and `GET /workflow/instructions` serves the
   module manifest.
+- **Skills carry the procedures**: the base prompts stay lean and point at
+  four skills (`lessmess-scaffold`, `lessmess-task`, `lessmess-handoff`,
+  `lessmess-closeout`) served by the Go service as an OpenCode skill
+  catalog — `GET /skills/index.json` plus one markdown per skill — so
+  they survive compaction (the skill listing is re-supplied at every
+  model step) and can be reloaded any time. `serve` points the served
+  repository's `opencode.json` at the catalog on boot, and after a
+  compaction the next prompt to a bound session re-injects its binding
+  and a fresh state snapshot.
 
 ## Settings
 

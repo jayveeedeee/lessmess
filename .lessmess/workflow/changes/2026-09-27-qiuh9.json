@@ -1,0 +1,85 @@
+{
+  "version": 1,
+  "id": "2026-09-27-qiuh9",
+  "title": "Busy composer queue/steer pill",
+  "prefix": "PILL",
+  "branch": "main",
+  "status": {
+    "value": "Done",
+    "derived": false
+  },
+  "created": "2026-09-27",
+  "updated": "2026-09-27",
+  "tasks": [
+    {
+      "id": "PILL-00",
+      "seq": 0,
+      "title": "Composer pill markup and styles",
+      "file": "tasks/00-composer-pill-markup-and-styles.md",
+      "status": "Test",
+      "updated": "2026-09-27",
+      "notes": "Embedded-assets build succeeded; composer contract test passes with three icon-only segments, 2px dividers, expansion and reduced-motion CSS assertions. Visual check follows in PILL-02. Replaced the box glyph with three stacked queue lines ending in a forward arrow; embedded composer contract asserts the new SVG path and icon-only Stop | Steer | Queue order. go test ./... and go vet ./... pass; running port 9090 serves the new markup. Pill now keeps a fixed 22px border radius at 44px collapsed and 132px expanded widths, animating width only. Headless Chrome sampled 44→127→132→52px through expansion/collapse and computed borderTopLeftRadius remained 22px throughout. CSS contract test passes; rebuilt port 9090 serves the update."
+    },
+    {
+      "id": "PILL-01",
+      "seq": 1,
+      "title": "Three-state composer action logic",
+      "file": "tasks/01-three-state-composer-action-logic.md",
+      "status": "Test",
+      "dependsOn": [
+        "PILL-00"
+      ],
+      "updated": "2026-09-27",
+      "notes": "Headless Chrome against rebuilt binary with mocked session endpoints: busy empty 44px stop, typing expands to 132px and enables steer/queue; queue click posts delivery=queue, steer click posts delivery=steer, stop click posts /chat/interrupt; draft clears and pill collapses after each delivery. Composer contract tests pass."
+    },
+    {
+      "id": "PILL-02",
+      "seq": 2,
+      "title": "Verify pill end-to-end",
+      "file": "tasks/02-verify-pill-end-to-end.md",
+      "status": "Test",
+      "dependsOn": [
+        "PILL-00",
+        "PILL-01"
+      ],
+      "updated": "2026-09-27",
+      "notes": "CGO_ENABLED=0 go build to isolated temp binary, go vet ./..., go test ./..., node --check web/static/app.js, git diff --check all pass. Headless Chrome against rebuilt port 9092 with mocked session: stop/steer/queue requests, Enter queues, mutation disables all three, file-only draft expands, idle restores send, 390px viewport has no overflow, reduced-motion transition is 0s. Workflow validator violations=[] (six pre-existing docs warnings). After queue icon revision, go vet ./..., go test ./..., git diff --check and workflow validate pass (zero violations; pre-existing docs warnings only). Rebuilt ./lessmess and restarted hub service on port 9090; HTML 200 serves the new list-and-forward-arrow queue SVG. Previous interaction and mobile tests remain valid because only the icon path changed. After fixed-radius animation update: CGO_ENABLED=0 go build, go vet ./..., go test ./..., node --check and git diff --check pass; workflow validate reports no violations. Headless Chrome measured constant 22px radius during expansion and collapse. Rebuilt hub service is listening on port 9090 and serves the new CSS."
+    },
+    {
+      "id": "PILL-03",
+      "seq": 3,
+      "title": "Show pending follow-ups in the thread",
+      "file": "tasks/03-show-pending-follow-ups-in-the-thread.md",
+      "status": "Test",
+      "dependsOn": [
+        "PILL-01"
+      ],
+      "updated": "2026-09-27",
+      "notes": "Rebuilt and restarted port 9090. Headless Chrome with mocked OpenCode: queue submit rendered a queued user bubble inside #chat-transcript, dotted border and Cancel; old strip and delivery selector absent; pending survived a changed snapshot; matching delivered message suppressed duplicate; DELETE cancel removed it. At 390px the bubble and button fit with no horizontal overflow. go vet ./..., go test ./..., node --check, git diff --check and workflow validation pass (zero violations; existing docs warnings only)."
+    },
+    {
+      "id": "PILL-04",
+      "seq": 4,
+      "title": "Select pending message for cancel pill",
+      "file": "tasks/04-select-pending-message-for-cancel-pill.md",
+      "status": "Test",
+      "dependsOn": [
+        "PILL-03"
+      ],
+      "updated": "2026-09-27",
+      "notes": "Headless Chrome against rebuilt port 9090 with mocked OpenCode: click/keyboard selection toggles brighter accent border and Stop | ×; deselection restores Stop or Stop | Steer | Queue without losing draft; typing deselects; poll rerender preserves selection and keyboard focus; Stop posts interrupt, × posts inbox DELETE and clears item. Shared width sizing yields 44/88/132px with constant 22px radius; 390px viewport has no overflow. go vet ./..., go test ./..., node --check, git diff --check, workflow validation pass (zero violations; pre-existing docs warnings only)."
+    },
+    {
+      "id": "PILL-05",
+      "seq": 5,
+      "title": "Show selected message actions in composer pill",
+      "file": "tasks/05-show-selected-message-actions-in-compose.md",
+      "status": "Test",
+      "dependsOn": [
+        "PILL-04"
+      ],
+      "updated": "2026-09-27",
+      "notes": "Rebuilt and restarted 9090. Headless Chrome with mocked session snapshot/inbox: user selection shows Send/Stop+Copy/Fork/Revert (176px); assistant shows Send/Stop+Copy (88px); selected long message actions remain in composer; copy writes raw Markdown; revert opens existing dialog; fork posts selected ID; clicking again, Escape, outside click, and typing clear selection; pending selection replaces regular selection; draft survives; changed snapshot preserves selection and keyboard focus. Idle Send stays available; 390px viewport has no horizontal overflow. go vet ./..., go test ./..., node --check, git diff --check, validation all pass (docs warnings pre-existing)."
+    }
+  ]
+}

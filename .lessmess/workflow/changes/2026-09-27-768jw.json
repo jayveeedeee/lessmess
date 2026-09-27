@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "id": "2026-09-27-768jw",
+  "title": "Provider filter for runtime model menu",
+  "prefix": "PMF",
+  "branch": "main",
+  "status": {
+    "value": "Done",
+    "derived": false
+  },
+  "created": "2026-09-27",
+  "updated": "2026-09-27",
+  "tasks": [
+    {
+      "id": "PMF-00",
+      "seq": 0,
+      "title": "Add provider filter to chat controls sheet",
+      "file": "tasks/00-add-provider-filter-to-chat-controls-she.md",
+      "status": "Test",
+      "updated": "2026-09-27",
+      "notes": "node --check web/static/app.js passes; go test ./internal/server passes new assertions pinning the provider select markup (TestChatAccessibilityContract) and the filter JS served from /static/app.js (composer navigation contract). Live visual check pending the usual rebuild+restart of the serving binary."
+    },
+    {
+      "id": "PMF-01",
+      "seq": 1,
+      "title": "Cover provider filter in render tests and verify build",
+      "file": "tasks/01-cover-provider-filter-in-render-tests-an.md",
+      "status": "Test",
+      "updated": "2026-09-27",
+      "notes": "go vet ./... clean; CGO_ENABLED=0 go build -o lessmess ./cmd/lessmess succeeds; go test ./... all packages ok (server 19.4s) including the new render-test assertions; ./lessmess validate clean (only the pre-existing docs-gardener warnings, which are advisory)."
+    },
+    {
+      "id": "PMF-02",
+      "seq": 2,
+      "title": "Stage control selections behind an Apply button",
+      "file": "tasks/02-stage-control-selections-behind-an-apply.md",
+      "status": "Test",
+      "updated": "2026-09-27",
+      "notes": "node --check app.js passes; go vet clean; go test ./... all packages ok (server 19.6s) with updated render-test assertions pinning the staging JS and draft-row markup; CGO_ENABLED=0 build succeeds; lessmess validate clean (only pre-existing advisory docs warnings). Rebuilt + restarted the server (PID 76063): /static/app.js serves chatStageControl + apply wiring (5 hits), app shell HTML contains #chat-controls-apply, app.css serves .chat-controls-draft (4 hits)."
+    }
+  ]
+}

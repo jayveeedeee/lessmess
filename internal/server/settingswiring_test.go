@@ -166,10 +166,10 @@ func TestPromptAddendaAppended(t *testing.T) {
 	if len(cap.prompts) != 2 {
 		t.Fatalf("prompts = %d", len(cap.prompts))
 	}
-	if !strings.Contains(cap.prompts[0], "planning and execution assistant") || !strings.HasSuffix(cap.prompts[0], "\n\nDISCUSSION-ADDENDUM") {
+	if !strings.Contains(cap.prompts[0], "planning assistant for a NEW change") || !strings.HasSuffix(cap.prompts[0], "\n\nDISCUSSION-ADDENDUM") {
 		t.Errorf("discussion prompt missing base or addendum: %q…", cap.prompts[0][:80])
 	}
-	if !strings.Contains(cap.prompts[1], "change execution assistant") || !strings.HasSuffix(cap.prompts[1], "\n\nCHANGE-ADDENDUM") {
+	if !strings.Contains(cap.prompts[1], "execution assistant for change") || !strings.HasSuffix(cap.prompts[1], "\n\nCHANGE-ADDENDUM") {
 		t.Errorf("change prompt missing base or addendum: %q…", cap.prompts[1][:80])
 	}
 }

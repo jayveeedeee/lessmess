@@ -303,6 +303,66 @@ func (s *Server) sessionRevertCommit(w http.ResponseWriter, r *http.Request) {
 func (s *Server) sessionRevertClear(w http.ResponseWriter, r *http.Request) {
 	s.revertFinal(w, r, false)
 }
+
+// sessionRevert applies a whole revert in one request: stage the chosen
+// message, re-read the authoritative staged state, then commit it. The client
+// dialog carries the user's confirmation; the confirmation guard still pins
+// the action to the session state the dialog was opened against. A stage that
+// cannot proceed to commit leaves the staged state in place for the
+// Controls-drawer recovery path.
+func (s *Server) sessionRevert(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("sessionID")
+	if !s.lifecycleReady(w, id) {
+		return
+	}
+	var req struct {
+		MessageID    string                `json:"messageID"`
+		Files        bool                  `json:"files"`
+		Confirmation lifecycleConfirmation `json:"confirmation"`
+	}
+	if !decodeChatJSON(w, r, &req) {
+		return
+	}
+	if !validChatID(req.MessageID, "msg_") {
+		writeJSON(w, 400, map[string]string{"error": "valid msg_ messageID is required"})
+		return
+	}
+	session, ok := s.confirmedIdle(w, r, id, req.Confirmation)
+	if !ok {
+		return
+	}
+	if session.Revert != nil {
+		writeJSON(w, 409, map[string]string{"error": "a revert is already staged; commit or cancel it in the Controls drawer first"})
+		return
+	}
+	cap, ok := s.lifecycleCapabilities(w, r)
+	if !ok {
+		return
+	}
+	if !cap.RevertStage || !cap.RevertCommit {
+		writeLifecycleError(w, opencode.ErrCapabilityUnavailable)
+		return
+	}
+	if err := s.oc.StageRevert(r.Context(), cap, id, req.MessageID, req.Files); err != nil {
+		writeLifecycleError(w, err)
+		return
+	}
+	session, err := s.oc.GetSession(r.Context(), id)
+	if err != nil {
+		writeJSON(w, 502, map[string]string{"error": "revert staged but its staged state could not be read; resolve it from the Controls drawer"})
+		return
+	}
+	if session.Revert == nil || session.Revert.MessageID != req.MessageID {
+		writeJSON(w, 502, map[string]string{"error": "staged revert does not match the requested message; resolve it from the Controls drawer"})
+		return
+	}
+	if err := s.oc.CommitRevert(r.Context(), cap, id); err != nil {
+		writeLifecycleError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (s *Server) revertFinal(w http.ResponseWriter, r *http.Request, commit bool) {
 	id := r.PathValue("sessionID")
 	if !s.lifecycleReady(w, id) {
@@ -379,6 +439,11 @@ func (s *Server) sessionCompact(w http.ResponseWriter, r *http.Request) {
 		writeLifecycleError(w, err)
 		return
 	}
+	// Queue the compaction for the re-prime: the session's next prompt
+	// carries a fresh binding line and state snapshot.
+	if s.compacts != nil {
+		s.compacts.markPending(id)
+	}
 	writeJSON(w, http.StatusAccepted, map[string]any{"inbox": item})
 }
 func (s *Server) sessionDeliver(w http.ResponseWriter, r *http.Request) {
@@ -427,7 +492,7 @@ func (s *Server) sessionDeliver(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	item, err := s.oc.DeliverPrompt(r.Context(), cap, id, req.ID, req.Text, files, skills, req.Delivery)
+	item, err := s.oc.DeliverPrompt(r.Context(), cap, id, req.ID, s.maybeReprime(id, req.Text), files, skills, req.Delivery)
 	if err != nil {
 		writeLifecycleError(w, err)
 		return

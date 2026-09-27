@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "id": "2026-09-27-hc6f8",
+  "title": "One-click chat revert",
+  "prefix": "RVT",
+  "branch": "main",
+  "status": {
+    "value": "Done",
+    "derived": false
+  },
+  "created": "2026-09-27",
+  "updated": "2026-09-27",
+  "decisionLog": [
+    {
+      "date": "2026-09-27",
+      "decision": "Combined server-side endpoint POST /api/sessions/{id}/revert (stage -\u003e re-read authoritative state -\u003e commit in one request) chosen over client-side chaining of /revert/stage + /revert/commit; the client confirm dialog carries user intent while the existing confirmation guard (sessionID+updated) pins the action to the observed session state. Fingerprint retyping removed as client-only friction."
+    }
+  ],
+  "tasks": [
+    {
+      "id": "RVT-00",
+      "seq": 0,
+      "title": "Combined server revert endpoint",
+      "file": "tasks/00-combined-server-revert-endpoint.md",
+      "status": "Test",
+      "updated": "2026-09-27",
+      "notes": "POST /api/sessions/{id}/revert added (sessionlifecycle.go sessionRevert: confirmedIdle guard, already-staged 409, dual capability precheck, stage -\u003e re-read -\u003e messageID match -\u003e commit). New tests: TestLifecycleCombinedRevertStagesThenCommits, TestLifecycleCombinedRevertGuards, TestLifecycleCombinedRevertCapabilityAndCommitFailure. go vet ./... clean; go test ./... all packages pass."
+    },
+    {
+      "id": "RVT-01",
+      "seq": 1,
+      "title": "Chat revert confirm dialog and one-click wiring",
+      "file": "tasks/01-chat-revert-confirm-dialog-and-one-click.md",
+      "status": "Test",
+      "updated": "2026-09-27",
+      "notes": "Confirm dialog added to layout.html inside the chat overlay (excerpt, collapsible lazily-loaded affected-files diff, files checkbox default unchecked, caveat, Confirm/Cancel, error+status lines). app.js: previewChatRevert/stage/fingerprint flow deleted; openRevertDialog/syncRevertDialog/closeRevertDialog/submitRevert post the combined /revert endpoint and restore the message text into cstate.drafts + #chat-prompt with focus on success; drawer staged-revert box kept as recovery with simplified commit/cancel (fingerprint input removed); Escape/backdrop/data-close-revert wired; capability+busy gating via renderChatLifecycle-\u003esyncRevertDialog. app.css dialog styles added, .chat-revert-preview selectors removed. TestIndexHTML pins dialog ids + new warning copy. node --check passes; go vet + go test ./... all green."
+    },
+    {
+      "id": "RVT-02",
+      "seq": 2,
+      "title": "End-to-end verification pass",
+      "file": "tasks/02-end-to-end-verification-pass.md",
+      "status": "Test",
+      "updated": "2026-09-27",
+      "notes": "Rebuilt ./lessmess (CGO_ENABLED=0 go build) and restarted the hub on :9090 (same serve invocation, .lessmess/serve-9090.log intact). Live: served index HTML carries chat-revert-dialog/confirm-btn/files-check ids and the new warning copy; served app.js carries openRevertDialog/submitRevert; POST /api/sessions/{id}/revert routed live (400 guard on bad messageID); dialog lazy diff fetch reaches upstream and the dialog surfaces failures as a muted note while Confirm stays enabled (verified upstream diff returns 400 for non-user message ids). Interactive click-through not possible from this session (agent sessions expose no user-message menus; no desktop browser connected) - manual checklist left to the user. lessmess validate: zero violations. go vet + full go test green."
+    }
+  ]
+}
