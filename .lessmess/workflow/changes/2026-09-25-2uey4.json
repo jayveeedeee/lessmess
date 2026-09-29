@@ -9,7 +9,7 @@
     "derived": true
   },
   "created": "2026-09-25",
-  "updated": "2026-09-25",
+  "updated": "2026-09-29",
   "tasks": [
     {
       "id": "CHAT-00",
@@ -42,6 +42,22 @@
       "file": "tasks/03-collapse-redundant-upstream-reads.md",
       "status": "Not started",
       "updated": "2026-09-25"
+    },
+    {
+      "id": "CHAT-04",
+      "seq": 4,
+      "title": "Quiet boot-time opencode.json skills patch",
+      "file": "tasks/04-quiet-boot-time-opencode-json-skills-pat.md",
+      "status": "Not started",
+      "updated": "2026-09-29"
+    },
+    {
+      "id": "CHAT-05",
+      "seq": 5,
+      "title": "Capability-detect the session wait route",
+      "file": "tasks/05-capability-detect-the-session-wait-route.md",
+      "status": "Not started",
+      "updated": "2026-09-29"
     }
   ]
 }

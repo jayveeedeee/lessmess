@@ -1,10 +1,9 @@
 package server
 
-// Normal-server docs seed surface: the same resumable seed job the setup
-// wizard drives, reachable outside onboarding so an interrupted or
-// budget-capped run can be continued with one call. State lives in the
-// shared package-level job registry and the .lessmess/docs-seed.json
-// cursor — CLI, wizard, and server runs all continue one another.
+// Normal-server docs seed surface: a resumable seed job reachable outside
+// onboarding so an interrupted or budget-capped run can be continued with
+// one call. State lives in the shared package-level job registry and the
+// .lessmess/docs-seed.json cursor, so CLI and server runs continue one another.
 
 import (
 	"encoding/json"
@@ -36,20 +35,15 @@ func (s *Server) docsSeed(w http.ResponseWriter, r *http.Request) {
 
 // docsSeedWith is the shared start path for POST /docs/seed.
 func (s *Server) docsSeedWith(w http.ResponseWriter, r *http.Request, req docsSeedRequest) {
+	if s.docsQ == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": s.docsInactiveMessage()})
+		return
+	}
 	if s.oc == nil {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "opencode integration unavailable"})
 		return
 	}
-	cfg, err := docs.LoadConfig(s.st.Dir)
-	if err != nil {
-		slog.Error("docs seed: load config", "err", err)
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "load coverage config: " + err.Error()})
-		return
-	}
-	if cfg == nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "docs coverage disabled (no agentsdocs.json)"})
-		return
-	}
+	cfg := s.docsQ.cfg
 	opts := docs.SeedOptions{Budget: req.Budget, Force: req.Force}
 	if !req.Force {
 		// Non-force runs target the dirs missing their doc files; an
@@ -89,7 +83,7 @@ func (s *Server) docsSeedStatus(w http.ResponseWriter, r *http.Request) {
 
 // docsExclusions handles GET /docs/exclusions: the top-level coverable
 // directories with their exclusion state — the editor's rows. Nested lazy
-// expansion remains a wizard capability (GET /api/setup/dirs?dir=…).
+// expansion uses GET /api/setup/dirs?dir=….
 func (s *Server) docsExclusions(w http.ResponseWriter, r *http.Request) {
 	cfg, err := docs.LoadConfig(s.st.Dir)
 	if err != nil {
@@ -110,10 +104,9 @@ type exclusionsSaveRequest struct {
 }
 
 // docsExclusionsSave handles POST /docs/exclusions: persist the editor's
-// selection to agentsdocs.json with the wizard's semantics — picker-
+// selection to agentsdocs.json with the Settings picker's semantics — picker-
 // representable patterns are replaced, hand-authored globs and stale names
-// are preserved. 503 without a coverage config (bootstrap owns creation);
-// 422 on an invalid pattern.
+// are preserved. 503 without a coverage config; 422 on an invalid pattern.
 func (s *Server) docsExclusionsSave(w http.ResponseWriter, r *http.Request) {
 	var req exclusionsSaveRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -125,6 +118,10 @@ func (s *Server) docsExclusionsSave(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "invalid exclude directory " + strconv.Quote(d)})
 			return
 		}
+	}
+	if !DocsEnabled(s.st.Dir) {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "docs are disabled; enable Experimental Docs in Settings → Docs first"})
+		return
 	}
 	if _, err := os.Stat(filepath.Join(s.st.Dir, docs.ConfigFile)); err != nil {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "docs coverage disabled (no agentsdocs.json)"})

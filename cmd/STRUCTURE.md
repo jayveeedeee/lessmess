@@ -1,7 +1,7 @@
 <!-- tasktracker:begin -->
 # Structure: cmd
 
-<!-- tasktracker-meta: refreshed=2026-09-12 source=manual tree=b04dd4854909 -->
+<!-- tasktracker-meta: refreshed=2026-09-29 source=2026-09-28-3zkr8 tree=ec3b3f9e0f50 -->
 
 Go command entrypoints, with one subdirectory per built program.
 

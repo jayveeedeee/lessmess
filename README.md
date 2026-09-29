@@ -37,8 +37,8 @@ lessmess migrate [--dry-run] [--dir .]
 # Bootstrap an uninitialized directory as a workflow repository
 lessmess init [--dir .]
 
-# Initial run-through that seeds the repo docs (see below)
-lessmess docs seed [--dry-run] [--budget N] [--dir .]
+# Seed docs after enabling and initializing Experimental Docs (see below)
+lessmess docs seed [--dry-run] [--force] [--budget N] [--dir .]
 ```
 
 `--dir` points at a repository root. Without it, `serve` starts in
@@ -119,36 +119,29 @@ redirect there until setup completes). The wizard walks through:
    button: the `opencode2` binary, the opencode background service and its
    credentials, `git`, and that the directory is writable. The wizard
    detects and instructs; it never tries to start anything itself.
-2. **Bootstrap** — creates the workflow files merge-safely (same artifacts
+2. **Project name** — saves the display name to the personal or project
+   settings layer, or keeps the repository folder name as the default.
+3. **Bootstrap** — creates the workflow files merge-safely (same artifacts
    as `lessmess init`: `AGENTS.md`, `.lessmess/workflow/index.json`,
-   `.gitignore`, `opencode.json`), with a separate choice of whether to
-   enable docs coverage (`agentsdocs.json`) and an **exclusion picker** for
-   it: a lazy directory tree (expand ▸ for nested folders) where checked
-   directories and their subtrees get no doc pairs — top-level picks also
-   exclude same-named directories elsewhere, and built-in exclusions like
-   `node_modules` are pre-checked and disabled.
-   The full UI **hot-opens in place** — no restart.
-3. **Default agent and model** — picked from live lists served by the
+   `.gitignore`, `opencode.json`). The full UI **hot-opens in place** — no
+   restart. Experimental Docs is not part of bootstrap or onboarding.
+4. **Default agent and model** — picked from live lists served by the
    opencode service, saved to the personal layer (`.lessmess/settings.json`)
    or the project layer (`lessmess.json`), or skipped to use the service
    defaults.
-4. **Docs seeding — explicit opt-in** — "Generate docs now" runs a budgeted
-   seed (one opencode session per covered directory, honoring the chosen
-   agent/model) with live progress; skipping means nothing runs. Already-
-   summarized directories are skipped on re-runs.
 5. **Finish** — completion is recorded in `.lessmess/onboarding.json`
    (gitignored) and the wizard never nags again.
 
 On an already-initialized repository whose onboarding is incomplete, the
 index shows a dismissible banner linking to `/setup`; the Settings page has
-a permanent "Re-run the onboarding wizard" link. The CLI (`lessmess init`,
-`lessmess docs seed`) stays available for scripted setups, and `docs seed`
-honors the configured `session.agent`/`session.model` like every other
-session lessmess spawns.
+a permanent "Re-run the onboarding wizard" link. `lessmess init` stays
+available for scripted workflow setup. Experimental Docs is enabled and its
+coverage initialized separately in **Settings → Docs**; once enabled,
+`lessmess docs seed` honors the configured `session.agent`/`session.model`
+like every other session lessmess spawns.
 
 Setup API (for the wizard and other clients): `GET /setup`,
 `GET /api/setup/prereqs`, `GET /api/setup/dirs`, `POST /api/setup/bootstrap`,
-`POST /api/setup/docs-seed`, `GET /api/setup/docs-seed-status`,
 `POST /api/setup/complete`, `POST /api/setup/dismiss`.
 
 ### The web interface
@@ -269,7 +262,8 @@ hard-coded. Settings are layered:
 
 Everything is optional: a missing file means built-in defaults, and a
 malformed file falls back to defaults with a warning on the page. Saved
-values apply to new activity immediately — no restart.
+values apply to new activity immediately unless a setting explicitly notes a
+restart requirement.
 
 | Setting | Effect |
 | --- | --- |
@@ -278,10 +272,11 @@ values apply to new activity immediately — no restart.
 | `session.model` | Model for new sessions as `provider/model` (e.g. `anthropic/claude-sonnet-4-5`). Same validation. |
 | `prompts.discussion` / `change` / `commit` / `repoCommit` / `gardener` / `explorer` | Free text **appended** to the corresponding built-in prompt. Base prompts are never modified, so workflow safeguards stay intact. |
 | `git.defaultBranch` | Base branch for new change worktree branches (`change/<id>` is cut from it; empty uses the current branch at scaffold time). Always recorded on the change's index entry. |
-| `git.worktrees` | **Worktree per change** (default off — see the Worktree pipeline section below). When on, scaffolding creates a git branch and worktree per change, change sessions work there, and closing pushes the branch, opens a PR, and runs an agent review. |
+| `git.worktrees` | **Experimental — Worktree per change** (default off — see the Worktree pipeline section below). When on, scaffolding creates a git branch and worktree per change, change sessions work there, and closing pushes the branch, opens a PR, and runs an agent review. |
 | `git.reviewModel` | Model for PR review sessions as `provider/model`. Empty inherits `session.model`. |
 | `ui.showArchived` | List archived changes on the Changes page (default on). |
 | `ui.accent` | Accent color: one of a fixed palette (orange, teal, green, blue, violet, pink, fuchsia, red, amber, cyan). It tints the whole UI and the favicon/brand icon. With no value in either layer, the first run rolls a random color and saves it to the personal layer; setting **Auto** in both layers rolls a fresh random color on the next page load. Unknown values are rejected at save time. |
+| `docs.enabled` | **Experimental — Enable docs** (default off). The server activates docs only when this is effectively On and `agentsdocs.json` is readable at startup. With no config, save On, use **Initialize coverage**, then restart once. Turning docs off also takes effect after restart. |
 | `docs.autoGardenerOnClose` | Run the doc gardener automatically when a change closes (default on). |
 | `docs.gardenerModel` | Model for doc-gardener sessions, as `provider/model`. Empty inherits `session.model`; save-time validation applies when the service is reachable. |
 
@@ -297,13 +292,15 @@ validated against the live service when reachable — the service accepts
 unknown names at creation but then never runs the session),
 `GET /api/settings/options` (agent/model lists scoped to this repository,
 plus the static accent palette; `available:false` when the service is
-down — the palette is still served).
+down — the palette is still served). Experimental Docs adds
+`GET /docs/status` (saved/config/runtime/restart state) and the idempotent
+`POST /docs/initialize` config-only action.
 
-## Worktree pipeline (optional)
+## Worktree pipeline (experimental, optional)
 
-Off by default. With **Settings → Git → Worktree per change** enabled, each
-change is developed in its own git worktree on its own branch, isolated from
-the main tree and from other changes:
+Experimental and off by default. With **Settings → Git → Worktree per change**
+enabled, each change is developed in its own git worktree on its own branch,
+isolated from the main tree and from other changes:
 
 - **Scaffold** cuts branch `change/<id>` from the configured base branch
   (or the current branch), registers a worktree at
@@ -493,11 +490,11 @@ exposed to the browser because all service calls are made server-side.
 If the service is unreachable, lessmess starts normally without the
 integration (a warning is logged).
 
-## Repo docs management
+## Repo docs management (experimental)
 
-Beyond the change workflow, lessmess bootstraps and maintains agent-facing
-docs across a repository — so an agent entering any folder cold gets a map and
-the local learnings. Two files per covered folder:
+Experimental Docs is off by default. When enabled, lessmess maintains
+agent-facing docs across a repository so an agent entering any folder cold gets
+a map and the local learnings. Two files per covered folder:
 
 - **`STRUCTURE.md`** — a machine-owned navigation map (entries, purposes,
   child rollups, freshness metadata). Regenerated wholesale, deterministically;
@@ -507,12 +504,14 @@ the local learnings. Two files per covered folder:
   gardener consolidates in place rather than appends to. Everything outside the
   markers is human/agent-authored and preserved byte-for-byte.
 
-Coverage is configured by a committed [`agentsdocs.json`](agentsdocs.json)
-(include/exclude globs; hidden dirs and `changes/` are never covered). Without
-it, the whole subsystem is inert. `lessmess init` writes it along with a
-root `AGENTS.md` workflow pointer, the workflow state skeleton
-(`changes/` + `.lessmess/workflow/index.json`), `.gitignore` handling, and
-a starter `opencode.json`.
+Activation requires both an effective `docs.enabled: true` setting and a
+readable committed [`agentsdocs.json`](agentsdocs.json) coverage config
+(include/exclude globs; hidden dirs and `changes/` are never covered) at server
+startup. An existing config alone remains dormant after an upgrade. In
+**Settings → Docs**, save **Enable docs** as On, choose **Initialize coverage**
+when the config is absent, and restart lessmess once. Initialization writes
+only `agentsdocs.json`; it never reruns workflow bootstrap. `lessmess init`
+creates the workflow files only and no longer creates a coverage config.
 
 - **Seed**: `lessmess docs seed` walks the tree bottom-up, writes
   `STRUCTURE.md` skeletons, then runs one unattended opencode session per
@@ -527,9 +526,9 @@ a starter `opencode.json`.
   re-runs everything regardless. `GET /docs/seed-status` reports
   progress; `/api/validate` includes the missing-docs count, and the bell
   shows **Run missing docs (N)** while any directory is incomplete.
-- **Exclusions editor**: the Settings page's Docs section has the same
-  lazy expandable folder tree as the onboarding wizard — top-level and
-  nested picks alike — and saving persists the selection to
+- **Exclusions editor**: the Settings page's Docs section has a lazy
+  expandable folder tree — top-level and nested picks alike — and saving
+  persists the selection to
   `agentsdocs.json` (`GET`/`POST /docs/exclusions`) with the same
   semantics: picker-representable patterns are replaced, hand-authored
   globs and stale names are preserved. The root directory is always

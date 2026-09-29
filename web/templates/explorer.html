@@ -14,8 +14,8 @@
   {{else}}
   <h1>Project explorer</h1>
   <div class="error-box">
-    <p>The docs system is disabled for this repository: there is no <code>agentsdocs.json</code>.</p>
-    <p>Run <code>lessmess init</code> to bootstrap the repo and <code>lessmess docs seed</code> to generate the per-folder docs the explorer renders.</p>
+    <p>{{.Data.InactiveReason}}</p>
+    <p>Open <a href="{{.BasePath}}/settings#docs">Settings → Docs</a> to enable this experimental feature and initialize coverage.</p>
   </div>
   {{end}}
 </div>

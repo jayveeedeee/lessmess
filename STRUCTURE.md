@@ -1,7 +1,7 @@
 <!-- tasktracker:begin -->
 # Structure: tasktracker
 
-<!-- tasktracker-meta: refreshed=2026-09-27 source=2026-09-27-a4e9c tree=4e0f3df4dcbc -->
+<!-- tasktracker-meta: refreshed=2026-09-29 source=2026-09-28-3zkr8 tree=bdda2ae3bb38 -->
 
 Single-binary kanban server and docs toolkit for the changes/ workflow, with the CLI, Go packages, and embedded web UI at the repository root.
 

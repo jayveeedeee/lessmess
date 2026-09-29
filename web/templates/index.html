@@ -26,18 +26,29 @@
       <button type="submit" class="btn-accent">New change session</button>
     </form>
   </div>
-  <label class="sr-only" for="change-sort">Sort changes</label>
-  <select id="change-sort" class="change-sort">
-    <option value="updated:desc">Newest first</option>
-    <option value="updated:asc">Oldest first</option>
-    <option value="status:asc">By status</option>
-    <option value="tasks:desc">Most tasks</option>
-    <option value="title:asc">By title</option>
-  </select>
+  <div class="change-controls">
+    <label class="sr-only" for="change-sort">Sort changes</label>
+    <select id="change-sort" class="change-sort">
+      <option value="updated:desc">Newest first</option>
+      <option value="updated:asc">Oldest first</option>
+      <option value="status:asc">By status</option>
+      <option value="tasks:desc">Most tasks</option>
+      <option value="title:asc">By title</option>
+    </select>
+    <label class="sr-only" for="change-filter-status">Filter changes by status</label>
+    <select id="change-filter-status" class="change-sort">
+      <option value="">All</option>
+      <option value="Planned">Planned</option>
+      <option value="In progress">In progress</option>
+      <option value="Blocked">Blocked</option>
+      <option value="Done">Done</option>
+      <option value="Cancelled">Cancelled</option>
+    </select>
+  </div>
   <div id="change-cards" class="change-cards">
     {{range .Data.Changes}}
     <a class="change-card" href="{{$.BasePath}}/changes/{{.ID}}" data-change="{{.ID}}"
-       data-tasks="{{.Tasks}}" data-status-rank="{{.Status | statusRank}}" data-updated="{{.Updated}}"
+       data-tasks="{{.Tasks}}" data-status="{{.Status}}" data-status-rank="{{.Status | statusRank}}" data-updated="{{.Updated}}"
        data-title="{{.Title}}">
       <span class="change-card-name">{{.Title}}</span>
       <span class="change-card-meta">
@@ -48,6 +59,7 @@
     </a>
     {{end}}
   </div>
+  <p id="change-cards-empty" class="change-cards-empty" hidden>No changes match this filter.</p>
 </section>
 <section class="changes discussions">
   <div class="section-head">

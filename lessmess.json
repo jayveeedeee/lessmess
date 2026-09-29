@@ -15,5 +15,7 @@
   "ui": {
     "accent": "fuchsia"
   },
-  "docs": {}
+  "docs": {
+    "enabled": true
+  }
 }

@@ -29,6 +29,9 @@ func TestSettingsDefaultsOnly(t *testing.T) {
 	if eff.Git.Worktrees {
 		t.Errorf("worktrees default = true, want false")
 	}
+	if eff.Docs.Enabled {
+		t.Errorf("docs.enabled default = true, want false")
+	}
 	if eff.Git.ReviewModel != "" {
 		t.Errorf("reviewModel default = %q, want empty", eff.Git.ReviewModel)
 	}
@@ -37,8 +40,8 @@ func TestSettingsDefaultsOnly(t *testing.T) {
 			t.Errorf("sources[%s] = %q, want default", field, src)
 		}
 	}
-	if len(sources) != 16 {
-		t.Errorf("len(sources) = %d, want 16", len(sources))
+	if len(sources) != 17 {
+		t.Errorf("len(sources) = %d, want 17", len(sources))
 	}
 }
 
@@ -52,7 +55,7 @@ func TestSettingsProjectAndPersonalLayers(t *testing.T) {
 	writeJSONFile(t, settingsPersonalPath(dir), Settings{
 		Session: SessionSettings{Model: "me/personal-model"},
 		Git:     GitSettings{Worktrees: boolp(true)},
-		Docs:    DocsSettings{AutoGardenerOnClose: boolp(false)},
+		Docs:    DocsSettings{Enabled: boolp(true), AutoGardenerOnClose: boolp(false)},
 	})
 
 	eff, sources, loadErr := loadEffectiveSettings(dir)
@@ -78,6 +81,9 @@ func TestSettingsProjectAndPersonalLayers(t *testing.T) {
 	}
 	if eff.Docs.AutoGardenerOnClose != false || sources["docs.autoGardenerOnClose"] != "personal" {
 		t.Errorf("autoGardenerOnClose = %v (%s)", eff.Docs.AutoGardenerOnClose, sources["docs.autoGardenerOnClose"])
+	}
+	if !eff.Docs.Enabled || sources["docs.enabled"] != "personal" {
+		t.Errorf("docs.enabled = %v (%s), want true (personal)", eff.Docs.Enabled, sources["docs.enabled"])
 	}
 	if !eff.UI.ShowArchived || sources["ui.showArchived"] != "default" {
 		t.Errorf("showArchived = %v (%s), want true (default)", eff.UI.ShowArchived, sources["ui.showArchived"])
@@ -160,6 +166,24 @@ func TestSettingsMalformedFailsOpen(t *testing.T) {
 	}
 	if !eff.UI.ShowArchived {
 		t.Error("defaults must materialize despite a malformed project layer")
+	}
+	if DocsEnabled(dir) {
+		t.Error("DocsEnabled must fail open to false when no healthy layer enables it")
+	}
+}
+
+func TestDocsEnabledPrecedence(t *testing.T) {
+	dir := t.TempDir()
+	if DocsEnabled(dir) {
+		t.Fatal("empty settings: DocsEnabled = true, want false")
+	}
+	writeJSONFile(t, settingsProjectPath(dir), Settings{Docs: DocsSettings{Enabled: boolp(true)}})
+	if !DocsEnabled(dir) {
+		t.Fatal("project enabled: DocsEnabled = false, want true")
+	}
+	writeJSONFile(t, settingsPersonalPath(dir), Settings{Docs: DocsSettings{Enabled: boolp(false)}})
+	if DocsEnabled(dir) {
+		t.Fatal("personal override: DocsEnabled = true, want false")
 	}
 }
 

@@ -1,7 +1,7 @@
 <!-- tasktracker:begin -->
 # Structure: internal/server
 
-<!-- tasktracker-meta: refreshed=2026-09-27 source=2026-09-27-a4e9c tree=e45d22cb19ce -->
+<!-- tasktracker-meta: refreshed=2026-09-29 source=2026-09-28-3zkr8 tree=ca5555d5dd10 -->
 
 HTTP server over the store: HTML pages, JSON endpoints, SSE updates, session mapping, PTY terminal, and the docs refresh queue
 
@@ -29,6 +29,8 @@ HTTP server over the store: HTML pages, JSON endpoints, SSE updates, session map
 | `docsseed_test.go` | Tests for the seed endpoints (503s, 409, resume, force) and the exclusions round-trip. |
 | `docssession.go` | Doc gardener runner with confinement verify and restore |
 | `docssession_test.go` | Tests for gardener confinement and prompts |
+| `docssettings.go` | — |
+| `docssettings_test.go` | — |
 | `docswatch.go` | Fsnotify watcher emitting debounced events when covered docs change. |
 | `docswatch_test.go` | Tests for watcher events, temp and hidden ignores, and resync. |
 | `explorer.go` | Explorer page, tree fragment, and directory-scoped chat endpoints. |

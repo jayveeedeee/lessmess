@@ -116,6 +116,7 @@ func TestFilesAffectedSectionParsing(t *testing.T) {
 func docsServer(t *testing.T) (*Server, string) {
 	t.Helper()
 	st, dir := fixtureStore(t)
+	writeJSONFile(t, settingsPersonalPath(dir), Settings{Docs: DocsSettings{Enabled: boolp(true)}})
 	if err := os.WriteFile(filepath.Join(dir, docs.ConfigFile), []byte(`{"include":["**"],"exclude":["web/static"]}`+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -390,6 +391,76 @@ func TestDocsDisabledWithoutConfig(t *testing.T) {
 	w = do(t, s.Handler(), "POST", "/docs/refresh", "")
 	if w.Code != 200 || !strings.Contains(w.Body.String(), "disabled") {
 		t.Errorf("refresh without docs: %d %s", w.Code, w.Body)
+	}
+}
+
+func TestDocsDisabledWithConfigWhenSettingOff(t *testing.T) {
+	st, dir := fixtureStore(t)
+	if err := os.WriteFile(filepath.Join(dir, docs.ConfigFile), []byte(`{"include":["**"]}`+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s := New(st)
+	t.Cleanup(s.Close)
+	if s.docsQ != nil || s.docsW != nil {
+		t.Fatal("docs runtime must stay nil when docs.enabled is off")
+	}
+	state := s.docsRuntimeState()
+	if state.Enabled || !state.ConfigExists || !state.ConfigReadable || state.Active || state.RestartRequired {
+		t.Errorf("runtime state = %+v, want off + readable dormant config", state)
+	}
+}
+
+func TestDocsRuntimeStateRequiresRestartAfterLiveEnable(t *testing.T) {
+	st, dir := fixtureStore(t)
+	s := New(st)
+	t.Cleanup(s.Close)
+	writeJSONFile(t, settingsProjectPath(dir), Settings{Docs: DocsSettings{Enabled: boolp(true)}})
+	if err := os.WriteFile(filepath.Join(dir, docs.ConfigFile), []byte(`{"include":["**"]}`+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	state := s.docsRuntimeState()
+	if !state.Enabled || !state.ConfigReadable || state.Active || !state.RestartRequired {
+		t.Errorf("runtime state = %+v, want enabled/configured and restart required", state)
+	}
+	if msg := s.docsInactiveMessage(); !strings.Contains(msg, "restart") {
+		t.Errorf("inactive message = %q, want restart guidance", msg)
+	}
+}
+
+func TestDocsStartupEnabledWithoutConfig(t *testing.T) {
+	st, dir := fixtureStore(t)
+	writeJSONFile(t, settingsPersonalPath(dir), Settings{Docs: DocsSettings{Enabled: boolp(true)}})
+	s := New(st)
+	t.Cleanup(s.Close)
+	if s.docsQ != nil || s.docsW != nil {
+		t.Fatal("docs runtime must stay nil without agentsdocs.json")
+	}
+	state := s.docsRuntimeState()
+	if !state.Enabled || state.ConfigExists || state.ConfigReadable || state.Active || state.RestartRequired {
+		t.Errorf("runtime state = %+v, want enabled with missing config", state)
+	}
+	if msg := s.docsInactiveMessage(); !strings.Contains(msg, "not initialized") {
+		t.Errorf("inactive message = %q, want initialization guidance", msg)
+	}
+}
+
+func TestDocsStartupUnreadableConfig(t *testing.T) {
+	st, dir := fixtureStore(t)
+	writeJSONFile(t, settingsPersonalPath(dir), Settings{Docs: DocsSettings{Enabled: boolp(true)}})
+	if err := os.WriteFile(filepath.Join(dir, docs.ConfigFile), []byte("{broken"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s := New(st)
+	t.Cleanup(s.Close)
+	if s.docsQ != nil || s.docsW != nil {
+		t.Fatal("docs runtime must stay nil with an unreadable config")
+	}
+	state := s.docsRuntimeState()
+	if !state.Enabled || !state.ConfigExists || state.ConfigReadable || state.ConfigError == "" || state.Active {
+		t.Errorf("runtime state = %+v, want enabled with unreadable config", state)
+	}
+	if msg := s.docsInactiveMessage(); !strings.Contains(msg, "unreadable") {
+		t.Errorf("inactive message = %q, want unreadable-config guidance", msg)
 	}
 }
 

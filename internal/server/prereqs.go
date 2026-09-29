@@ -17,7 +17,6 @@ import (
 	"path/filepath"
 	"time"
 
-	"lessmess/internal/docs"
 	"lessmess/internal/opencode"
 	"lessmess/internal/store"
 )
@@ -179,14 +178,6 @@ func (env *setupEnv) runPrereqs(ctx context.Context) prereqsResponse {
 	} else {
 		add(prereqCheck{ID: "changes-present", Name: "workflow state", Status: "warn",
 			Detail: "changes/ does not exist yet; the bootstrap step creates it"})
-	}
-
-	// 6. docs coverage config (informational: drives the docs step's visibility).
-	if cfg, err := docs.LoadConfig(env.dir); err == nil && cfg != nil {
-		add(prereqCheck{ID: "docs-coverage", Name: "docs coverage", Status: "ok", Detail: "agentsdocs.json present; docs system enabled"})
-	} else {
-		add(prereqCheck{ID: "docs-coverage", Name: "docs coverage", Status: "warn",
-			Detail: "no agentsdocs.json; the bootstrap step can enable coverage, or the docs step is skipped"})
 	}
 
 	resp.Ready = true

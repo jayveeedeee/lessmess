@@ -107,8 +107,11 @@ type UISettings struct {
 	Accent       string `json:"accent,omitempty"`
 }
 
-// DocsSettings configure the docs subsystem.
+// DocsSettings configure the experimental docs subsystem. Enabled is the
+// primary feature gate (off by default); the remaining fields only tune an
+// enabled runtime.
 type DocsSettings struct {
+	Enabled             *bool  `json:"enabled,omitempty"`
 	AutoGardenerOnClose *bool  `json:"autoGardenerOnClose,omitempty"`
 	GardenerModel       string `json:"gardenerModel,omitempty"`
 }
@@ -145,6 +148,7 @@ type EffectiveUISettings struct {
 
 // EffectiveDocsSettings resolves DocsSettings to concrete values.
 type EffectiveDocsSettings struct {
+	Enabled             bool   `json:"enabled"`
 	AutoGardenerOnClose bool   `json:"autoGardenerOnClose"`
 	GardenerModel       string `json:"gardenerModel"`
 }
@@ -273,6 +277,7 @@ func mergeSettings(project, personal Settings) (EffectiveSettings, map[string]st
 
 	eff.UI.ShowArchived = pickBool("ui.showArchived", true, project.UI.ShowArchived, personal.UI.ShowArchived)
 	eff.UI.Accent = pickStr("ui.accent", project.UI.Accent, personal.UI.Accent)
+	eff.Docs.Enabled = pickBool("docs.enabled", false, project.Docs.Enabled, personal.Docs.Enabled)
 	eff.Docs.AutoGardenerOnClose = pickBool("docs.autoGardenerOnClose", true, project.Docs.AutoGardenerOnClose, personal.Docs.AutoGardenerOnClose)
 	eff.Docs.GardenerModel = pickStr("docs.gardenerModel", project.Docs.GardenerModel, personal.Docs.GardenerModel)
 
@@ -445,6 +450,17 @@ func SessionDefaults(repoDir string) (agent, model string) {
 		slog.Warn("settings load failed; using defaults", "err", loadErr)
 	}
 	return eff.Session.Agent, eff.Session.Model
+}
+
+// DocsEnabled returns the effective experimental docs feature gate for
+// repoDir. Malformed settings fail open to the built-in safe default (off),
+// matching every other settings read path.
+func DocsEnabled(repoDir string) bool {
+	eff, _, loadErr := loadEffectiveSettings(repoDir)
+	if loadErr != "" {
+		slog.Warn("settings load failed; using defaults", "err", loadErr)
+	}
+	return eff.Docs.Enabled
 }
 
 // GardenerModel returns the model for docs-gardener sessions: the

@@ -5,51 +5,82 @@
   "prefix": "EXP",
   "branch": "main",
   "status": {
-    "value": "Planned",
+    "value": "In progress",
     "derived": true
   },
   "created": "2026-09-24",
-  "updated": "2026-09-24",
+  "updated": "2026-09-27",
+  "decisionLog": [
+    {
+      "date": "2026-09-27",
+      "decision": "Docs is experimental and gated by docs.enabled (default Off); neither the onboarding wizard nor lessmess init creates docs coverage. Settings provides an explicit config-only Initialize coverage action, followed by one restart to activate the runtime."
+    },
+    {
+      "date": "2026-09-27",
+      "decision": "The existing git.worktrees behavior and default remain unchanged; Settings only adds an Experimental label and explanatory copy."
+    }
+  ],
   "tasks": [
     {
       "id": "EXP-00",
       "seq": 0,
       "title": "Settings plumbing for docs.enabled and the experimental badge",
       "file": "tasks/00-settings-plumbing-for-docs-enabled-and-t.md",
-      "status": "Not started",
-      "updated": "2026-09-24"
+      "status": "Test",
+      "updated": "2026-09-27",
+      "notes": "Added default-off docs.enabled across schema, layered merge/read helper, Settings UI/JS, discussions, experimental badges, and round-trip/default/precedence tests. go vet ./... and go test ./... pass."
     },
     {
       "id": "EXP-01",
       "seq": 1,
       "title": "Server gating of the docs subsystem on docs.enabled",
       "file": "tasks/01-server-gating-of-the-docs-subsystem-on-d.md",
-      "status": "Not started",
-      "updated": "2026-09-24"
+      "status": "Test",
+      "dependsOn": [
+        "EXP-00"
+      ],
+      "updated": "2026-09-27",
+      "notes": "Gated docs startup/runtime, refresh/seed/Explorer/validation, exclusions writes, and CLI validate/seed on docs.enabled; added off/missing/unreadable/restart state and dormant-config tests. go vet ./... and go test ./... pass."
     },
     {
       "id": "EXP-02",
       "seq": 2,
       "title": "Initialize-coverage flow in the Settings Docs section",
       "file": "tasks/02-initialize-coverage-flow-in-the-settings.md",
-      "status": "Not started",
-      "updated": "2026-09-24"
+      "status": "Test",
+      "dependsOn": [
+        "EXP-00",
+        "EXP-01"
+      ],
+      "updated": "2026-09-27",
+      "notes": "Added config-only docs.InitConfig, GET /docs/status and idempotent POST /docs/initialize with malformed-file protection, plus Settings status/init/restart UI and exclusions synchronization. Narrow-write, state-matrix, endpoint, and render tests pass; go vet ./... and go test ./... pass."
     },
     {
       "id": "EXP-03",
       "seq": 3,
       "title": "De-docs the wizard and lessmess init",
       "file": "tasks/03-de-docs-the-wizard-and-lessmess-init.md",
-      "status": "Not started",
-      "updated": "2026-09-24"
+      "status": "Test",
+      "dependsOn": [
+        "EXP-02"
+      ],
+      "updated": "2026-09-27",
+      "notes": "Removed docs controls/step/prereq and setup seed routes from the five-step wizard; bootstrap and lessmess init now create workflow artifacts only. Preserved Settings exclusion helpers and normal /docs/seed job plumbing, with regression tests. go vet ./... and go test ./... pass."
     },
     {
       "id": "EXP-04",
       "seq": 4,
       "title": "Dogfood, README, and end-to-end verification",
       "file": "tasks/04-dogfood-readme-and-end-to-end-verificati.md",
-      "status": "Not started",
-      "updated": "2026-09-24"
+      "status": "Test",
+      "dependsOn": [
+        "EXP-00",
+        "EXP-01",
+        "EXP-02",
+        "EXP-03"
+      ],
+      "updated": "2026-09-27",
+      "notes": "Dogfooded docs.enabled=true, updated README and plan, rebuilt the binary, and completed fresh-repo plus active-repo acceptance checks. go vet ./..., go test ./..., node --check web/static/app.js, and git diff --check pass. lessmess validate has zero workflow violations; only the six known docs warnings plus expected touched-tree hash-stale warnings remain for post-close refresh."
     }
   ]
 }

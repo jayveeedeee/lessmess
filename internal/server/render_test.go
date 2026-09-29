@@ -8,7 +8,6 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-
 )
 
 func htmlGet(t *testing.T, h http.Handler, path string, hx bool) *httptest.ResponseRecorder {
@@ -101,9 +100,21 @@ func TestIndexSortableMarkup(t *testing.T) {
 			t.Errorf("sort control missing option %q", option)
 		}
 	}
+	// Status filter beside the sort control: All plus the five overall statuses.
+	if !strings.Contains(body, `id="change-filter-status"`) {
+		t.Error("index HTML missing the change status filter control")
+	}
+	for _, option := range []string{"", "Planned", "In progress", "Blocked", "Done", "Cancelled"} {
+		if !strings.Contains(body, `value="`+option+`"`) {
+			t.Errorf("status filter missing option %q", option)
+		}
+	}
+	if !strings.Contains(body, `id="change-cards-empty"`) {
+		t.Error("index HTML missing the empty-filter line")
+	}
 	// Cards carry the machine-readable sort keys and change identity; the
 	// visible fields are exactly name, status, task count, and date.
-	for _, attr := range []string{"data-change=", "data-tasks=", "data-status-rank=", "data-updated=", "data-title="} {
+	for _, attr := range []string{"data-change=", "data-tasks=", "data-status=", "data-status-rank=", "data-updated=", "data-title="} {
 		if !strings.Contains(body, attr) {
 			t.Errorf("change cards missing %q sort key", attr)
 		}
@@ -115,6 +126,14 @@ func TestIndexSortableMarkup(t *testing.T) {
 	}
 	if strings.Contains(body, "change-table") || strings.Contains(body, "sort-btn") {
 		t.Error("index still renders the legacy sortable table")
+	}
+	// The client filter contract mirrors the sort one: localStorage state,
+	// apply-on-refresh, and the data-status mirror on rebuilt cards.
+	js := do(t, New(st).Handler(), "GET", "/static/app.js", "").Body.String()
+	for _, want := range []string{`tt-index-filter-status`, `function indexFilterState()`, `function applyChangeFilter(`, `function initIndexFilter()`, `applyChangeFilter(indexFilterState())`, `a.dataset.status = c.status || ""`} {
+		if !strings.Contains(js, want) {
+			t.Errorf("app.js missing status filter piece %q", want)
+		}
 	}
 }
 
@@ -183,7 +202,9 @@ func TestSettingsPageHTML(t *testing.T) {
 		`data-field="prompts.commit"`, `data-field="prompts.repoCommit"`,
 		`data-field="prompts.gardener"`, `data-field="prompts.explorer"`,
 		`data-field="git.defaultBranch"`, `data-field="ui.showArchived"`,
-		`data-field="docs.autoGardenerOnClose"`, `class="settings-change"`,
+		`data-field="docs.enabled"`, `data-field="docs.autoGardenerOnClose"`,
+		`id="docs-runtime-status"`, `id="docs-initialize-btn"`,
+		`class="exp-badge">Experimental</span>`, `class="settings-change"`,
 		`name="settings-scope"`, "lessmess.json", ".lessmess/settings.json",
 	} {
 		if !strings.Contains(body, want) {
@@ -213,20 +234,23 @@ func TestSetupPageHTML(t *testing.T) {
 	for _, want := range []string{
 		`id="setup-page"`, `data-page="setup"`, "Set up lessmess",
 		`data-step="prereqs"`, `data-step="name"`, `data-step="bootstrap"`, `data-step="agent"`,
-		`data-step="docs"`, `data-step="finish"`,
+		`data-step="finish"`,
 		`data-step-nav="name"`,
 		`id="setup-project-name"`, `id="setup-name-save"`, `id="setup-name-skip"`,
 		`name="setup-name-scope"`,
 		`id="setup-prereq-list"`, `id="setup-recheck-btn"`, `id="setup-prereqs-next"`,
-		`id="setup-coverage"`, `id="setup-bootstrap-btn"`,
-		`id="setup-exclude-list"`,
+		`id="setup-bootstrap-btn"`,
 		`id="setup-agent"`, `id="setup-model"`, `name="setup-scope"`,
-		`id="setup-seed-budget"`, `id="setup-seed-btn"`, `id="setup-seed-skip"`,
-		`id="setup-seed-log"`, `id="setup-finish-btn"`, `id="setup-error"`,
+		`id="setup-finish-btn"`, `id="setup-error"`,
 		`id="setup-steps-nav"`, `id="setup-step-indicator"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("setup HTML missing %q", want)
+		}
+	}
+	for _, absent := range []string{`data-step="docs"`, `data-step-nav="docs"`, `id="setup-coverage"`, `id="setup-exclude-list"`, `id="setup-seed-btn"`} {
+		if strings.Contains(body, absent) {
+			t.Errorf("setup HTML must not contain docs control %q", absent)
 		}
 	}
 	// Onboarding shows no other app chrome: no navs, docs bell, or banner.

@@ -22,6 +22,7 @@ import (
 func explorerServer(t *testing.T) (*Server, string) {
 	t.Helper()
 	st, dir := fixtureStore(t)
+	writeJSONFile(t, settingsPersonalPath(dir), Settings{Docs: DocsSettings{Enabled: boolp(true)}})
 	if err := os.WriteFile(filepath.Join(dir, docs.ConfigFile), []byte(`{"include":["**"]}`+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -195,7 +196,7 @@ func TestExplorerDisabledState(t *testing.T) {
 	if w.Code != 200 {
 		t.Fatalf("explorer page: %d", w.Code)
 	}
-	if !strings.Contains(w.Body.String(), "docs system is disabled") {
+	if !strings.Contains(w.Body.String(), "Settings") || !strings.Contains(w.Body.String(), "disabled") {
 		t.Error("disabled page must render guidance")
 	}
 }

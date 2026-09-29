@@ -52,10 +52,59 @@ or saturated service, so the UI degrades visibly instead of freezing.
 - No route, JSON, or template-shape changes beyond an optional
   degradation marker attribute on the snapshot root.
 
+## 2026-09-29 addendum: second root cause (config-write re-init cascades)
+
+A user-visible outage ("clicked decompose and all other sessions could no
+longer talk to the backend or load") was forensically traced to a
+different mechanism than poll amplification: the OpenCode service reacts
+to any write of a watched per-repo config file (`opencode.json`) with
+`config.updated` and a **full location re-initialization** — watchers,
+providers, models, agents, commands, plugins, and the skills cache are
+torn down and rebuilt — degrading every running session in the location.
+`EnsureSkillsCatalog` writes `opencode.json` at lessmess boot whenever
+the computed skills URL (`http://<PublicBase>/skills/`, which embeds
+host/port/base) differs from the stored entry, so restarts with changed
+invocation flags reliably fire the cascade (evidence: file mtime and
+`config.updated` second-aligned at 19:56:12Z; a cascade at 19:54:38Z in
+the decompose window with the skills cache hash flipping). CHAT-04 makes
+that write conditional: a stale-but-live catalog entry is probed and left
+in place, trading skill-body staleness for not stalling every session.
+The service-side behavior (re-init degrading running sessions) is an
+upstream concern, documented here for the report.
+
+## 2026-09-29 addendum 2: the wait-route drift blocking docs healing
+
+Attempting the docs heal surfaced a third defect: the installed service
+serves `POST /api/experimental/session/{sessionID}/wait` only, while
+`WaitDone` hardcodes the plain route and 404s — breaking the gardener
+(jobs fail after doing their edits, dirs stay stale forever), commit-
+status polling (never done), and the worktree close reviewer wait.
+CHAT-05 makes the route capability-detected from the OpenAPI document
+per the package's own convention, with the plain route as offline
+fallback. Healing the docs queue requires this fix first.
+
+A full same-nature audit (2026-09-29) cross-checked every client route
+against the live OpenAPI document: **`wait` is the only ungated drifted
+route**. All other drifted surface already follows the capability
+convention and degrades to a clean 503 (`ErrCapabilityUnavailable`):
+MCP connect/disconnect select the `/api/experimental/mcp/...` variants,
+inbox delivery selects between steer/queue and the `/{inboxID}/{delivery}`
+PATCH, revert-clear and rename-PATCH are detected, export calls its
+experimental route directly (the fix pattern CHAT-05 mirrors), and
+`/api/health` is only a detected fallback behind `/api/info`. Writers of
+service-watched config files are exactly two: the boot skills patch
+(CHAT-04) and the manual Align button; gardener `AGENTS.md` edits
+empirically fire no `config.updated` cascade (root `AGENTS.md` edited
+2026-09-29T20:10Z with no config event in the service log).
+
 ## Scope
 
 - `internal/server/chat.go` — `chatSnapshot` fan-out, degradation policy,
   per-request upstream budget.
+- `internal/server/skillsconfig.go` — probe-before-patch for the boot
+  skills-catalog write (CHAT-04).
+- `internal/opencode/client.go` — capability-detect the session wait
+  route (CHAT-05).
 - A small cache/single-flight helper colocated in `chat.go` or a new
   `internal/server/chatcache.go`.
 - `internal/server/chat_test.go` (+ fake client in tests) for the new
@@ -92,6 +141,10 @@ or saturated service, so the UI degrades visibly instead of freezing.
   `ListActiveSessions` with ~1s TTL (busy-state staleness of ≤1 poll is
   invisible at the UI's cadence); same-session snapshot single-flight
   keyed by sessionID sharing one in-flight result to concurrent waiters.
+- Skills-catalog write (CHAT-04): probe the existing `/skills/` URL
+  before replacing it; skip the rewrite while it still serves a live
+  catalog. Healing remains the failure direction — a dead or
+  non-catalog probe answers patches exactly as today.
 
 ## Acceptance criteria
 
@@ -105,6 +158,13 @@ or saturated service, so the UI degrades visibly instead of freezing.
 - N concurrent snapshots of one session produce 1 upstream transcript
   fetch and ≤1 `ListActiveSessions` call within the cache/single-flight
   window (call-counting fake, pinned by test).
+- A boot with a changed skills URL but a still-live old entry leaves
+  `opencode.json` byte-identical (probe-and-skip, pinned by test); a
+  dead old entry still heals.
+- Against a service declaring only the experimental wait route,
+  `WaitDone` succeeds on it; against one declaring both, the plain route
+  wins; against an unreadable OpenAPI document, today's plain-route
+  behavior is preserved (all pinned by tests).
 - `go vet ./...` and `go test ./...` clean from the repo root; existing
   chat tests pass except error-shape tests intentionally updated for the
   degradation policy.

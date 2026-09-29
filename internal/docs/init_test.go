@@ -25,10 +25,16 @@ func TestInitEmptyDir(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := actionsByPath(actions)
-	for _, p := range []string{"AGENTS.md", ".lessmess/workflow/index.json", ".gitignore", "opencode.json", "agentsdocs.json"} {
+	for _, p := range []string{"AGENTS.md", ".lessmess/workflow/index.json", ".gitignore", "opencode.json"} {
 		if got[p] != "created" {
 			t.Errorf("%s: action %q, want created", p, got[p])
 		}
+	}
+	if _, ok := got[docs.ConfigFile]; ok {
+		t.Errorf("Init reported experimental docs config: %v", got)
+	}
+	if _, err := os.Stat(filepath.Join(root, docs.ConfigFile)); !os.IsNotExist(err) {
+		t.Errorf("Init created %s (err=%v)", docs.ConfigFile, err)
 	}
 
 	agents, err := os.ReadFile(filepath.Join(root, "AGENTS.md"))
@@ -207,6 +213,52 @@ func TestInitNeverClobbersExistingConfig(t *testing.T) {
 	}
 }
 
+func TestInitConfigOnlyWritesCoverageFile(t *testing.T) {
+	root := t.TempDir()
+	readme := filepath.Join(root, "README.md")
+	if err := os.WriteFile(readme, []byte("human\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	action, err := docs.InitConfig(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if action.Path != docs.ConfigFile || action.Action != "created" {
+		t.Fatalf("action = %+v, want created agentsdocs.json", action)
+	}
+	for _, absent := range []string{"AGENTS.md", ".lessmess", ".gitignore", "opencode.json", "changes"} {
+		if _, err := os.Stat(filepath.Join(root, absent)); !os.IsNotExist(err) {
+			t.Errorf("InitConfig touched %s (err=%v)", absent, err)
+		}
+	}
+	if data, err := os.ReadFile(readme); err != nil || string(data) != "human\n" {
+		t.Errorf("README changed: %q, %v", data, err)
+	}
+	if cfg, err := docs.LoadConfig(root); err != nil || cfg == nil {
+		t.Fatalf("LoadConfig = %v, %v", cfg, err)
+	}
+}
+
+func TestInitConfigPreservesExistingFile(t *testing.T) {
+	root := t.TempDir()
+	custom := []byte("{\n  \"include\": [\"src/**\"],\n  \"exclude\": [\"generated/**\"]\n}\n")
+	path := filepath.Join(root, docs.ConfigFile)
+	if err := os.WriteFile(path, custom, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	action, err := docs.InitConfig(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if action.Action != "skipped" {
+		t.Errorf("action = %+v, want skipped", action)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil || string(got) != string(custom) {
+		t.Errorf("existing config changed: %q, %v", got, err)
+	}
+}
+
 // TestWorkflowAssetDrift pins the embedded canonical workflow text to this
 // repository's own AGENTS.md: they must stay exactly in sync. The repo's own
 // AGENTS.md may grow a machine-maintained auto section (seeded/gardened repo
@@ -235,70 +287,5 @@ func TestWorkflowAssetDrift(t *testing.T) {
 	}
 	if strings.TrimRight(human, "\n") != strings.TrimRight(docs.WorkflowInstructions(), "\n") {
 		t.Error("internal/docs/assets/workflow_agents.md differs from repo AGENTS.md; refresh it (see comment above)")
-	}
-}
-
-func TestInitWithOptionsSkipsConfig(t *testing.T) {
-	root := t.TempDir()
-	actions, err := docs.InitWithOptions(root, docs.InitOptions{Config: false})
-	if err != nil {
-		t.Fatal(err)
-	}
-	got := actionsByPath(actions)
-	if _, ok := got["agentsdocs.json"]; ok {
-		t.Errorf("skip-config run reported an agentsdocs.json action: %v", got)
-	}
-	for _, p := range []string{"AGENTS.md", ".lessmess/workflow/index.json", ".gitignore", "opencode.json"} {
-		if got[p] != "created" {
-			t.Errorf("%s: action %q, want created", p, got[p])
-		}
-	}
-	if _, err := os.Stat(filepath.Join(root, "agentsdocs.json")); !os.IsNotExist(err) {
-		t.Errorf("agentsdocs.json exists despite Config:false (err=%v)", err)
-	}
-	// The docs system stays disabled without the config.
-	if cfg, err := docs.LoadConfig(root); err != nil || cfg != nil {
-		t.Errorf("LoadConfig = %v, %v; want nil config (docs disabled)", cfg, err)
-	}
-	// A later full run still adds the config (coverage can be enabled later).
-	if _, err := docs.Init(root); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(filepath.Join(root, "agentsdocs.json")); err != nil {
-		t.Errorf("full run did not add agentsdocs.json: %v", err)
-	}
-}
-
-func TestInitWithOptionsExclude(t *testing.T) {
-	root := t.TempDir()
-	if _, err := docs.InitWithOptions(root, docs.InitOptions{Config: true, Exclude: []string{"docs", "swagger"}}); err != nil {
-		t.Fatal(err)
-	}
-	cfg, err := docs.LoadConfig(root)
-	if err != nil || cfg == nil {
-		t.Fatalf("LoadConfig = %v, %v", cfg, err)
-	}
-	if !cfg.Covered("src") {
-		t.Error("src must stay covered")
-	}
-	if cfg.Covered("docs") || cfg.Covered("swagger") {
-		t.Error("user exclusions must not be covered")
-	}
-	if cfg.Covered("pkg/node_modules") {
-		t.Error("built-in DefaultExclude must still apply")
-	}
-	// Subtree pruning happens in Walk (uncovered dirs are not descended
-	// into): build docs/sub on disk and confirm it never appears.
-	for _, d := range []string{"docs/sub", "src"} {
-		if err := os.MkdirAll(filepath.Join(root, d), 0o755); err != nil {
-			t.Fatal(err)
-		}
-	}
-	tree, err := docs.Walk(root, cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(tree.Subdirs) != 1 || tree.Subdirs[0] != "src" {
-		t.Errorf("walk subdirs = %v, want [src] (docs pruned with its subtree)", tree.Subdirs)
 	}
 }

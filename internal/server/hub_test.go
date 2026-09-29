@@ -173,7 +173,7 @@ func TestHubSetupProjectHotSwapsUnderPrefix(t *testing.T) {
 	h := hubFixture(t)
 	defer h.Close()
 
-	w := do(t, h.Handler(), "POST", "/p/fresh/api/setup/bootstrap", `{"docsCoverage":false}`)
+	w := do(t, h.Handler(), "POST", "/p/fresh/api/setup/bootstrap", `{}`)
 	if w.Code != http.StatusOK {
 		t.Fatalf("bootstrap = %d %s", w.Code, w.Body)
 	}

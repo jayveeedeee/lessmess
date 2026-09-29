@@ -31,6 +31,9 @@ func TestSettingsAPIDefaults(t *testing.T) {
 	if !resp.Effective.UI.ShowArchived || !resp.Effective.Docs.AutoGardenerOnClose {
 		t.Errorf("effective defaults = %+v", resp.Effective)
 	}
+	if resp.Effective.Docs.Enabled {
+		t.Error("docs.enabled default = true, want false")
+	}
 	if resp.LoadError != "" {
 		t.Errorf("loadError = %q", resp.LoadError)
 	}
@@ -83,6 +86,30 @@ func TestSettingsAPIPutScopesAndClear(t *testing.T) {
 	resp = getSettingsView(t, s)
 	if resp.Effective.Session.Agent != "build" || resp.Sources["session.agent"] != "project" {
 		t.Errorf("after clear: agent = %q (%s), want build (project)", resp.Effective.Session.Agent, resp.Sources["session.agent"])
+	}
+}
+
+func TestSettingsAPIDocsEnabledRoundTrip(t *testing.T) {
+	s := mappingServer(t, nil)
+	w := do(t, s.Handler(), "PUT", "/api/settings?scope=project", `{"docs":{"enabled":true}}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("PUT project docs.enabled: %d %s", w.Code, w.Body)
+	}
+	resp := getSettingsView(t, s)
+	if resp.Project == nil || resp.Project.Docs.Enabled == nil || !*resp.Project.Docs.Enabled {
+		t.Fatalf("project docs layer = %+v", resp.Project)
+	}
+	if !resp.Effective.Docs.Enabled || resp.Sources["docs.enabled"] != SettingsScopeProject {
+		t.Errorf("effective docs.enabled = %v (%s), want true (project)", resp.Effective.Docs.Enabled, resp.Sources["docs.enabled"])
+	}
+
+	w = do(t, s.Handler(), "PUT", "/api/settings?scope=personal", `{"docs":{"enabled":false}}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("PUT personal docs.enabled: %d %s", w.Code, w.Body)
+	}
+	resp = getSettingsView(t, s)
+	if resp.Effective.Docs.Enabled || resp.Sources["docs.enabled"] != SettingsScopePersonal {
+		t.Errorf("effective docs.enabled = %v (%s), want false (personal)", resp.Effective.Docs.Enabled, resp.Sources["docs.enabled"])
 	}
 }
 

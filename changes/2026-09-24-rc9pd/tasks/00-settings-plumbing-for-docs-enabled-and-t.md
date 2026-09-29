@@ -18,7 +18,8 @@ None (first task).
 - `internal/server/settings.go`: `DocsSettings` gains `Enabled *bool` with
   `json:"enabled,omitempty"`; `mergeSettings` picks it with
   `pickBool("docs.enabled", false, ...)` (default **false**); effective
-  settings expose it.
+  settings expose it. Add an exported `DocsEnabled(repoDir)` read helper so
+  the CLI and startup wiring use the exact same layered, fail-open semantics.
 - `internal/server/settingsapi.go`: no new validation needed (plain bool),
   but confirm PUT round-trips it in both scopes and `settingsAPIView`
   surfaces it.
@@ -33,8 +34,9 @@ None (first task).
   experimental status.
 - `web/static/app.js`: add `"docs.enabled": false` to `BOOL_DEFAULTS`
   (~line 4467) so the Inherit label and fallback render correctly.
-- `web/static/app.css`: new `.exp-badge` chip styled after `.src-badge`
-  (muted amber variant), reused by both features.
+- `web/static/app.css`: new `.exp-badge` chip styled after `.src-badge` and
+  existing theme/status tokens (no new hard-coded palette), reused by both
+  features.
 - Unit tests: settings merge/default coverage for `docs.enabled`
   (default false, project override, personal override, malformed file fails
   open).
@@ -43,8 +45,8 @@ Out of scope: server gating (EXP-01), wizard/template removals (EXP-03).
 
 ## Implementation steps
 
-1. Extend `DocsSettings` + `mergeSettings` with the default-off tri-state and
-   update the effective-settings test fixtures.
+1. Extend `DocsSettings` + `mergeSettings` with the default-off tri-state, add
+   `DocsEnabled`, and update the effective-settings test fixtures.
 2. Add `docs.enabled` to the `settingsFieldValue` allowlist in
    `settingschange.go`.
 3. Add the settings.html field and the two Experimental badges; add
@@ -63,7 +65,8 @@ Out of scope: server gating (EXP-01), wizard/template removals (EXP-03).
 ## Completion criteria
 
 - `docs.enabled` round-trips through GET/PUT in both scopes with correct
-  sources map entries and default false.
+  sources map entries and default false; `DocsEnabled` follows the same
+  precedence and defaults false on malformed settings.
 - Experimental badge visible on Docs section header and `git.worktrees`.
 - No behavior change: docs still run purely on `agentsdocs.json` presence
   until EXP-01 lands.

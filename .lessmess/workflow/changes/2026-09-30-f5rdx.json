@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "id": "2026-09-30-f5rdx",
+  "title": "Fix stale compaction re-prime detection",
+  "prefix": "RP",
+  "branch": "main",
+  "status": {
+    "value": "Planned",
+    "derived": true
+  },
+  "created": "2026-09-30",
+  "updated": "2026-09-30",
+  "tasks": [
+    {
+      "id": "RP-00",
+      "seq": 0,
+      "title": "Replace memory-based compaction watch with transcript-based evaluation",
+      "file": "tasks/00-replace-memory-based-compaction-watch-wi.md",
+      "status": "Not started",
+      "updated": "2026-09-30"
+    },
+    {
+      "id": "RP-01",
+      "seq": 1,
+      "title": "Cover the re-prime rule with regression tests and verify the suite",
+      "file": "tasks/01-cover-the-re-prime-rule-with-regression.md",
+      "status": "Not started",
+      "dependsOn": [
+        "RP-00"
+      ],
+      "updated": "2026-09-30"
+    }
+  ]
+}

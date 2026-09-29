@@ -1,19 +1,13 @@
 package server
 
-// Server-side docs seed for the setup wizard: one in-flight job per
-// repository, started explicitly (opt-in) by POST /api/setup/docs-seed and
-// polled via GET /api/setup/docs-seed-status. The job runs docs.Seed in a
-// goroutine with a summarizer honoring the configured session agent/model;
-// progress lines from Seed's output writer accumulate in memory for the
-// status poller. The resumable cursor (.lessmess/docs-seed.json) is
-// unchanged, so an interrupted run simply continues next time.
+// Shared server-side docs seed job: one in-flight job per repository, started
+// by normal-server POST /docs/seed and polled via /docs/seed-status. The job
+// runs docs.Seed in a goroutine with a summarizer honoring the configured
+// session agent/model; progress lines accumulate in memory for the poller.
 
 import (
 	"context"
-	"encoding/json"
 	"log/slog"
-	"net/http"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -39,9 +33,8 @@ type docsSeedJob struct {
 	lines   []string
 }
 
-// seedJobs is the registry of in-flight/completed jobs keyed by absolute
-// repo dir; shared by the setup shell and the swapped-in full server so a
-// job started before hot-open stays visible (and un-duplicable) after it.
+// seedJobs is the registry of in-flight/completed jobs keyed by absolute repo
+// dir, keeping duplicate normal-server starts out of the same repository.
 var seedJobs = struct {
 	sync.Mutex
 	byDir map[string]*docsSeedJob
@@ -138,48 +131,9 @@ type docsSeedStatusResponse struct {
 	Lines   []string `json:"lines"`
 }
 
-// docsSeed handles POST /api/setup/docs-seed: start the one in-flight seed
-// job (409 when already running, 503 without opencode or coverage).
-func (env *setupEnv) docsSeed(w http.ResponseWriter, r *http.Request) {
-	var req docsSeedRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad JSON body"})
-		return
-	}
-	oc := env.oc()
-	if oc == nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "opencode integration unavailable"})
-		return
-	}
-	cfg, err := docs.LoadConfig(env.dir)
-	if err != nil {
-		slog.Error("docs seed: load config", "err", err)
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "load coverage config: " + err.Error()})
-		return
-	}
-	if cfg == nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "docs coverage disabled (no agentsdocs.json)"})
-		return
-	}
-	// The opencode service requires an absolute session directory.
-	root, err := filepath.Abs(env.dir)
-	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
-		return
-	}
-	if !startDocsSeedJob(root, cfg, oc, docs.SeedOptions{Budget: req.Budget}) {
-		writeJSON(w, http.StatusConflict, map[string]string{"error": "a docs seed is already running"})
-		return
-	}
-	writeJSON(w, http.StatusAccepted, map[string]string{"ok": "true"})
-}
-
 // startDocsSeedJob starts the one in-flight seed job for the absolute repo
-// dir; ok=false means one is already running. Shared by the setup wizard
-// and the normal server's POST /docs/seed: the job registry and the
-// resumable cursor (.lessmess/docs-seed.json) are one and the same, so
-// wizard, CLI, and server seed runs all continue one another's pending
-// directories.
+// dir; ok=false means one is already running. The resumable cursor
+// (.lessmess/docs-seed.json) is shared with CLI seed runs.
 func startDocsSeedJob(root string, cfg *docs.Config, oc *opencode.Client, opts docs.SeedOptions) bool {
 	agent, model := SessionDefaults(root)
 	sum := newSeedSummarizer(oc, 0, agent, model)
@@ -191,25 +145,10 @@ func startDocsSeedJob(root string, cfg *docs.Config, oc *opencode.Client, opts d
 			slog.Warn("docs seed finished with failures", "dir", root, "err", err)
 		} else {
 			slog.Info("docs seed finished", "dir", root)
-			st := loadOnboarding(root)
-			st.mark("docs", "seeded")
-			if err := saveOnboarding(root, st); err != nil {
-				slog.Warn("onboarding state save", "err", err)
-			}
 		}
 		return err
 	}) {
 		return false
 	}
 	return true
-}
-
-// docsSeedStatus handles GET /api/setup/docs-seed-status.
-func (env *setupEnv) docsSeedStatus(w http.ResponseWriter, r *http.Request) {
-	root, err := filepath.Abs(env.dir)
-	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
-		return
-	}
-	writeJSON(w, http.StatusOK, seedJobFor(root).status())
 }

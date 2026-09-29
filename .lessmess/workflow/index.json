@@ -346,6 +346,27 @@
       "prefix": "PILL",
       "branch": "main",
       "created": "2026-09-27"
+    },
+    {
+      "id": "2026-09-28-3zkr8",
+      "title": "Changes page status filter",
+      "prefix": "CSF",
+      "branch": "main",
+      "created": "2026-09-28"
+    },
+    {
+      "id": "2026-09-30-f5rdx",
+      "title": "Fix stale compaction re-prime detection",
+      "prefix": "RP",
+      "branch": "main",
+      "created": "2026-09-30"
+    },
+    {
+      "id": "2026-09-30-coxth",
+      "title": "Fix chat history dropping assistant messages",
+      "prefix": "HST",
+      "branch": "main",
+      "created": "2026-09-30"
     }
   ]
 }

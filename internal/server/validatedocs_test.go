@@ -2,6 +2,8 @@ package server
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"lessmess/internal/docs"
@@ -50,12 +52,39 @@ func TestValidateEndpointDocsEmptyWhenDisabled(t *testing.T) {
 	t.Cleanup(s.Close)
 	w := do(t, s.Handler(), "GET", "/api/validate", "")
 	var resp struct {
-		Docs []docs.Finding `json:"docs"`
+		Docs            []docs.Finding `json:"docs"`
+		DocsSeedPending *int           `json:"docsSeedPending"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatal(err)
 	}
 	if len(resp.Docs) != 0 {
 		t.Errorf("docs disabled must yield no findings: %v", resp.Docs)
+	}
+	if resp.DocsSeedPending != nil {
+		t.Errorf("docsSeedPending = %v, want omitted while disabled", *resp.DocsSeedPending)
+	}
+}
+
+func TestValidateEndpointIgnoresDormantConfig(t *testing.T) {
+	st, dir := fixtureStore(t)
+	if err := os.WriteFile(filepath.Join(dir, docs.ConfigFile), []byte(`{"include":["**"]}`+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "undocumented"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	s := New(st)
+	t.Cleanup(s.Close)
+	w := do(t, s.Handler(), "GET", "/api/validate", "")
+	var resp struct {
+		Docs            []docs.Finding `json:"docs"`
+		DocsSeedPending *int           `json:"docsSeedPending"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Docs) != 0 || resp.DocsSeedPending != nil {
+		t.Errorf("disabled docs payload = %+v, want no findings or pending count", resp)
 	}
 }

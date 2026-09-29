@@ -22,6 +22,7 @@ import (
 func docsSeedServer(t *testing.T) (*Server, string) {
 	t.Helper()
 	st, dir := fixtureStore(t)
+	writeJSONFile(t, settingsPersonalPath(dir), Settings{Docs: DocsSettings{Enabled: boolp(true)}})
 	if err := os.WriteFile(filepath.Join(dir, docs.ConfigFile), []byte(`{"include":["**"]}`+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -94,10 +95,14 @@ func TestDocsSeedEndpoint503WithoutOpencode(t *testing.T) {
 
 func TestDocsSeedEndpoint503WithoutCoverage(t *testing.T) {
 	s := mappingServer(t, nil)
+	writeJSONFile(t, settingsProjectPath(s.st.Dir), Settings{Docs: DocsSettings{Enabled: boolp(true)}})
 	s.SetOpencode(opencode.New("http://127.0.0.1:1", "pw"))
 	w := do(t, s.Handler(), "POST", "/docs/seed", `{}`)
 	if w.Code != http.StatusServiceUnavailable {
 		t.Fatalf("code = %d, want 503 (no agentsdocs.json)", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), "not initialized") {
+		t.Errorf("body = %s, want missing-coverage guidance", w.Body)
 	}
 }
 
@@ -136,6 +141,24 @@ func TestDocsSeedEndpointContinuesPending(t *testing.T) {
 	}
 	if len(sum.calls) == 0 {
 		t.Error("summarizer never called")
+	}
+}
+
+func TestDocsSeedEndpointHonorsSessionDefaults(t *testing.T) {
+	s, dir := docsSeedServer(t)
+	if err := applySettingsPatch(dir, SettingsScopePersonal, []byte(`{"session":{"agent":"build","model":"prov/m"}}`)); err != nil {
+		t.Fatal(err)
+	}
+	captured := stubSeedSummarizer(t, nil)
+	w := do(t, s.Handler(), "POST", "/docs/seed", `{}`)
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("start: %d %s", w.Code, w.Body)
+	}
+	if st := waitDocsSeedDone(t, s); st.Error != "" {
+		t.Fatalf("seed error: %s", st.Error)
+	}
+	if captured.agent != "build" || captured.model != "prov/m" {
+		t.Errorf("summarizer got agent=%q model=%q, want build / prov/m", captured.agent, captured.model)
 	}
 }
 
@@ -282,6 +305,7 @@ func TestDocsExclusionsRoundTrip(t *testing.T) {
 
 func TestDocsExclusions503WithoutConfig(t *testing.T) {
 	s := mappingServer(t, nil)
+	writeJSONFile(t, settingsPersonalPath(s.st.Dir), Settings{Docs: DocsSettings{Enabled: boolp(true)}})
 	if w := do(t, s.Handler(), "POST", "/docs/exclusions", `{"excludeDirs":["web"]}`); w.Code != http.StatusServiceUnavailable {
 		t.Errorf("save without config: code = %d, want 503", w.Code)
 	}

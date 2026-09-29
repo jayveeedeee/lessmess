@@ -42,40 +42,18 @@ type InitAction struct {
 	Action string // "created", "merged", or "skipped"
 }
 
-// InitOptions tunes InitWithOptions. Config controls whether the default
-// agentsdocs.json coverage config is written; without it the docs system
-// stays disabled (the setup wizard makes coverage a separate choice from
-// the rest of the bootstrap). Exclude adds user-chosen exclusion patterns
-// to the written config (on top of the built-in DefaultExclude).
-type InitOptions struct {
-	Config  bool
-	Exclude []string
-}
-
 // Init bootstraps root as a workflow-ready repository: root AGENTS.md with
 // the canonical change-management instructions, the changes/ skeleton,
-// .gitignore covering .lessmess/, a starter opencode.json, and the default
-// agentsdocs.json. Git is not assumed. Every artifact is merge-safe —
-// existing content is never clobbered — so Init is idempotent.
+// .gitignore covering .lessmess/, and a starter opencode.json. Experimental
+// docs coverage is initialized separately from Settings. Git is not assumed.
+// Every artifact is merge-safe — existing content is never clobbered — so
+// Init is idempotent.
 func Init(root string) ([]InitAction, error) {
-	return InitWithOptions(root, InitOptions{Config: true})
-}
-
-// InitWithOptions is Init with optional steps: when opts.Config is false
-// the agentsdocs.json step is skipped entirely (no file is created and no
-// action is reported for it). opts.Exclude only applies when the config is
-// actually created — an existing agentsdocs.json is never modified.
-func InitWithOptions(root string, opts InitOptions) ([]InitAction, error) {
 	steps := []func(string) (InitAction, error){
 		initAgents,
 		initWorkflow,
 		initGitignore,
 		initOpencode,
-	}
-	if opts.Config {
-		steps = append(steps, func(root string) (InitAction, error) {
-			return initConfigWith(root, opts.Exclude)
-		})
 	}
 	var actions []InitAction
 	for _, step := range steps {
@@ -231,16 +209,12 @@ func initOpencode(root string) (InitAction, error) {
 	return a, err
 }
 
-// initConfig writes the default coverage config; an existing file is skipped.
-func initConfig(root string) (InitAction, error) {
-	return initConfigWith(root, nil)
-}
-
-// initConfigWith is initConfig carrying user-chosen exclusion patterns.
-func initConfigWith(root string, exclude []string) (InitAction, error) {
+// InitConfig writes only the default coverage config; an existing file is
+// skipped byte-for-byte. Unlike Init, this is deliberately narrow so the
+// Settings action cannot merge or create unrelated workflow artifacts.
+func InitConfig(root string) (InitAction, error) {
 	a := InitAction{Path: ConfigFile}
 	cfg := DefaultConfig()
-	cfg.Exclude = append(cfg.Exclude, exclude...)
 	data, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
 		return a, err

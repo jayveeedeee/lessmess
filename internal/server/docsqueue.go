@@ -323,7 +323,7 @@ func chunkDirs(dirs []string, size int) [][]string {
 // chunked to at most docsJobMaxDirs directories per job.
 func (s *Server) docsRefresh(w http.ResponseWriter, r *http.Request) {
 	if s.docsQ == nil {
-		writeJSON(w, http.StatusOK, map[string]string{"status": "docs system disabled"})
+		writeJSON(w, http.StatusOK, map[string]string{"status": s.docsInactiveMessage()})
 		return
 	}
 	set := map[string]bool{}

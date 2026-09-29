@@ -299,19 +299,24 @@ func runDocsSeed(args []string) int {
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
-	cfg, err := docs.LoadConfig(*dir)
+	// The opencode service requires an absolute session directory; use the
+	// same root for the settings gate and coverage config.
+	root, err := filepath.Abs(*dir)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "docs seed:", err)
+		return 1
+	}
+	if !server.DocsEnabled(root) {
+		fmt.Fprintln(os.Stderr, "docs seed: docs are disabled — enable Experimental Docs in Settings → Docs and restart lessmess")
+		return 1
+	}
+	cfg, err := docs.LoadConfig(root)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "docs seed:", err)
 		return 1
 	}
 	if cfg == nil {
-		fmt.Fprintf(os.Stderr, "docs seed: %s has no %s — run 'lessmess init' first (docs system disabled)\n", *dir, docs.ConfigFile)
-		return 1
-	}
-	// The opencode service requires an absolute session directory.
-	root, err := filepath.Abs(*dir)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "docs seed:", err)
+		fmt.Fprintf(os.Stderr, "docs seed: %s has no %s — initialize coverage in Settings → Docs\n", root, docs.ConfigFile)
 		return 1
 	}
 	if err := store.MigrateStateDir(root); err != nil {
@@ -359,7 +364,10 @@ func runValidate(args []string) int {
 	// validation sees them where they actually live.
 	st.SetChangeRoot(server.WorktreeChangeRoot(*dir))
 	violations := st.Validate()
-	findings := docs.ValidateDocs(*dir, queueStale(*dir))
+	var findings []docs.Finding
+	if server.DocsEnabled(*dir) {
+		findings = docs.ValidateDocs(*dir, queueStale(*dir))
+	}
 	rc := 0
 	if len(violations) == 0 && len(findings) == 0 {
 		fmt.Println("OK")

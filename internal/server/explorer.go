@@ -31,9 +31,10 @@ type explorerNode struct {
 }
 
 type explorerView struct {
-	Enabled  bool
-	RepoName string
-	Root     *explorerNode
+	Enabled        bool
+	InactiveReason string
+	RepoName       string
+	Root           *explorerNode
 }
 
 // buildExplorerView walks the covered tree and attaches each directory's
@@ -42,6 +43,7 @@ type explorerView struct {
 func (s *Server) buildExplorerView() explorerView {
 	var v explorerView
 	if s.docsQ == nil {
+		v.InactiveReason = s.docsInactiveMessage()
 		return v
 	}
 	v.Enabled = true
@@ -105,7 +107,7 @@ func findExplorerNode(n *explorerNode, rel string) *explorerNode {
 // fragment for one covered directory, swapped in by htmx on selection.
 func (s *Server) explorerDetail(w http.ResponseWriter, r *http.Request) {
 	if s.docsQ == nil {
-		http.Error(w, "docs system disabled", http.StatusServiceUnavailable)
+		http.Error(w, s.docsInactiveMessage(), http.StatusServiceUnavailable)
 		return
 	}
 	dir := path.Clean(filepath.ToSlash(strings.TrimSpace(r.URL.Query().Get("dir"))))
@@ -144,7 +146,7 @@ func (s *Server) explorerChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.docsQ == nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "docs system disabled"})
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": s.docsInactiveMessage()})
 		return
 	}
 	if s.mapErr != nil {

@@ -10,30 +10,33 @@ checkbox, exclusion picker, and docs-seed step (6 → 5 steps), and
 
 ## Dependencies
 
-None strictly; landing after EXP-01/EXP-02 keeps the UI coherent (Settings is
-the docs onboarding surface by then). Do not land before EXP-02 — that would
-leave no way to enable docs.
+EXP-02. Settings must own the complete docs-onboarding path before the wizard
+path is removed.
 
 ## Scope
 
 - `web/templates/setup.html`: delete the `#setup-coverage` checkbox +
   `#setup-exclude-list` picker from the bootstrap step and the whole
-  `docs` step section + its `data-step-nav` item.
+  `docs` step section + its `data-step-nav` item; update bootstrap completion
+  and agent-step copy that still mentions docs/exclusion updates.
 - `web/static/app.js` (`initSetup` ~5090): drop `docsCoverage`/`excludeDirs`
   from the bootstrap POST body, remove the docs-seed polling and step
   navigation bits.
 - `internal/server/setup.go`: drop `DocsCoverage`/exclude fields from
-  `bootstrapRequest` (accept-and-ignore or remove outright — prefer remove,
-  since the wizard client is the only caller), remove
-  `updateConfigExcludes` if now unused, remove the `docs-coverage`
-  onboarding-step bookkeeping in `bootstrap`.
+  `bootstrapRequest`, and remove the `docs-coverage` onboarding-step
+  bookkeeping in `bootstrap`. **Retain** `/api/setup/dirs`,
+  `exclusionDirEntries`, `validExcludePattern`, and `updateConfigExcludes`:
+  the normal Settings exclusions editor still uses all of them.
 - Setup docs-seed endpoints: remove `POST /api/setup/docs-seed` and
-  `GET /api/setup/docs-seed-status` routes and handlers (`setup.go`,
-  `setupseed.go`); `prereqs.go`: remove the `docs-coverage` informational
-  check.
-- `internal/docs/init.go`: `Init` no longer writes `agentsdocs.json` (keep
-  `InitOptions.Config` + `InitWithOptions` — EXP-02's endpoint and re-runs
-  still use them); update init tests.
+  `GET /api/setup/docs-seed-status` routes and only the setupEnv handlers in
+  `setupseed.go`; retain the shared seed job, request/status types, and
+  `startDocsSeedJob` used by normal `POST /docs/seed`. Remove its obsolete
+  onboarding `docs=seeded` bookkeeping. `prereqs.go`: remove the
+  `docs-coverage` informational check.
+- `internal/docs/init.go`: `Init` no longer writes `agentsdocs.json`; after the
+  wizard caller is gone, remove obsolete `InitOptions`/`InitWithOptions` and
+  wizard-only exclude initialization if no production caller remains. Keep the
+  config-only initializer added by EXP-02.
 - `cmd/lessmess/main.go`: `init` output no longer claims coverage creation;
   `docs seed` error text points at Settings → Docs (wording may already
   match EXP-01 — avoid double-editing).
@@ -47,13 +50,15 @@ Settings → General (the wizard remains re-runnable, just docs-free).
 
 1. Remove the docs step + bootstrap docs controls from `setup.html` and the
    matching `initSetup` logic.
-2. Remove the setup docs-seed routes/handlers and the `docs-coverage` prereq;
-   slim `bootstrapRequest`.
-3. Change `internal/docs.Init` to skip the coverage file; adjust its tests.
+2. Remove only the setup docs-seed routes/handlers and the `docs-coverage`
+   prereq; slim `bootstrapRequest` while preserving Settings exclusion helpers.
+3. Change `internal/docs.Init` to skip the coverage file, remove obsolete init
+   options, and adjust its tests.
 4. Update `main.go` init/seed messaging; update render tests to the 5-step
    shape.
 5. `go vet ./... && go test ./...`; grep for leftover
-   `setup/docs-seed`/`setup-coverage`/`docsCoverage` references.
+   `setup/docs-seed`/`setup-coverage`/`docsCoverage` references, while
+   confirming normal `/docs/seed` and Settings exclusions still work.
 
 ## Verification
 
@@ -61,7 +66,8 @@ Settings → General (the wizard remains re-runnable, just docs-free).
   history.
 - Manual: run `lessmess init` in a scratch repo → no `agentsdocs.json`
   created; open `/setup` → 5 steps, bootstrap step has no docs checkbox,
-  no docs step in the nav; completing the wizard works end to end.
+  no docs step in the nav; completing the wizard works end to end. Normal docs
+  seed and exclusion editing remain available after enabling docs in Settings.
 
 ## Completion criteria
 

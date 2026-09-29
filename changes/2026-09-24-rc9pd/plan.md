@@ -14,7 +14,7 @@ either feature is experimental. This change makes docs a settings-gated,
 off-by-default feature that is turned on entirely from Settings (never the
 wizard), and marks both docs and worktrees as experimental in the Settings UI.
 
-## Current behavior
+## Previous behavior
 
 - Docs enablement is purely file-presence: a root `agentsdocs.json` switches the
   whole subsystem on (`internal/server/server.go` builds the docs queue/watcher
@@ -33,26 +33,36 @@ wizard), and marks both docs and worktrees as experimental in the Settings UI.
   only the experimental labeling is missing.
 - No "experimental" visual pattern exists anywhere in `web/`.
 
-## Target behavior
+## Implemented behavior
 
 - New tri-state setting **`docs.enabled`** (Inherit/On/Off, **default Off**) at
-  the top of the Settings Docs section, badged Experimental. Effective-on
-  requires both the setting and a readable `agentsdocs.json`; the server builds
-  the docs queue/watcher only then, and every existing nil-guard keeps its
-  behavior. Toggling takes effect on restart (help text says so).
+  the top of the Settings Docs section, badged Experimental. At process start,
+  effective-on requires both the setting and a readable `agentsdocs.json`; the
+  server builds the docs queue/watcher only then. Toggling runtime behavior
+  takes effect on restart (help text says so), while Settings reads the saved
+  value immediately.
 - **Initialize coverage from Settings**: with docs enabled but no
   `agentsdocs.json`, the Docs section offers an "Initialize coverage" action
-  that writes the default config via the existing `docs.InitWithOptions`
-  machinery; the exclusions editor shows a hint until config exists. The UI
-  alone can turn docs on.
+  that writes only the default coverage config through a narrow docs-package
+  initializer; it must not re-run the broader workflow bootstrap. The
+  exclusions editor shows a hint until config exists. After saving On, the user
+  can initialize coverage immediately, then restart once to activate docs.
 - **Wizard is docs-free**: the bootstrap step loses the coverage checkbox and
   exclusion picker; the docs step, its two endpoints, and the `docs-coverage`
   prereq are removed → 5-step wizard (`prereqs, name, bootstrap, agent,
   finish`).
 - **`lessmess init` stops writing `agentsdocs.json`** — docs is opt-in
   everywhere; only the settings toggle plus coverage config enables it.
-- Disabled-by-setting surfaces are worded distinctly from missing-config ones
-  and point at Settings → Docs (Explorer disabled box, handler 503 messages).
+- Inactive surfaces distinguish setting-off, missing/unreadable config, and
+  restart-required states and point at Settings → Docs (Explorer disabled box,
+  handler responses).
+- A small docs status API reports the saved setting, config presence/readability,
+  current runtime activation, and whether a restart is needed. Settings uses it
+  instead of conflating a missing config with an existing malformed file.
+- `/api/validate` and CLI `validate` omit docs findings and missing-doc counts
+  while docs is disabled, so the docs bell stays hidden even when a dormant
+  `agentsdocs.json` remains in the repository. Explicit seed commands also
+  respect the setting.
 - **Worktrees**: behavior unchanged (still off by default); the
   `git.worktrees` field gains the Experimental badge and a help-text note.
 - New reusable `.exp-badge` chip in `app.css`, modeled on `.src-badge`.
@@ -62,17 +72,23 @@ wizard), and marks both docs and worktrees as experimental in the Settings UI.
 ## Scope
 
 - `internal/server/settings.go` (+ `settingsapi.go`, `settingschange.go`):
-  schema, merge, validation, per-field allowlist for `docs.enabled`.
+  schema, merge, exported read helper, and per-field allowlist for
+  `docs.enabled`.
 - `internal/server/server.go`: gate docs queue/watcher construction on the
-  effective setting; reword disabled messages.
+  effective setting and expose coherent inactive-state wording.
+- `internal/server/server.go`, `docsqueue.go`, `docsseed.go`: gate docs
+  validation/pending counts, refresh, and seed on the active runtime.
 - `internal/server/explorer.go` + `web/templates/explorer.html`: disabled
   wording → Settings → Docs.
 - `internal/server/setup.go` (+ `prereqs.go`, `setupseed.go`): drop docs
   bootstrap payload fields, docs step endpoints, `docs-coverage` prereq.
-- `internal/docs/init.go` + `cmd/lessmess/main.go`: `init` no longer writes
-  `agentsdocs.json`; `docs seed` message updated to mention Settings.
-- New settings endpoint to initialize docs coverage (thin wrapper over
-  `docs.InitWithOptions`).
+- `internal/docs/init.go`: add a narrow, idempotent coverage-config initializer;
+  the broader workflow `Init` no longer writes `agentsdocs.json`, and obsolete
+  wizard-only init options are removed once their callers are gone.
+- `cmd/lessmess/main.go`: `validate` and `docs seed` honor `docs.enabled`;
+  `init` no longer writes `agentsdocs.json`.
+- New normal-server status/initialize endpoints for docs coverage, without
+  touching any other bootstrap artifact.
 - `web/templates/settings.html`, `web/templates/setup.html`,
   `web/static/app.js` (`BOOL_DEFAULTS`, `initSettings`, `initSetup` wiring),
   `web/static/app.css` (`.exp-badge`).
@@ -85,6 +101,8 @@ wizard), and marks both docs and worktrees as experimental in the Settings UI.
 
 - No hot-reload of the docs toggle (restart-applied, like today's config-file
   behavior).
+- The Explorer link remains visible as the discoverable route into Settings;
+  with docs inactive it renders guidance rather than a docs tree.
 - No change to worktree lifecycle, close pipeline, or defaults.
 - No change to `docs.autoGardenerOnClose` / `docs.gardenerModel` semantics.
 - No migration path that silently enables docs for repos with an existing
@@ -97,8 +115,8 @@ wizard), and marks both docs and worktrees as experimental in the Settings UI.
   settings"); tri-state Inherit/On/Off like `git.worktrees`, project policy in
   committed `lessmess.json`, personal override in `.lessmess/settings.json`.
 - Turning the setting on does not fabricate `agentsdocs.json` behind the
-  user's back: the explicit "Initialize coverage" action does that, reusing
-  `docs.InitWithOptions` (same machinery the wizard bootstrap used).
+  user's back: the explicit "Initialize coverage" action writes only that
+  committed file through a dedicated idempotent primitive.
 - `lessmess init` stops writing the coverage file: docs is fully opt-in, and
   onboarding artifacts should not exist for an off-by-default feature.
 - The wizard loses docs entirely rather than hiding it conditionally — the
@@ -108,17 +126,20 @@ wizard), and marks both docs and worktrees as experimental in the Settings UI.
 
 ## Acceptance criteria
 
-- Fresh repo, default settings: no docs processes, no docs UI affordances
-  (bell stays hidden, Explorer shows the disabled box pointing at Settings),
-  wizard shows 5 steps with no docs content, `lessmess init` writes no
+- Fresh repo, default settings: no docs processes or docs findings, the bell
+  stays hidden, Explorer shows inactive guidance pointing at Settings, the
+  wizard shows 5 steps with no docs content, and `lessmess init` writes no
   `agentsdocs.json`.
 - Settings → Docs: `docs.enabled` tri-state field with Experimental badge;
-  turning it On (and restarting) enables docs when config exists; with no
-  config, "Initialize coverage" writes a default `agentsdocs.json` and the
-  subsystem comes up on restart.
+  with existing config, turning it On and restarting enables docs; with no
+  config, save On → Initialize coverage → restart enables it. Initialization
+  touches only `agentsdocs.json` and is idempotent.
 - `git.worktrees` field carries the Experimental badge; behavior unchanged.
 - `go vet ./... && go test ./...` green, including render tests for the
-  wizard/settings shapes; `lessmess validate` clean.
+  wizard/settings shapes; `lessmess validate` has no workflow violations or
+  new docs findings relative to the recorded baseline (the current checkout
+  already has queue-stale warnings from a prior gardener 404 plus one unrelated
+  stale-reference warning in `internal/registry/AGENTS.md`).
 
 ## Tasks
 

@@ -119,8 +119,8 @@ func (c *Config) Covered(rel string) bool {
 
 // UserExcluded reports whether rel matches one of the config's user Exclude
 // patterns — not DefaultExclude and not the include side. It answers the
-// pattern-level question only (subtree pruning lives in Walk); the setup
-// wizard's exclusion picker uses it to show current per-directory state.
+// pattern-level question only (subtree pruning lives in Walk); the Settings
+// exclusion picker uses it to show current per-directory state.
 func (c *Config) UserExcluded(rel string) bool {
 	rel = strings.Trim(filepath.ToSlash(rel), "/")
 	if rel == "" || rel == "." {

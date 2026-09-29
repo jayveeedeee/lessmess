@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "id": "2026-09-30-coxth",
+  "title": "Fix chat history dropping assistant messages",
+  "prefix": "HST",
+  "branch": "main",
+  "status": {
+    "value": "In progress",
+    "derived": true
+  },
+  "created": "2026-09-30",
+  "updated": "2026-09-30",
+  "tasks": [
+    {
+      "id": "HST-00",
+      "seq": 0,
+      "title": "Freeze pre-existing marker set in loadOlderChat",
+      "file": "tasks/00-freeze-pre-existing-marker-set-in-loadol.md",
+      "status": "Test",
+      "updated": "2026-09-30",
+      "notes": "go vet and go test ./... pass; workflow validate clean. Rebuilt binary, restarted :9090, confirmed served app.js carries the frozen-set fix. Against a real 94-message session history page (44 blocks, 23 assistant prose blocks), a faithful simulation of the old dedupe drops 19 assistant prose blocks; the new logic drops 0 while keeping the genuine-duplicate skip. Browser eyeball: http://localhost:9090/p/tasktracker/?change=2026-09-27-768jw\u0026session=ses_f1deb03b6ffel6f6tyva9sV3yG"
+    },
+    {
+      "id": "HST-01",
+      "seq": 1,
+      "title": "Fix insertBefore crash capping history at one page",
+      "file": "tasks/01-fix-insertbefore-crash-capping-history-a.md",
+      "status": "Test",
+      "updated": "2026-09-30",
+      "notes": "Root cause matches the user-reported verbatim Chrome NotFoundError: after the first click the insertion-point selector matched a block inside the .chat-history-page wrapper (a grandchild), and insertBefore requires a child reference. Fix scopes both insertion points to direct children, preferring the oldest wrapper so pages stay chronological. go vet/test pass, validate clean, rebuilt and restarted :9090, served app.js confirmed carrying the scoped selectors. Acceptance click-through (hard-reload, 3+ clicks on a \u003e100-message session) left to the user."
+    }
+  ]
+}

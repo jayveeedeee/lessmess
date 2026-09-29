@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "id": "2026-09-28-3zkr8",
+  "title": "Changes page status filter",
+  "prefix": "CSF",
+  "branch": "main",
+  "status": {
+    "value": "Done",
+    "derived": false
+  },
+  "created": "2026-09-28",
+  "updated": "2026-09-29",
+  "tasks": [
+    {
+      "id": "CSF-00",
+      "seq": 0,
+      "title": "Add status filter select and card data-status in template + CSS",
+      "file": "tasks/00-add-status-filter-select-and-card-data-s.md",
+      "status": "Test",
+      "updated": "2026-09-28",
+      "notes": "Rebuilt binary served on port 9191: index HTML carries #change-filter-status (All + the five statuses) and data-status on all 55 cards (51 Done / 3 In progress / 1 Planned), plus #change-cards-empty; TestIndexSortableMarkup asserts the markup."
+    },
+    {
+      "id": "CSF-01",
+      "seq": 1,
+      "title": "Client-side status filter logic in app.js",
+      "file": "tasks/01-client-side-status-filter-logic-in-app-j.md",
+      "status": "Test",
+      "updated": "2026-09-28",
+      "notes": "Served /static/app.js contains indexFilterState (localStorage tt-index-filter-status, fail-open), applyChangeFilter (hide + counts + empty line), initIndexFilter wired at DOMContentLoaded, dataset.status mirror in buildChangeCard, and filter re-apply in refreshChangeCards; node --check clean."
+    },
+    {
+      "id": "CSF-02",
+      "seq": 2,
+      "title": "Render tests and full verification",
+      "file": "tasks/02-render-tests-and-full-verification.md",
+      "status": "Test",
+      "updated": "2026-09-28",
+      "notes": "go vet ./... clean; go test ./... all 7 packages ok; lessmess validate: zero violations (only pre-existing docs-staleness warnings, gardener clears at close); rebuilt ./lessmess binary serves the feature (verified over HTTP on port 9191)."
+    }
+  ]
+}

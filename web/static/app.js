@@ -1190,7 +1190,7 @@
              }
            }
            updateChatDeliveryControls();
-          var insertionPoint = root && root.querySelector("[data-chat-block], .chat-interaction");
+          var insertionPoint = root && root.querySelector(":scope > .chat-history-page, :scope > [data-chat-block], :scope > .chat-interaction");
           historyPages.forEach(function (historyPage) {
             if (root) root.insertBefore(historyPage, insertionPoint);
           });
@@ -1316,15 +1316,24 @@
         if (!page || !root) throw new Error("Invalid history response");
         var existing = {};
         root.querySelectorAll("[data-message]").forEach(function (message) { existing[message.dataset.message] = true; });
-        var insertionPoint = root.querySelector("[data-chat-block], .chat-interaction");
+        // One assistant message fans out into several blocks sharing its ID,
+        // so the block-skip check must consult only markers that were in the
+        // DOM before this fetch; markers placed while inserting this page
+        // live in "seen" and never disqualify a sibling block.
+        var seen = {};
+        // Insert before the oldest existing history wrapper (or the first
+        // block on the first click). The reference must be a direct child
+        // of root: querySelector matches descendants, and insertBefore
+        // throws NotFoundError for a non-child reference node.
+        var insertionPoint = root.querySelector(":scope > .chat-history-page, :scope > [data-chat-block], :scope > .chat-interaction");
         var historyPage = document.createElement("div");
         historyPage.className = "chat-history-page";
         page.querySelectorAll(":scope > [data-chat-block]").forEach(function (block) {
           var source = (block.dataset.chatSource || "").trim().split(/\s+/).filter(Boolean);
           if (source.length && source.every(function (id) { return existing[id]; })) return;
           block.querySelectorAll("[data-message]").forEach(function (message) {
-            if (existing[message.dataset.message]) message.remove();
-            else existing[message.dataset.message] = true;
+            if (existing[message.dataset.message] || seen[message.dataset.message]) message.remove();
+            else seen[message.dataset.message] = true;
           });
           historyPage.appendChild(block);
         });
@@ -4670,6 +4679,8 @@
     // Palette entries by id (filled when the swatches are built), so a
     // pick can live-preview by rewriting the head style element.
     var accentsById = {};
+    var docsRuntime = null;
+    var reloadDocsExclusions = function () {};
 
     // previewAccent rewrites the #accent-style element so a pending pick
     // is visible before saving; with no id it falls back to the effective
@@ -4686,6 +4697,7 @@
 
     var BOOL_DEFAULTS = {
       "ui.showArchived": true,
+      "docs.enabled": false,
       "docs.autoGardenerOnClose": true,
       "git.worktrees": false,
     };
@@ -4988,6 +5000,7 @@
             syncAccentValues();
             previewAccent(null); // the saved value is now the effective one
             render();
+            if (section === "docs") loadDocsStatus();
             status.textContent = "Saved ✓";
             setTimeout(function () { status.hidden = true; }, 2500);
           })
@@ -5033,8 +5046,61 @@
       });
     }
 
-    // Exclusions editor: a lazy folder tree like the onboarding wizard's
-    // picker (same endpoint, same rows), persisted to agentsdocs.json.
+    function renderDocsStatus() {
+      var text = document.getElementById("docs-runtime-status");
+      var initBtn = document.getElementById("docs-initialize-btn");
+      var exSave = document.getElementById("docs-exclusions-save");
+      if (!text || !initBtn || !docsRuntime) return;
+      initBtn.hidden = true;
+      if (docsRuntime.configError) {
+        text.textContent = "agentsdocs.json is unreadable. Fix or remove it before initializing coverage.";
+      } else if (!docsRuntime.enabled) {
+        text.textContent = docsRuntime.active
+          ? "Docs are still active from startup. Restart lessmess to finish turning them off."
+          : "Docs are off. Save Enable docs as On to initialize or activate them.";
+      } else if (!docsRuntime.configExists) {
+        text.textContent = "Docs are on, but coverage has not been initialized.";
+        initBtn.hidden = false;
+      } else if (docsRuntime.restartRequired) {
+        text.textContent = "Coverage is configured. Restart lessmess to apply this docs setting.";
+      } else if (docsRuntime.active) {
+        text.textContent = "Docs are active.";
+      } else {
+        text.textContent = "Docs are configured but inactive. Restart lessmess.";
+      }
+      if (exSave) exSave.disabled = !docsRuntime.enabled || !docsRuntime.configReadable;
+    }
+
+    function loadDocsStatus() {
+      return fetch(BASE + "/docs/status", { headers: { Accept: "application/json" } })
+        .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.statusText); return j; }); })
+        .then(function (j) { docsRuntime = j; renderDocsStatus(); return j; })
+        .catch(function () {
+          var text = document.getElementById("docs-runtime-status");
+          if (text) text.textContent = "Docs status unavailable.";
+        });
+    }
+
+    var docsInitBtn = document.getElementById("docs-initialize-btn");
+    if (docsInitBtn) {
+      docsInitBtn.addEventListener("click", function () {
+        var initStatus = document.getElementById("docs-initialize-status");
+        docsInitBtn.disabled = true;
+        initStatus.textContent = "Initializing…";
+        fetch(BASE + "/docs/initialize", { method: "POST", headers: { Accept: "application/json" } })
+          .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.statusText); return j; }); })
+          .then(function () {
+            initStatus.textContent = "Coverage initialized ✓ Restart lessmess to activate docs.";
+            reloadDocsExclusions();
+            return loadDocsStatus();
+          })
+          .catch(function (err) { initStatus.textContent = err.message; })
+          .finally(function () { docsInitBtn.disabled = false; });
+      });
+    }
+    loadDocsStatus();
+
+    // Exclusions editor: a lazy folder tree persisted to agentsdocs.json.
     var exBox = document.getElementById("docs-exclusions");
     if (exBox) {
       var exStatus = document.getElementById("docs-exclusions-status");
@@ -5054,9 +5120,7 @@
               else exBox.appendChild(row);
               afterRow = row;
             });
-            if (j.hasConfig === false && depth === 0) {
-              exStatus.textContent = "Docs coverage is disabled — run the onboarding wizard to enable it.";
-            }
+            if (j.hasConfig === false && depth === 0) exStatus.textContent = "Initialize coverage above before saving exclusions.";
           })
           .catch(function () {
             if (depth === 0) exBox.innerHTML = '<span class="muted">Exclusions unavailable.</span>';
@@ -5141,7 +5205,12 @@
         return out;
       }
 
-      exLoadRows("", null, 0);
+      reloadDocsExclusions = function () {
+        exBox.innerHTML = "";
+        exStatus.textContent = "";
+        exLoadRows("", null, 0);
+      };
+      reloadDocsExclusions();
 
       var exSave = document.getElementById("docs-exclusions-save");
       exSave.addEventListener("click", function () {
@@ -5160,7 +5229,10 @@
           .catch(function (e) {
             exStatus.textContent = e.message;
           })
-          .finally(function () { exSave.disabled = false; });
+          .finally(function () {
+            exSave.disabled = false;
+            renderDocsStatus();
+          });
       });
     }
   }
@@ -5182,10 +5254,15 @@
     });
   }
 
-  // --- change card list: sort + tap-to-resume + in-place refresh -----------
+  // --- change card list: sort + filter + tap-to-resume + in-place refresh --------
 
   var INDEX_SORT_KEY = "tt-index-sort";
   var INDEX_SORT_DEFAULT = "updated:desc";
+
+  var INDEX_FILTER_KEY = "tt-index-filter-status";
+  var INDEX_FILTER_DEFAULT = "";
+  // Mirrors the fixed overall statuses offered by #change-filter-status.
+  var INDEX_FILTERS = ["", "Planned", "In progress", "Blocked", "Done", "Cancelled"];
 
   // Sort state is a "col:dir" string; anything absent, corrupt, or unknown
   // falls back to the server's default order (newest first).
@@ -5201,6 +5278,17 @@
   function statusRankOf(status) {
     var i = TASK_STATUS_ORDER.indexOf(status);
     return i === -1 ? TASK_STATUS_ORDER.length : i;
+  }
+
+  // Filter state is a raw status string ("" = all); anything absent, corrupt,
+  // or unknown falls back to showing every change.
+  function indexFilterState() {
+    try {
+      var raw = localStorage.getItem(INDEX_FILTER_KEY);
+      if (raw === null) raw = INDEX_FILTER_DEFAULT;
+      if (INDEX_FILTERS.indexOf(raw) !== -1) return raw;
+    } catch (_) {}
+    return INDEX_FILTER_DEFAULT;
   }
 
   function cardSortKey(card, col) {
@@ -5245,6 +5333,49 @@
     applyChangeSort(state);
   }
 
+  // Hides cards whose status differs from the active filter, refreshes the
+  // per-status counts in the option labels, and toggles the empty line.
+  function applyChangeFilter(status) {
+    var host = document.getElementById("change-cards");
+    if (!host) return;
+    var select = document.getElementById("change-filter-status");
+    var counts = {};
+    var total = 0;
+    Array.prototype.forEach.call(host.querySelectorAll(".change-card"), function (card) {
+      var s = card.getAttribute("data-status") || "";
+      counts[s] = (counts[s] || 0) + 1;
+      total++;
+      card.hidden = status !== "" && s !== status;
+    });
+    if (select) {
+      Array.prototype.forEach.call(select.options, function (opt) {
+        var base = opt.dataset.label || opt.text.replace(/ \(\d+\)$/, "");
+        opt.dataset.label = base;
+        opt.text = base + " (" + (opt.value === "" ? total : counts[opt.value] || 0) + ")";
+      });
+      select.value = status;
+    }
+    var empty = document.getElementById("change-cards-empty");
+    if (empty) empty.hidden = !(status !== "" && total > 0 && !counts[status]);
+  }
+
+  function initIndexFilter() {
+    var select = document.getElementById("change-filter-status");
+    var state = indexFilterState();
+    if (select) {
+      select.value = state;
+      if (select.value !== state) { // unknown stored value
+        state = INDEX_FILTER_DEFAULT;
+        select.value = state;
+      }
+      select.addEventListener("change", function () {
+        try { localStorage.setItem(INDEX_FILTER_KEY, select.value); } catch (_) {}
+        applyChangeFilter(select.value);
+      });
+    }
+    applyChangeFilter(state);
+  }
+
   // buildChangeCard mirrors the server's .change-card markup for in-place
   // SSE refreshes of the list (no page reload while a chat may be open).
   function buildChangeCard(c) {
@@ -5254,6 +5385,7 @@
     a.dataset.change = c.id;
     a.dataset.tasks = String(c.tasks || 0);
     a.dataset.statusRank = String(statusRankOf(c.status));
+    a.dataset.status = c.status || "";
     a.dataset.updated = c.updated || "";
     a.dataset.title = c.title || "";
     var name = document.createElement("span");
@@ -5288,6 +5420,7 @@
         host.innerHTML = "";
         j.changes.forEach(function (c) { host.appendChild(buildChangeCard(c)); });
         applyChangeSort(indexSortState());
+        applyChangeFilter(indexFilterState());
       })
       .catch(function () {});
   }
@@ -5314,17 +5447,14 @@
     var state = {
       checks: [],
       ready: false,
-      coverage: false,       // docs coverage enabled (checks or bootstrap choice)
       changesPresent: false, // repo already bootstrapped on load
       bootstrapped: false,   // bootstrap ran this session
-      excludedCount: 0,      // dirs excluded from coverage at bootstrap
       agentSaved: false,
       agentSkipped: false,
       nameSaved: false,
-      docsOutcome: "",       // "seeded" | "skipped" | "pending" (failed)
     };
 
-    var steps = ["prereqs", "name", "bootstrap", "agent", "docs", "finish"];
+    var steps = ["prereqs", "name", "bootstrap", "agent", "finish"];
 
     function el(id) { return document.getElementById(id); }
 
@@ -5334,15 +5464,11 @@
       e.hidden = !msg;
     }
 
-    function visibleSteps() {
-      return steps.filter(function (s) { return s !== "docs" || state.coverage; });
-    }
-
     function showStep(name) {
       root.querySelectorAll(".setup-step").forEach(function (sec) {
         sec.hidden = sec.getAttribute("data-step") !== name;
       });
-      var vis = visibleSteps();
+      var vis = steps;
       root.querySelectorAll("#setup-steps-nav li").forEach(function (li) {
         var n = li.getAttribute("data-step-nav");
         li.classList.toggle("active", n === name);
@@ -5400,7 +5526,6 @@
           state.ready = !!j.ready;
           state.checks.forEach(function (c) {
             if (c.id === "changes-present" && c.status === "ok") state.changesPresent = true;
-            if (c.id === "docs-coverage" && c.status === "ok") state.coverage = true;
           });
           renderPrereqs();
         })
@@ -5454,160 +5579,28 @@
     });
     el("setup-name-skip").addEventListener("click", function () { showStep("bootstrap"); });
 
-    // --- step 2: bootstrap ---
+    // --- step 3: bootstrap ---
 
     function enterBootstrap() {
-      loadDirs();
       if (state.changesPresent && !state.bootstrapped) {
         el("setup-bootstrap-done").hidden = false;
         el("setup-bootstrap-next").hidden = false;
-        // The Bootstrap button stays visible: init is idempotent, and a
-        // submission updates the coverage exclusions of an existing config.
+        // The Bootstrap button stays visible because init is idempotent.
       }
     }
-
-    // The exclusion picker is a lazy tree: each row loads its children on
-    // expand. Checking a row marks its loaded descendants as implied (the
-    // parent's pattern already prunes the subtree); implied rows are not
-    // submitted, and the server also normalizes redundant nested patterns.
-    var dirsLoaded = false;
-
-    function loadDirs() {
-      if (dirsLoaded) return;
-      dirsLoaded = true;
-      var box = el("setup-exclude-list");
-      box.innerHTML = "";
-      loadDirRows("", box, 0, null);
-    }
-
-    function loadDirRows(rel, box, depth, afterRow) {
-      fetch(BASE + "/api/setup/dirs?dir=" + encodeURIComponent(rel), { headers: { Accept: "application/json" } })
-        .then(function (r) { return r.json(); })
-        .then(function (j) {
-          var dirs = j.dirs || [];
-          if (!dirs.length && depth === 0) {
-            box.innerHTML = '<p class="muted">No candidate directories.</p>';
-            return;
-          }
-          var ref = afterRow;
-          dirs.forEach(function (d) {
-            var row = makeDirRow(d, depth);
-            if (ref) {
-              ref.parentNode.insertBefore(row, ref.nextSibling);
-              ref = row;
-            } else {
-              box.appendChild(row);
-            }
-          });
-          refreshImplied();
-        })
-        .catch(function () {});
-    }
-
-    function makeDirRow(d, depth) {
-      var row = document.createElement("div");
-      row.className = "setup-exclude";
-      row.setAttribute("data-rel", d.rel);
-      row.style.paddingLeft = (depth * 1.1 + 0.2) + "rem";
-
-      var toggle = document.createElement("button");
-      toggle.type = "button";
-      toggle.className = "setup-exclude-toggle";
-      if (d.hasChildren && !d.defaultExcluded) {
-        toggle.textContent = "▸";
-        toggle.title = "Expand";
-        toggle.addEventListener("click", function () { toggleDirRow(row, toggle, d, depth); });
-      } else {
-        toggle.classList.add("empty");
-        toggle.disabled = true;
-        toggle.tabIndex = -1;
-      }
-      row.appendChild(toggle);
-
-      var label = document.createElement("label");
-      label.className = "setup-exclude-name";
-      var cb = document.createElement("input");
-      cb.type = "checkbox";
-      cb.value = d.rel;
-      if (d.defaultExcluded) {
-        cb.checked = true;
-        cb.disabled = true;
-        row.classList.add("default-excluded");
-      } else if (d.excluded) {
-        cb.checked = true;
-      }
-      cb.addEventListener("change", refreshImplied);
-      label.appendChild(cb);
-      label.appendChild(document.createTextNode(d.name + (d.defaultExcluded ? " (built-in)" : "")));
-      row.appendChild(label);
-      return row;
-    }
-
-    function toggleDirRow(row, toggle, d, depth) {
-      if (row.getAttribute("data-loaded") !== "1") {
-        row.setAttribute("data-loaded", "1");
-        toggle.textContent = "▾";
-        loadDirRows(d.rel, row.parentNode, depth + 1, row);
-        return;
-      }
-      var collapse = row.getAttribute("data-collapsed") !== "1";
-      row.setAttribute("data-collapsed", collapse ? "1" : "0");
-      toggle.textContent = collapse ? "▸" : "▾";
-      descendantRows(row).forEach(function (r) { r.style.display = collapse ? "none" : ""; });
-    }
-
-    function descendantRows(row) {
-      var prefix = row.getAttribute("data-rel") + "/";
-      var out = [];
-      row.parentNode.querySelectorAll('.setup-exclude[data-rel]').forEach(function (r) {
-        if (r !== row && r.getAttribute("data-rel").indexOf(prefix) === 0) out.push(r);
-      });
-      return out;
-    }
-
-    // Descendants of a checked row are visually implied: the parent's
-    // pattern prunes them whether or not they are checked themselves.
-    function refreshImplied() {
-      var rows = [];
-      el("setup-exclude-list").querySelectorAll('.setup-exclude[data-rel]').forEach(function (r) { rows.push(r); });
-      rows.forEach(function (r) { r.classList.remove("implied"); });
-      rows.forEach(function (r) {
-        var cb = r.querySelector('input[type="checkbox"]');
-        if (cb.checked && !cb.disabled) {
-          descendantRows(r).forEach(function (d) { d.classList.add("implied"); });
-        }
-      });
-    }
-
-    function selectedExcludes() {
-      var out = [];
-      el("setup-exclude-list").querySelectorAll('.setup-exclude[data-rel]').forEach(function (r) {
-        var cb = r.querySelector('input[type="checkbox"]');
-        if (cb.checked && !cb.disabled && !r.classList.contains("implied")) out.push(cb.value);
-      });
-      return out;
-    }
-
-    el("setup-coverage").addEventListener("change", function () {
-      el("setup-excludes").hidden = !el("setup-coverage").checked;
-    });
 
     el("setup-bootstrap-btn").addEventListener("click", function () {
       var btn = el("setup-bootstrap-btn");
       btn.disabled = true;
       showError("");
-      var coverage = el("setup-coverage").checked;
-      var excludeDirs = coverage ? selectedExcludes() : [];
       fetch(BASE + "/api/setup/bootstrap", {
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify({ docsCoverage: coverage, excludeDirs: excludeDirs }),
+        body: "{}",
       })
         .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.statusText); return j; }); })
         .then(function (j) {
           state.bootstrapped = true;
-          state.coverage = coverage;
-          state.excludedCount = excludeDirs.length;
           var ul = el("setup-bootstrap-result");
           (j.actions || []).forEach(function (a) {
             var li = document.createElement("li");
@@ -5624,7 +5617,7 @@
     });
     el("setup-bootstrap-next").addEventListener("click", function () { showStep("agent"); });
 
-    // --- step 3: default agent/model ---
+    // --- step 4: default agent/model ---
 
     // The setup shell only holds an opencode client after the prereq check
     // discovers the service, so options load strictly after prereqs — and
@@ -5683,65 +5676,14 @@
         .then(function () {
           state.agentSaved = true;
           status.textContent = "Saved ✓";
-          showStep(state.coverage ? "docs" : "finish");
+          showStep("finish");
         })
         .catch(function (e) { status.textContent = e.message; });
     });
     el("setup-agent-skip").addEventListener("click", function () {
       state.agentSkipped = true;
-      showStep(state.coverage ? "docs" : "finish");
-    });
-
-    // --- step 4: docs seeding (opt-in) ---
-
-    function pollSeed() {
-      fetch(BASE + "/api/setup/docs-seed-status", { headers: { Accept: "application/json" } })
-        .then(function (r) { return r.json(); })
-        .then(function (j) {
-          var log = el("setup-seed-log");
-          log.hidden = false;
-          log.textContent = (j.lines || []).join("\n");
-          log.scrollTop = log.scrollHeight;
-          if (!j.done) {
-            setTimeout(pollSeed, 1000);
-            return;
-          }
-          el("setup-seed-btn").disabled = false;
-          el("setup-seed-next").hidden = false;
-          el("setup-seed-skip").hidden = true;
-          if (j.error) {
-            state.docsOutcome = "pending";
-            showError("Docs generation finished with failures: " + j.error + " — you can re-run it later.");
-          } else {
-            state.docsOutcome = "seeded";
-          }
-        })
-        .catch(function () { setTimeout(pollSeed, 2000); });
-    }
-
-    el("setup-seed-btn").addEventListener("click", function () {
-      var budget = parseInt(el("setup-seed-budget").value, 10);
-      if (isNaN(budget) || budget < 0) budget = 0;
-      var btn = el("setup-seed-btn");
-      btn.disabled = true;
-      showError("");
-      fetch(BASE + "/api/setup/docs-seed", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify({ budget: budget }),
-      })
-        .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.statusText); return j; }); })
-        .then(function () { setTimeout(pollSeed, 500); })
-        .catch(function (e) {
-          btn.disabled = false;
-          showError("Could not start docs generation: " + e.message);
-        });
-    });
-    el("setup-seed-skip").addEventListener("click", function () {
-      state.docsOutcome = "skipped";
       showStep("finish");
     });
-    el("setup-seed-next").addEventListener("click", function () { showStep("finish"); });
 
     // --- step 5: finish ---
 
@@ -5752,14 +5694,6 @@
       items.push(state.bootstrapped ? "Repository bootstrapped" : "Repository was already initialized");
       items.push(state.nameSaved ? "Project name saved" : "Project name follows the folder name");
       items.push(state.agentSaved ? "Default agent/model saved" : "Using the service's default agent/model");
-      if (state.coverage) {
-        var exNote = state.excludedCount ? " — " + state.excludedCount + " director" + (state.excludedCount === 1 ? "y" : "ies") + " excluded" : "";
-        if (state.docsOutcome === "seeded") items.push("Agent-facing docs generated" + exNote);
-        else if (state.docsOutcome === "skipped") items.push("Docs generation skipped — seed later anytime" + exNote);
-        else items.push("Docs generation pending — seed later via Settings or the docs bell" + exNote);
-      } else {
-        items.push("Docs coverage disabled — enable later by re-running onboarding");
-      }
       items.forEach(function (t) {
         var li = document.createElement("li");
         li.textContent = t;
@@ -5774,7 +5708,6 @@
       if (state.nameSaved) stepMarks.name = "set";
       if (state.agentSaved) stepMarks.agent = "set";
       else if (state.agentSkipped) stepMarks.agent = "skipped";
-      if (state.docsOutcome === "skipped") stepMarks.docs = "skipped";
       fetch(BASE + "/api/setup/complete", {
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
@@ -6528,6 +6461,7 @@
     initProjects();
     initCommitAll();
     initIndexSort();
+    initIndexFilter();
     initChangeCards();
     initSettings();
     initOpencodeStatus();

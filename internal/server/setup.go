@@ -48,8 +48,6 @@ func registerSetupRoutes(mux *http.ServeMux, env *setupEnv) {
 	mux.HandleFunc("GET /api/setup/prereqs", env.prereqs)
 	mux.HandleFunc("GET /api/setup/dirs", env.setupDirs)
 	mux.HandleFunc("POST /api/setup/bootstrap", env.bootstrap)
-	mux.HandleFunc("POST /api/setup/docs-seed", env.docsSeed)
-	mux.HandleFunc("GET /api/setup/docs-seed-status", env.docsSeedStatus)
 	mux.HandleFunc("POST /api/setup/complete", env.complete)
 	mux.HandleFunc("POST /api/setup/dismiss", env.dismiss)
 }
@@ -61,7 +59,7 @@ func (env *setupEnv) wizardPage(w http.ResponseWriter, r *http.Request) {
 }
 
 // Settings API on the setup shell (no store, only a dir) — the wizard's
-// agent step reuses the same handlers as the normal server.
+// name and agent steps reuse the same handlers as the normal server.
 
 func (env *setupEnv) getSettings(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, settingsAPIView(env.dir))
@@ -76,8 +74,7 @@ func (env *setupEnv) settingsOptions(w http.ResponseWriter, r *http.Request) {
 }
 
 // complete marks onboarding finished; the index banner never shows again.
-// The body is optional and may carry final step outcomes (e.g. the docs
-// step's "skipped").
+// The body is optional and may carry final step outcomes.
 func (env *setupEnv) complete(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Steps map[string]string `json:"steps"`
@@ -112,7 +109,7 @@ func (env *setupEnv) dismiss(w http.ResponseWriter, r *http.Request) {
 
 // --- bootstrap ---
 
-// setupDirEntry is one directory offered for docs exclusion. Rel is the
+// setupDirEntry is one directory offered for docs exclusion in Settings. Rel is the
 // repo-relative path (slash-separated); Excluded reflects current user
 // config patterns; HasChildren marks an expandable row.
 type setupDirEntry struct {
@@ -157,7 +154,7 @@ func (env *setupEnv) setupDirs(w http.ResponseWriter, r *http.Request) {
 
 // exclusionDirEntries lists base's immediate coverable subdirectories with
 // their exclusion state (the picker's rows): non-hidden, never changes/.
-// The wizard picker and the normal server's exclusions editor share it.
+// The normal server's exclusions editor uses it for lazy expansion.
 func exclusionDirEntries(base, rel string, cfg *docs.Config) ([]setupDirEntry, error) {
 	ents, err := os.ReadDir(base)
 	if err != nil {
@@ -235,15 +232,6 @@ func validExcludePattern(d string) bool {
 		}
 	}
 	return segs[0] != "changes"
-}
-
-type bootstrapRequest struct {
-	// DocsCoverage is tri-state: absent means enabled (the wizard default).
-	DocsCoverage *bool `json:"docsCoverage"`
-	// ExcludeDirs holds user-chosen directory patterns written into the
-	// coverage config: base names (top-level picks, match same-named dirs
-	// at any depth) or slash paths (nested picks, match the exact subtree).
-	ExcludeDirs []string `json:"excludeDirs"`
 }
 
 type bootstrapResponse struct {
@@ -327,35 +315,17 @@ func normalizeExcludes(excludes []string) []string {
 	return out
 }
 
-// bootstrap runs docs.Init from the wizard: merge-safe repository
-// bootstrap with a separate docs-coverage choice, then (setup mode only)
-// the hot-open boot that swaps in the full server. On the normal server it
-// simply re-runs idempotently with reloaded:false.
+// bootstrap runs docs.Init from the wizard: merge-safe workflow repository
+// bootstrap, then (setup mode only) the hot-open boot that swaps in the full
+// server. Experimental docs coverage is initialized only from Settings. On
+// the normal server bootstrap simply re-runs idempotently with reloaded:false.
 func (env *setupEnv) bootstrap(w http.ResponseWriter, r *http.Request) {
-	var req bootstrapRequest
+	var req struct{}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad JSON body"})
 		return
 	}
-	coverage := req.DocsCoverage == nil || *req.DocsCoverage
-	var excludes []string
-	if coverage {
-		for _, d := range req.ExcludeDirs {
-			d = strings.Trim(strings.TrimSpace(d), "/")
-			if d == "" {
-				continue
-			}
-			// The picker sends concrete directory names ("docs") or paths
-			// ("src/generated"); reject anything else since this writes a
-			// committed config file.
-			if !validExcludePattern(d) {
-				writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "invalid exclude directory " + strconv.Quote(d)})
-				return
-			}
-			excludes = append(excludes, d)
-		}
-	}
-	actions, err := docs.InitWithOptions(env.dir, docs.InitOptions{Config: coverage, Exclude: excludes})
+	actions, err := docs.Init(env.dir)
 	if err != nil {
 		slog.Error("bootstrap", "err", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error(), "actions": actions})
@@ -365,29 +335,8 @@ func (env *setupEnv) bootstrap(w http.ResponseWriter, r *http.Request) {
 		slog.Info("bootstrap", "action", a.Action, "path", a.Path)
 	}
 
-	// An explicit exclusion submission also updates an EXISTING config
-	// (init only writes the file at creation); this is how an already
-	// bootstrapped repo changes its excludes from the wizard.
-	if coverage {
-		if merged, err := updateConfigExcludes(env.dir, excludes); err != nil {
-			slog.Warn("bootstrap: update config excludes", "err", err)
-		} else if merged {
-			for i, a := range actions {
-				if a.Path == docs.ConfigFile && a.Action == "skipped" {
-					actions[i].Action = "merged"
-				}
-			}
-			slog.Info("bootstrap", "action", "merged", "path", docs.ConfigFile)
-		}
-	}
-
 	st := loadOnboarding(env.dir)
 	st.mark("bootstrap", "done")
-	if coverage {
-		st.mark("docs-coverage", "enabled")
-	} else {
-		st.mark("docs-coverage", "disabled")
-	}
 	if err := saveOnboarding(env.dir, st); err != nil {
 		slog.Warn("onboarding state save", "err", err)
 	}
@@ -413,11 +362,11 @@ type SetupServer struct {
 	env *setupEnv
 	mux http.Handler
 
-	mu      sync.Mutex
-	oc      *opencode.Client // discovered by the prereq re-check (ONB-02)
-	bootFn  func(dir string) (http.Handler, error)
-	basePath string          // URL prefix in hub mode; "" standalone
-	swapped atomic.Value // http.Handler after a successful boot
+	mu       sync.Mutex
+	oc       *opencode.Client // discovered by the prereq re-check (ONB-02)
+	bootFn   func(dir string) (http.Handler, error)
+	basePath string       // URL prefix in hub mode; "" standalone
+	swapped  atomic.Value // http.Handler after a successful boot
 }
 
 // NewSetup builds the setup-mode handler for dir. basePath is the URL

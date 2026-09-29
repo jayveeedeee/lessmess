@@ -29,8 +29,10 @@ EXP-00 through EXP-03 (documents the landed behavior; verification runs last).
   markers (it does not — verify before editing).
 - `changes/2026-09-24-rc9pd/plan.md`: final pass so Current/Target behavior
   match what landed.
-- Full verification: `go vet ./... && go test ./...`, `lessmess validate`,
-  rebuild + restart, manual pass over the acceptance matrix.
+- Full verification: `go vet ./... && go test ./...`, `lessmess validate`
+  (no workflow violations/new docs findings relative to baseline; account for
+  the current queue-stale gardener warnings and unrelated stale-reference
+  warning), rebuild + restart, manual pass over the acceptance matrix.
 
 Out of scope: any new feature work; fixes belong in EXP-00..03.
 
@@ -45,7 +47,8 @@ Out of scope: any new feature work; fixes belong in EXP-00..03.
 
 ## Verification
 
-- `go vet ./... && go test ./...` green; `lessmess validate` clean.
+- `go vet ./... && go test ./...` green; `lessmess validate` has no workflow
+  violations or new docs findings.
 - This repo after restart: docs running (bell, gardener on close armed),
   Settings shows `docs.enabled` = project/true with Experimental badge.
 - README renders the new behaviors; no stale claims about the wizard's docs

@@ -39,11 +39,11 @@ type Server struct {
 	oc       *opencode.Client // nil disables the opencode integration
 	sessions *mapping
 	mapErr   error
-	autos    *autosession   // once-only markers for auto-spawned task sessions
+	autos    *autosession     // once-only markers for auto-spawned task sessions
 	compacts *compactionWatch // compaction re-prime markers (memory-only)
-	docsQ    *docsQueue     // nil disables the docs system (no agentsdocs.json)
-	docsW    *docsWatcher   // nil when docs are disabled or the watcher failed
-	git      *gitops.Client // nil in setup mode; worktree mechanics + state
+	docsQ    *docsQueue       // nil unless docs.enabled and agentsdocs.json were valid at startup
+	docsW    *docsWatcher     // nil when docs are disabled or the watcher failed
+	git      *gitops.Client   // nil in setup mode; worktree mechanics + state
 }
 
 // New builds the route table.
@@ -59,15 +59,17 @@ func New(st *store.Store) *Server {
 	s.autos = loadAutosession(filepath.Join(st.Dir, store.StateDirName, "autosession.json"))
 	s.compacts = newCompactionWatch()
 
-	if cfg, err := docs.LoadConfig(st.Dir); err != nil {
-		slog.Warn("docs config unreadable; docs system disabled", "err", err)
-	} else if cfg != nil {
-		s.docsQ = newDocsQueue(st.Dir, cfg)
-		s.docsQ.start()
-		if dw, err := newDocsWatcher(st.Dir, cfg); err != nil {
-			slog.Warn("docs watcher disabled", "err", err)
-		} else {
-			s.docsW = dw
+	if DocsEnabled(st.Dir) {
+		if cfg, err := docs.LoadConfig(st.Dir); err != nil {
+			slog.Warn("docs config unreadable; docs system disabled", "err", err)
+		} else if cfg != nil {
+			s.docsQ = newDocsQueue(st.Dir, cfg)
+			s.docsQ.start()
+			if dw, err := newDocsWatcher(st.Dir, cfg); err != nil {
+				slog.Warn("docs watcher disabled", "err", err)
+			} else {
+				s.docsW = dw
+			}
 		}
 	}
 
@@ -152,6 +154,8 @@ func New(st *store.Store) *Server {
 	mux.HandleFunc("GET /docs/seed-status", s.docsSeedStatus)
 	mux.HandleFunc("GET /docs/exclusions", s.docsExclusions)
 	mux.HandleFunc("POST /docs/exclusions", s.docsExclusionsSave)
+	mux.HandleFunc("GET /docs/status", s.docsStatus)
+	mux.HandleFunc("POST /docs/initialize", s.docsInitialize)
 	mux.HandleFunc("GET /api/settings", s.getSettings)
 	mux.HandleFunc("PUT /api/settings", s.putSettings)
 	mux.HandleFunc("GET /api/settings/options", s.settingsOptions)
@@ -791,18 +795,21 @@ func (s *Server) validate(w http.ResponseWriter, r *http.Request) {
 		v = []store.Violation{}
 	}
 	var stale map[string]string
+	var df []docs.Finding
 	if s.docsQ != nil {
 		stale = s.docsQ.staleReasons()
+		df = docs.ValidateDocs(s.st.Dir, stale)
 	}
-	df := docs.ValidateDocs(s.st.Dir, stale)
 	if df == nil {
 		df = []docs.Finding{}
 	}
 	payload := map[string]any{"violations": v, "docs": df}
 	// Dirs missing their doc files: the bell's "Run missing docs" button
 	// hides at zero; -1 means the lookup failed (walk trouble).
-	if missing, err := docs.MissingDocDirs(s.st.Dir); err == nil {
-		payload["docsSeedPending"] = len(missing)
+	if s.docsQ != nil {
+		if missing, err := docs.MissingDocDirs(s.st.Dir); err == nil {
+			payload["docsSeedPending"] = len(missing)
+		}
 	}
 	writeJSON(w, http.StatusOK, payload)
 }
