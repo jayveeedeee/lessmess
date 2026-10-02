@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "id": "2026-10-02-s4p21",
+  "title": "Fix stale compaction re-prime detection",
+  "prefix": "CR",
+  "branch": "main",
+  "status": {
+    "value": "In progress",
+    "derived": true
+  },
+  "created": "2026-10-02",
+  "updated": "2026-10-02",
+  "decisionLog": [
+    {
+      "date": "2026-10-02",
+      "decision": "Supersedes 2026-09-30-f5rdx: same diagnosis and target rule; that planned change is absorbed here and can be removed from the board by the user."
+    }
+  ],
+  "tasks": [
+    {
+      "id": "CR-00",
+      "seq": 0,
+      "title": "Replace memory-based compaction watch with transcript-based evaluation",
+      "file": "tasks/00-replace-memory-based-compaction-watch-wi.md",
+      "status": "Test",
+      "updated": "2026-10-02",
+      "notes": "compactionWatch deleted; stateless needsReprime evaluates one desc ListMessagesPage (newest completed compaction strictly newer than newest user message, ties = continued, fail-open on read errors); compacts field/wiring, markPending, and snapshot observation block removed; maybeReprime gains r.Context(). go vet ./... clean, go test ./... all packages ok, lessmess validate: violations []"
+    },
+    {
+      "id": "CR-01",
+      "seq": 1,
+      "title": "Cover the re-prime rule with regression tests and verify the suite",
+      "file": "tasks/01-cover-the-re-prime-rule-with-regression.md",
+      "status": "Test",
+      "dependsOn": [
+        "CR-00"
+      ],
+      "updated": "2026-10-02",
+      "notes": "reprime_test.go rewritten around the stateless rule: 9 tests cover stale compaction after restart (no wrap), failed compaction (no wrap), in-flight race (raw -\u003e wrapped once -\u003e raw), tie timestamps (no wrap), empty/unreadable transcript (fail-open), unbound session and unreadable ledger (fail-open), queued + observed compaction (wrapped once then raw), and the /deliver path wrapping identically. go vet ./... clean; go test ./... all packages ok; lessmess validate: no violations (only pre-existing docs-queue warnings)."
+    }
+  ]
+}

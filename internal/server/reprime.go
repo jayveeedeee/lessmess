@@ -1,9 +1,11 @@
 package server
 
 import (
+	"context"
 	"log/slog"
 	"strings"
-	"sync"
+
+	"lessmess/internal/opencode"
 )
 
 // Compaction re-prime: when a session's context is compacted, the base
@@ -13,72 +15,54 @@ import (
 // prompt to a bound session carries a compact re-prime: the binding
 // line, a fresh state snapshot, and a pointer back to the skills.
 //
-// Detection is deliberately transcript-based: lessmess marks the
-// sessions whose compactions it queued (the board's Compact action),
-// and the chat snapshot walk observes completed compaction messages —
-// which also covers service-side auto-compaction, since every Chat view
-// polls snapshots while visible. No event subscription: the opencode
-// event stream is volatile by contract, and the transcript read is the
-// same stable path the view already uses.
+// Detection is stateless and transcript-based: a bound session needs a
+// re-prime iff its newest completed compaction message is strictly
+// newer than its newest user message. One small descending page read at
+// prompt time decides, so the rule is restart-proof (no memory, nothing
+// persisted), ignores failed compactions (`failed` never counts),
+// self-heals across fork/revert, and cannot double-fire on an in-flight
+// compaction: a queued compaction counts only once completed, and the
+// first prompt after that completion is the single wrap.
 
-// compactionWatch is the per-process memory of which compactions have
-// been seen and which have been compensated. Memory-only on purpose: a
-// restart loses the markers, and the worst case is one uncompensated
-// compaction after a restart.
-type compactionWatch struct {
-	mu       sync.Mutex
-	pending  map[string]bool   // session → lessmess queued a compaction
-	lastSeen map[string]string // session → newest completed compaction msg id
-	primed   map[string]string // session → newest compensated compaction msg id
-}
+// reprimeScanLimit bounds the descending transcript read behind the
+// re-prime rule. The newest user message and the newest completed
+// compaction sit at the transcript tail, separated only by the final
+// turn's assistant and tool parts, so a single page is enough and the
+// rule never paginates.
+const reprimeScanLimit = 50
 
-func newCompactionWatch() *compactionWatch {
-	return &compactionWatch{
-		pending:  map[string]bool{},
-		lastSeen: map[string]string{},
-		primed:   map[string]string{},
+// needsReprime evaluates the transcript rule: walk the newest page
+// newest-first. The first user message or completed compaction
+// encountered is the newest of its kind, so the walk records the newest
+// completed compaction and decides at the first user message — a
+// compaction strictly newer than it means the context was compacted
+// with no user turn since; equal timestamps count as already continued
+// (a missed re-prime is safer than a spurious one). A page exhausted on
+// a completed compaction with no user message is a conservative
+// re-prime; exhaustion without one means nothing needs compensating.
+// Any read failure fails open.
+func (s *Server) needsReprime(ctx context.Context, sessionID string) bool {
+	if s.oc == nil {
+		return false
 	}
-}
-
-// markPending records a compaction lessmess itself queued.
-func (w *compactionWatch) markPending(sessionID string) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	w.pending[sessionID] = true
-}
-
-// observe records the newest completed compaction seen in a session's
-// transcript.
-func (w *compactionWatch) observe(sessionID, msgID string) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	if w.lastSeen[sessionID] == msgID {
-		return
+	page, err := s.oc.ListMessagesPage(ctx, sessionID, opencode.ListMessagesOptions{Limit: reprimeScanLimit, Order: "desc"})
+	if err != nil {
+		slog.Warn("reprime skipped: transcript unreadable", "session", sessionID, "err", err)
+		return false
 	}
-	w.lastSeen[sessionID] = msgID
-}
-
-// needsReprime reports whether the session has a compaction that no
-// wrap has compensated yet.
-func (w *compactionWatch) needsReprime(sessionID string) bool {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	if w.pending[sessionID] {
-		return true
+	var compactedAt float64
+	compacted := false
+	for i := range page.Messages {
+		m := &page.Messages[i]
+		switch {
+		case m.Type == "user":
+			return compacted && m.Time.Created < compactedAt
+		case m.Type == "compaction" && m.Status == "completed":
+			compacted = true
+			compactedAt = m.Time.Created
+		}
 	}
-	seen, has := w.lastSeen[sessionID]
-	return has && seen != "" && seen != w.primed[sessionID]
-}
-
-// consume records that the session's current compaction state has been
-// compensated.
-func (w *compactionWatch) consume(sessionID string) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	delete(w.pending, sessionID)
-	if seen := w.lastSeen[sessionID]; seen != "" {
-		w.primed[sessionID] = seen
-	}
+	return compacted
 }
 
 // maybeReprime returns the prompt text to send: either the caller's text
@@ -86,12 +70,12 @@ func (w *compactionWatch) consume(sessionID string) {
 // never wrapped (a free chat has no binding to restore), and any
 // lookup or read failure fails open — a user prompt is never blocked by
 // this path.
-func (s *Server) maybeReprime(sessionID, text string) string {
-	if s.compacts == nil || s.mapErr != nil || !s.compacts.needsReprime(sessionID) {
+func (s *Server) maybeReprime(ctx context.Context, sessionID, text string) string {
+	if s.mapErr != nil {
 		return text
 	}
 	changeID, entry, bound := s.sessions.entry(sessionID)
-	if !bound {
+	if !bound || !s.needsReprime(ctx, sessionID) {
 		return text
 	}
 	var b strings.Builder
@@ -110,7 +94,5 @@ func (s *Server) maybeReprime(sessionID, text string) string {
 	b.WriteString("\n\nContinue where you left off — workflow procedures are in your `lessmess-*` skills.")
 	b.WriteString("\n\n-----\n\n")
 	b.WriteString(text)
-	s.compacts.consume(sessionID)
 	return b.String()
 }
-

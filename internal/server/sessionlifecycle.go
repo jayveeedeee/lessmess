@@ -439,11 +439,6 @@ func (s *Server) sessionCompact(w http.ResponseWriter, r *http.Request) {
 		writeLifecycleError(w, err)
 		return
 	}
-	// Queue the compaction for the re-prime: the session's next prompt
-	// carries a fresh binding line and state snapshot.
-	if s.compacts != nil {
-		s.compacts.markPending(id)
-	}
 	writeJSON(w, http.StatusAccepted, map[string]any{"inbox": item})
 }
 func (s *Server) sessionDeliver(w http.ResponseWriter, r *http.Request) {
@@ -492,7 +487,7 @@ func (s *Server) sessionDeliver(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	item, err := s.oc.DeliverPrompt(r.Context(), cap, id, req.ID, s.maybeReprime(id, req.Text), files, skills, req.Delivery)
+	item, err := s.oc.DeliverPrompt(r.Context(), cap, id, req.ID, s.maybeReprime(r.Context(), id, req.Text), files, skills, req.Delivery)
 	if err != nil {
 		writeLifecycleError(w, err)
 		return

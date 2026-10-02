@@ -367,6 +367,13 @@
       "prefix": "HST",
       "branch": "main",
       "created": "2026-09-30"
+    },
+    {
+      "id": "2026-10-02-s4p21",
+      "title": "Fix stale compaction re-prime detection",
+      "prefix": "CR",
+      "branch": "main",
+      "created": "2026-10-02"
     }
   ]
 }

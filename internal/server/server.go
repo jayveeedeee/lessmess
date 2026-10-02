@@ -40,7 +40,6 @@ type Server struct {
 	sessions *mapping
 	mapErr   error
 	autos    *autosession     // once-only markers for auto-spawned task sessions
-	compacts *compactionWatch // compaction re-prime markers (memory-only)
 	docsQ    *docsQueue       // nil unless docs.enabled and agentsdocs.json were valid at startup
 	docsW    *docsWatcher     // nil when docs are disabled or the watcher failed
 	git      *gitops.Client   // nil in setup mode; worktree mechanics + state
@@ -57,7 +56,6 @@ func New(st *store.Store) *Server {
 	m, err := loadMapping(filepath.Join(st.Dir, store.StateDirName, "sessions.json"))
 	s.sessions, s.mapErr = m, err
 	s.autos = loadAutosession(filepath.Join(st.Dir, store.StateDirName, "autosession.json"))
-	s.compacts = newCompactionWatch()
 
 	if DocsEnabled(st.Dir) {
 		if cfg, err := docs.LoadConfig(st.Dir); err != nil {

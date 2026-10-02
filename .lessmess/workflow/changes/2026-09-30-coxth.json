@@ -5,8 +5,8 @@
   "prefix": "HST",
   "branch": "main",
   "status": {
-    "value": "In progress",
-    "derived": true
+    "value": "Done",
+    "derived": false
   },
   "created": "2026-09-30",
   "updated": "2026-09-30",
