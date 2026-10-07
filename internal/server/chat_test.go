@@ -12,7 +12,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"lessmess/internal/opencode"
 )
@@ -53,6 +56,336 @@ func chatFake(t *testing.T, mutate func(*http.Request, map[string]any)) *Server 
 			}
 		}
 	})
+}
+
+func TestChatSnapshotFanOutOverlaps(t *testing.T) {
+	s := mappingServer(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/session/ses_chat/message",
+			"/api/session/active",
+			"/api/session/ses_chat/permission",
+			"/api/session/ses_chat/form":
+			time.Sleep(300 * time.Millisecond) // simulate a slow service
+			switch r.URL.Path {
+			case "/api/session/ses_chat/message":
+				w.Write([]byte(`{"data":[],"cursor":{}}`))
+			case "/api/session/active":
+				w.Write([]byte(`{"data":{}}`))
+			default:
+				w.Write([]byte(`{"data":[]}`))
+			}
+		default:
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+	start := time.Now()
+	w := do(t, s.Handler(), "GET", "/api/sessions/ses_chat/chat", "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("snapshot = %d %s", w.Code, w.Body.String())
+	}
+	if elapsed := time.Since(start); elapsed >= 600*time.Millisecond {
+		t.Fatalf("snapshot took %v; four 300ms reads must overlap (<600ms), not sum (~1.2s)", elapsed)
+	}
+}
+
+// degradedChatFake serves a transcript plus whichever aux reads succeed;
+// the named aux endpoint (one of "active", "permission", "form") 500s.
+func degradedChatFake(t *testing.T, failing string) *Server {
+	t.Helper()
+	return mappingServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/"+failing) {
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte(`{"message":"slow service"}`))
+			return
+		}
+		switch r.URL.Path {
+		case "/api/session/ses_chat/message":
+			w.Write([]byte(`{"data":[{"id":"msg_user","type":"user","text":"hello","time":{"created":1}}],"cursor":{}}`))
+		case "/api/session/active":
+			w.Write([]byte(`{"data":{"ses_chat":{"type":"running"}}}`))
+		case "/api/session/ses_chat/permission":
+			w.Write([]byte(`{"data":[]}`))
+		case "/api/session/ses_chat/form":
+			w.Write([]byte(`{"data":[]}`))
+		default:
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+}
+
+func TestChatSnapshotDegradesWhenAuxReadFails(t *testing.T) {
+	for _, failing := range []string{"active", "permission", "form"} {
+		t.Run(failing, func(t *testing.T) {
+			s := degradedChatFake(t, failing)
+			w := do(t, s.Handler(), "GET", "/api/sessions/ses_chat/chat", "")
+			if w.Code != http.StatusOK {
+				t.Fatalf("snapshot with failing %s = %d %s; want 200 with transcript", failing, w.Code, w.Body.String())
+			}
+			body := w.Body.String()
+			if !strings.Contains(body, "hello") {
+				t.Fatalf("transcript missing with failing %s", failing)
+			}
+			if !strings.Contains(body, `data-degraded="true"`) {
+				t.Fatalf("degradation marker missing with failing %s", failing)
+			}
+			wantKnown := `data-busy-known="true"`
+			if failing == "active" {
+				wantKnown = `data-busy-known="false"`
+			}
+			if !strings.Contains(body, wantKnown) {
+				t.Fatalf("busy-state availability missing with failing %s: %s", failing, body)
+			}
+		})
+	}
+}
+
+func TestChatSnapshotStillFailsWhenTranscriptReadFails(t *testing.T) {
+	s := mappingServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/session/ses_chat/message" {
+			w.WriteHeader(http.StatusBadGateway)
+			w.Write([]byte(`{"message":"upstream gone"}`))
+			return
+		}
+		switch r.URL.Path {
+		case "/api/session/active", "/api/session/ses_chat/permission", "/api/session/ses_chat/form":
+			w.Write([]byte(`{"data":[]}`))
+		default:
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+	w := do(t, s.Handler(), "GET", "/api/sessions/ses_chat/chat", "")
+	if w.Code != http.StatusBadGateway {
+		t.Fatalf("transcript failure = %d %s; want the upstream error shape", w.Code, w.Body.String())
+	}
+}
+
+func TestChatSnapshotBoundedWhenServiceStalls(t *testing.T) {
+	old := chatPollBudget
+	chatPollBudget = 150 * time.Millisecond
+	t.Cleanup(func() { chatPollBudget = old })
+	s := mappingServer(t, func(w http.ResponseWriter, r *http.Request) {
+		select { // stalls, but ends promptly when the canceled client hangs up
+		case <-time.After(2 * time.Second):
+		case <-r.Context().Done():
+			return
+		}
+		w.Write([]byte(`{"data":[]}`))
+	})
+	start := time.Now()
+	w := do(t, s.Handler(), "GET", "/api/sessions/ses_chat/chat", "")
+	if w.Code == http.StatusOK {
+		t.Fatal("stalled service should not yield a successful snapshot")
+	}
+	if elapsed := time.Since(start); elapsed >= time.Second {
+		t.Fatalf("poll took %v; budget (150ms) must bound it far under the 30s client cap", elapsed)
+	}
+}
+
+func TestChatSnapshotConcurrentPollsShareOneFetch(t *testing.T) {
+	var msgs, actives int32
+	s := mappingServer(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/session/ses_chat/message":
+			atomic.AddInt32(&msgs, 1)
+			time.Sleep(120 * time.Millisecond) // hold the single-flight window open
+			w.Write([]byte(`{"data":[{"id":"msg_user","type":"user","text":"hi","time":{"created":1}}],"cursor":{}}`))
+		case "/api/session/active":
+			atomic.AddInt32(&actives, 1)
+			time.Sleep(120 * time.Millisecond)
+			w.Write([]byte(`{"data":{"ses_chat":{"type":"idle"}}}`))
+		default:
+			w.Write([]byte(`{"data":[]}`))
+		}
+	})
+	h := s.Handler()
+	var wg sync.WaitGroup
+	for i := 0; i < 5; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			w := do(t, h, "GET", "/api/sessions/ses_chat/chat", "")
+			if w.Code != http.StatusOK {
+				t.Errorf("concurrent poll = %d %s", w.Code, w.Body.String())
+			}
+		}()
+	}
+	wg.Wait()
+	if n := atomic.LoadInt32(&msgs); n != 1 {
+		t.Fatalf("transcript fetched %d times for 5 concurrent polls, want 1", n)
+	}
+	if n := atomic.LoadInt32(&actives); n != 1 {
+		t.Fatalf("active map fetched %d times for 5 concurrent polls, want 1", n)
+	}
+}
+
+func TestChatActiveCacheServesWithinTTL(t *testing.T) {
+	var actives, msgs int32
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/session/ses_chat/message":
+			atomic.AddInt32(&msgs, 1)
+			w.Write([]byte(`{"data":[],"cursor":{}}`))
+		case "/api/session/active":
+			atomic.AddInt32(&actives, 1)
+			w.Write([]byte(`{"data":{}}`))
+		default:
+			w.Write([]byte(`{"data":[]}`))
+		}
+	}
+	s := mappingServer(t, handler)
+	do(t, s.Handler(), "GET", "/api/sessions/ses_chat/chat", "")
+	do(t, s.Handler(), "GET", "/api/sessions/ses_chat/chat", "")
+	if n := atomic.LoadInt32(&actives); n != 1 {
+		t.Fatalf("active fetched %d times within the TTL, want 1 (cached)", n)
+	}
+	if n := atomic.LoadInt32(&msgs); n != 2 {
+		t.Fatalf("transcript fetched %d times across sequential polls, want 2 (only concurrent polls collapse)", n)
+	}
+}
+
+func TestChatActiveCacheDoesNotMemoizeFailure(t *testing.T) {
+	var actives int32
+	s := mappingServer(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/session/ses_chat/message":
+			w.Write([]byte(`{"data":[{"id":"msg_user","type":"user","text":"hi","time":{"created":1}}],"cursor":{}}`))
+		case "/api/session/active":
+			if atomic.AddInt32(&actives, 1) == 1 {
+				w.WriteHeader(http.StatusInternalServerError)
+				w.Write([]byte(`{"message":"boom"}`))
+				return
+			}
+			w.Write([]byte(`{"data":{}}`))
+		default:
+			w.Write([]byte(`{"data":[]}`))
+		}
+	})
+	w1 := do(t, s.Handler(), "GET", "/api/sessions/ses_chat/chat", "")
+	if w1.Code != http.StatusOK || !strings.Contains(w1.Body.String(), `data-degraded="true"`) {
+		t.Fatalf("first poll = %d, degraded marker missing", w1.Code)
+	}
+	w2 := do(t, s.Handler(), "GET", "/api/sessions/ses_chat/chat", "")
+	if w2.Code != http.StatusOK || strings.Contains(w2.Body.String(), `data-degraded="true"`) {
+		t.Fatalf("second poll = %d, should be clean after the failed fetch retried", w2.Code)
+	}
+	if n := atomic.LoadInt32(&actives); n != 2 {
+		t.Fatalf("active fetched %d times; a failed fetch must not be memoized", n)
+	}
+}
+
+func TestChatSnapshotServesLastGoodWhenTranscriptReadFails(t *testing.T) {
+	var broken bool
+	s := mappingServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/session/ses_chat/message" {
+			if broken {
+				w.WriteHeader(http.StatusBadGateway)
+				w.Write([]byte(`{"message":"saturated"}`))
+				return
+			}
+			w.Write([]byte(`{"data":[{"id":"msg_user","type":"user","text":"fresh hello","time":{"created":1}}],"cursor":{}}`))
+			return
+		}
+		if r.URL.Path == "/api/session/active" {
+			w.Write([]byte(`{"data":{}}`))
+			return
+		}
+		w.Write([]byte(`{"data":[]}`))
+	})
+	h := s.Handler()
+	w1 := do(t, h, "GET", "/api/sessions/ses_chat/chat", "")
+	if w1.Code != http.StatusOK || !strings.Contains(w1.Body.String(), "fresh hello") {
+		t.Fatalf("first poll = %d", w1.Code)
+	}
+	broken = true
+	w2 := do(t, h, "GET", "/api/sessions/ses_chat/chat", "")
+	if w2.Code != http.StatusOK {
+		t.Fatalf("poll with broken transcript read = %d %s; want last-good 200", w2.Code, w2.Body.String())
+	}
+	if !strings.Contains(w2.Body.String(), "fresh hello") {
+		t.Fatal("last-good transcript missing from degraded poll")
+	}
+	if !strings.Contains(w2.Body.String(), `data-degraded="true"`) {
+		t.Fatal("degraded marker missing on last-good poll")
+	}
+	if !strings.Contains(w2.Body.String(), `data-busy-known="false"`) || !strings.Contains(w2.Body.String(), `data-outcome="unknown"`) {
+		t.Fatal("last-good snapshot must not claim current execution state")
+	}
+	broken = false
+	w3 := do(t, h, "GET", "/api/sessions/ses_chat/chat", "")
+	if w3.Code != http.StatusOK || strings.Contains(w3.Body.String(), `data-degraded="true"`) {
+		t.Fatal("recovered poll should be clean")
+	}
+}
+
+func TestChatSnapshotLastGoodExpires(t *testing.T) {
+	var broken bool
+	s := mappingServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/session/ses_chat/message" {
+			if broken {
+				w.WriteHeader(http.StatusBadGateway)
+				w.Write([]byte(`{"message":"saturated"}`))
+				return
+			}
+			w.Write([]byte(`{"data":[{"id":"msg_user","type":"user","text":"seed","time":{"created":1}}],"cursor":{}}`))
+			return
+		}
+		if r.URL.Path == "/api/session/active" {
+			w.Write([]byte(`{"data":{}}`))
+			return
+		}
+		w.Write([]byte(`{"data":[]}`))
+	})
+	if w := do(t, s.Handler(), "GET", "/api/sessions/ses_chat/chat", ""); w.Code != http.StatusOK {
+		t.Fatalf("seed poll = %d", w.Code)
+	}
+	broken = true
+	old := chatMemoTTL
+	chatMemoTTL = -1 // force expiry between polls
+	t.Cleanup(func() { chatMemoTTL = old })
+	w := do(t, s.Handler(), "GET", "/api/sessions/ses_chat/chat", "")
+	if w.Code != http.StatusBadGateway {
+		t.Fatalf("expired memo should fail honestly, got %d", w.Code)
+	}
+}
+
+func TestChatSnapshotExecutionOutcome(t *testing.T) {
+	cases := []struct {
+		name, messages, outcome string
+	}{
+		{"success", `[{"id":"msg_idle","type":"idle","outcome":"succeeded"}]`, "succeeded"},
+		{"failure", `[{"id":"msg_idle","type":"idle","outcome":"failed"}]`, "failed"},
+		{"stop", `[{"id":"msg_idle","type":"idle","outcome":"interrupted"}]`, "interrupted"},
+		{"unknown", `[{"id":"msg_idle","type":"idle","outcome":"future"}]`, "unknown"},
+		{"error fallback", `[{"id":"msg_assistant","type":"assistant","error":{"type":"UnknownError","message":"secret-canary"}}]`, "failed"},
+		{"new turn", `[{"id":"msg_user","type":"user","text":"new"},{"id":"msg_idle","type":"idle","outcome":"failed"}]`, ""},
+		{"compaction", `[{"id":"msg_compact","type":"compaction","status":"completed"},{"id":"msg_idle","type":"idle","outcome":"failed"}]`, "failed"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			s := mappingServer(t, func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case "/api/session/ses_chat/message":
+					w.Write([]byte(`{"data":` + tc.messages + `,"cursor":{}}`))
+				case "/api/session/active":
+					w.Write([]byte(`{"data":{}}`))
+				default:
+					w.Write([]byte(`{"data":[]}`))
+				}
+			})
+			w := do(t, s.Handler(), "GET", "/api/sessions/ses_chat/chat", "")
+			body := w.Body.String()
+			if w.Code != 200 || !strings.Contains(body, `data-outcome="`+tc.outcome+`"`) || !strings.Contains(body, `data-busy-known="true"`) || strings.Contains(body, "secret-canary") {
+				t.Fatalf("latest snapshot = %d %s", w.Code, body)
+			}
+			history := do(t, s.Handler(), "GET", "/api/sessions/ses_chat/chat?cursor=older", "")
+			if history.Code != 200 || strings.Contains(history.Body.String(), "data-outcome=") || strings.Contains(history.Body.String(), "data-busy-known=") {
+				t.Fatalf("history must not publish current execution state: %d %s", history.Code, history.Body.String())
+			}
+		})
+	}
 }
 
 func TestChatSnapshotRendersSafeAuthoritativeState(t *testing.T) {
@@ -746,6 +1079,64 @@ func TestChatUsageUsesLatestActiveAssistantAndKeepsAccountingSeparate(t *testing
 	}
 	if !usage.ContextAvailable || usage.EstimatedContext != 850 || usage.Percent != 85 || !usage.Warning {
 		t.Fatalf("active usage = %+v", usage)
+	}
+}
+
+func TestRestorationSyntheticRendersSlimRowOthersSkipped(t *testing.T) {
+	restore := makeChatMessageView("", "ses_x", opencode.Message{
+		ID: "msg_s", Type: "synthetic",
+		Text: "Context restoration: the conversation above was compacted. This session is bound to change C.\n\nCurrent state: [a very long ledger snapshot]",
+	})
+	instructions := makeChatMessageView("", "ses_x", opencode.Message{
+		ID: "msg_i", Type: "synthetic", Text: "Instructions from: AGENTS.md",
+	})
+	if restore.Label != "Context restoration" {
+		t.Fatalf("restoration label = %q", restore.Label)
+	}
+	if strings.Contains(string(restore.Text), "ledger snapshot") {
+		t.Errorf("restoration row must not render the snapshot: %s", restore.Text)
+	}
+	blocks := makeChatTranscriptBlocks([]chatMessageView{instructions, restore})
+	if len(blocks) != 1 {
+		t.Fatalf("blocks = %d, want 1 (service synthetics stay hidden)", len(blocks))
+	}
+	b := blocks[0]
+	if b.Kind != "message" || b.Message == nil || b.Message.Label != "Context restoration" {
+		t.Fatalf("restoration block = %+v", b)
+	}
+	if len(b.Markers) != 1 || b.Markers[0].Type != "synthetic" {
+		t.Fatalf("restoration markers = %+v", b.Markers)
+	}
+}
+
+func TestChatUsageInputLimitIsTheCeiling(t *testing.T) {
+	// The service auto-compacts as the live context approaches the
+	// model's input limit, which sits below the context figure on
+	// output-heavy models — the ceiling (and the 80% warning) must track
+	// the input limit, falling back to context when it is absent.
+	s := mappingServer(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/session/ses_chat":
+			w.Write([]byte(`{"data":{"id":"ses_chat","model":{"providerID":"p","id":"m"}}}`))
+		case "/api/model":
+			w.Write([]byte(`{"data":[{"id":"m","providerID":"p","enabled":true,"limit":{"context":2000,"input":1000}}]}`))
+		case "/api/session/ses_chat/context":
+			w.Write([]byte(`{"data":[{"id":"msg_a","type":"assistant","tokens":{"input":700,"output":100,"reasoning":20,"cache":{"read":30,"write":0}}}]}`))
+		default:
+			t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+	w := do(t, s.Handler(), "GET", "/api/sessions/ses_chat/chat/usage", "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("usage = %d %s", w.Code, w.Body.String())
+	}
+	var usage chatUsageView
+	if err := json.Unmarshal(w.Body.Bytes(), &usage); err != nil {
+		t.Fatal(err)
+	}
+	if usage.ContextLimit != 1000 || usage.EstimatedContext != 850 || usage.Percent != 85 || !usage.Warning {
+		t.Fatalf("input-ceiling usage = %+v", usage)
 	}
 }
 

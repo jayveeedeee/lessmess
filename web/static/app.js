@@ -761,7 +761,14 @@
     revertDialog: null,
     compactPending: {},
     inbox: [],
+    inboxState: "loading",
+    inboxLoaded: false,
+    inboxCheckedAt: 0,
     inboxRequest: null,
+    inboxPromise: null,
+    snapshotFailed: false,
+    snapshotCheckedAt: 0,
+    lifecycleRequest: null,
     selectedPendingID: null,
     selectedMessageID: null,
     deliveryIDs: {},
@@ -1033,6 +1040,11 @@
     cstate.stagedControls = null;
     cstate.usage = null;
     cstate.inbox = [];
+    cstate.inboxState = "loading";
+    cstate.inboxLoaded = false;
+    cstate.inboxCheckedAt = 0;
+    cstate.snapshotFailed = false;
+    cstate.snapshotCheckedAt = 0;
     cstate.selectedPendingID = null;
     cstate.selectedMessageID = null;
     cstate.lifecycle = null;
@@ -1089,6 +1101,7 @@
     clearTimeout(cstate.timer);
     if (cstate.request) cstate.request.abort();
     if (cstate.inboxRequest) cstate.inboxRequest.abort();
+    if (cstate.lifecycleRequest) cstate.lifecycleRequest.abort();
     if (cstate.navigationRequest) cstate.navigationRequest.abort();
     clearTimeout(cstate.usageTimer);
     if (cstate.usageRequest) cstate.usageRequest.abort();
@@ -1096,6 +1109,8 @@
     cstate.timer = null;
     cstate.request = null;
     cstate.inboxRequest = null;
+    cstate.inboxPromise = null;
+    cstate.lifecycleRequest = null;
     cstate.navigationRequest = null;
     cstate.usageTimer = null;
     cstate.usageRequest = null;
@@ -1157,7 +1172,9 @@
         return r.text();
       })
       .then(function (html) {
-        if (!chatOpen() || cstate.session !== sessionID) return;
+        if (!chatOpen() || cstate.session !== sessionID || cstate.request !== controller) return;
+        cstate.snapshotFailed = false;
+        cstate.snapshotCheckedAt = Date.now();
         var nearBottom = transcript.scrollHeight - transcript.scrollTop - transcript.clientHeight < 96;
         var oldTop = transcript.scrollTop;
         var changed = cstate.snapshot !== html;
@@ -1181,7 +1198,7 @@
           mountChatForm();
           restoreChatForms();
           var root = transcript.querySelector(".chat-snapshot");
-          if (root && cstate.lifecycle) {
+          if (root && root.dataset.busyKnown === "true" && cstate.lifecycle) {
             var snapshotBusy = root.dataset.busy === "true";
            if (cstate.lifecycle.busy !== snapshotBusy) {
               cstate.lifecycle.busy = snapshotBusy;
@@ -1238,13 +1255,18 @@
           else transcript.scrollTop = oldTop;
           setChatStatus("");
         } else {
+          updateChatDeliveryControls();
+          renderChatInbox(false);
           setChatStatus("");
         }
       })
       .catch(function (err) {
-        if (err.name !== "AbortError") {
+        if (err.name !== "AbortError" && cstate.session === sessionID && cstate.request === controller) {
+          cstate.snapshotFailed = true;
           setChatStatus("Disconnected from OpenCode. Retrying…", true, true);
           setChatHeaderState("Disconnected", "error");
+          renderChatInbox();
+          updateChatActionButton();
         }
       })
       .finally(function () {
@@ -1252,7 +1274,9 @@
           cstate.request = null;
           transcript.setAttribute("aria-busy", "false");
            scheduleChatPoll(1200);
-           loadChatInbox(false);
+            if (!cstate.lifecycle || cstate.lifecycleError) {
+              if (!cstate.lifecycleRequest) loadChatLifecycle();
+            } else loadChatInbox(false);
         }
       });
   }
@@ -1628,6 +1652,28 @@
     return root ? root.dataset.busy === "true" : !!(cstate.lifecycle && cstate.lifecycle.busy);
   }
 
+  // Age gates also cover backgrounded tabs and slow in-flight reads. The
+  // execution window allows the 15s snapshot budget plus normal poll cadence.
+  function chatExecutionState() {
+    var root = document.querySelector("#chat-transcript .chat-snapshot");
+    if (!root || cstate.snapshotFailed || Date.now() - cstate.snapshotCheckedAt > 20000 || root.dataset.busyKnown !== "true") return "unknown";
+    if (root.dataset.busy === "true") return "working";
+    return ({ failed: "failed", interrupted: "interrupted" })[root.dataset.outcome] || "idle";
+  }
+
+  function canResumeChatPending(itemID) {
+    var root = document.querySelector("#chat-transcript .chat-snapshot");
+    var cap = cstate.lifecycle && cstate.lifecycle.capabilities || {};
+    return !!(root && !cstate.lifecycleError && root.dataset.degraded !== "true" && chatExecutionState() !== "unknown" &&
+      chatInboxFresh() && cap.inboxList && cap.inboxDelivery && cstate.inbox.some(function (item) {
+        return item.id === itemID && item.known && item.type === "user";
+      }));
+  }
+
+  function chatInboxFresh() {
+    return cstate.inboxState === "fresh" && Date.now() - cstate.inboxCheckedAt <= 10000;
+  }
+
   function updateChatActionButton() {
     var button = document.getElementById("chat-send-btn");
     var prompt = document.getElementById("chat-prompt");
@@ -1635,23 +1681,27 @@
     var cancel = document.getElementById("chat-cancel-btn");
     var steer = document.getElementById("chat-steer-btn");
     var queue = document.getElementById("chat-queue-btn");
+    var resume = document.getElementById("chat-resume-btn");
     var copy = document.getElementById("chat-copy-message-btn");
     var fork = document.getElementById("chat-fork-message-btn");
     var revert = document.getElementById("chat-revert-message-btn");
-    if (!button || !prompt || !pill || !cancel || !steer || !queue || !copy || !fork || !revert) return;
+    if (!button || !prompt || !pill || !cancel || !steer || !queue || !resume || !copy || !fork || !revert) return;
     var busy = chatBusy();
     var hasDraft = prompt.value.trim() !== "" || chatDraftFiles().length || chatDraftReferences().length || chatDraftSkills().length;
     var message = cstate.selectedMessageID && selectedChatMessage();
     var userMessage = !!(message && message.classList.contains("chat-message-user"));
     var mode = message ? "message" : cstate.selectedPendingID ? "pending" : busy && hasDraft ? "compose" : busy ? "stop" : "send";
     var send = !busy && mode !== "pending";
-    button.dataset.action = send ? "send" : "stop";
-    button.type = send ? "submit" : "button";
-    button.setAttribute("aria-label", send ? "Send message" : "Stop response");
-    button.title = send ? "Send message" : "Stop response";
-    button.disabled = !!cstate.mutation || (mode === "pending" && !busy);
+    var action = mode === "pending" && !busy ? "resume" : send ? "send" : "stop";
+    var label = action === "resume" ? "Resume selected message" : send ? "Send message" : "Stop response";
+    button.dataset.action = action;
+    button.type = action === "send" ? "submit" : "button";
+    button.setAttribute("aria-label", label);
+    button.title = label;
+    button.disabled = !!cstate.mutation || (action === "resume" && !canResumeChatPending(cstate.selectedPendingID));
     pill.dataset.mode = mode;
-    var segments = mode === "message" ? (userMessage ? 4 : 2) : mode === "compose" ? 3 : mode === "pending" ? 2 : 1;
+    pill.dataset.busy = String(busy);
+    var segments = mode === "message" ? (userMessage ? 4 : 2) : mode === "compose" ? 3 : mode === "pending" ? (busy ? 3 : 2) : 1;
     pill.dataset.segments = String(segments);
     pill.dataset.messageType = userMessage ? "user" : "assistant";
     pill.style.setProperty("--chat-pill-width", 44 * segments + "px");
@@ -1659,6 +1709,7 @@
     steer.disabled = queue.disabled = mode !== "compose" || !!cstate.mutation;
     var cap = cstate.lifecycle && cstate.lifecycle.capabilities || {};
     cancel.disabled = mode !== "pending" || !cap.inboxCancel || !!cstate.mutation;
+    resume.disabled = mode !== "pending" || !canResumeChatPending(cstate.selectedPendingID) || !!cstate.mutation;
     copy.disabled = mode !== "message" || !!cstate.mutation;
     fork.disabled = revert.disabled = mode !== "message" || !userMessage || !!cstate.mutation;
   }
@@ -1673,7 +1724,9 @@
   function updateChatDeliveryControls() {
     var busy = chatBusy();
     if (cstate.lifecycle || document.querySelector("#chat-transcript .chat-snapshot")) {
-      setChatHeaderState(busy ? "Working" : "Idle", busy ? "busy" : "idle");
+      var state = chatExecutionState();
+      setChatHeaderState(({ working: "Working", idle: "Idle", failed: "Failed", interrupted: "Stopped", unknown: "State unavailable" })[state],
+        state === "working" ? "busy" : state === "failed" || state === "unknown" ? "error" : "idle");
     }
     var cap = cstate.lifecycle && cstate.lifecycle.capabilities || {};
     var files = !!cap.promptDeliveryFiles;
@@ -1697,6 +1750,36 @@
     return ({ user: "Follow-up", synthetic: "Synthetic message", compaction: "Compaction", move: "Session move" })[item.type] || "Pending item";
   }
 
+  function chatPendingLabel(item) {
+    if (!chatInboxFresh()) return "Pending · unconfirmed";
+    var state = chatExecutionState();
+    if (state === "unknown") return "Pending · execution state unavailable";
+    if (state === "failed") return "Paused · response failed";
+    if (state === "interrupted") return "Paused · response stopped";
+    if (state === "idle") return "Pending · session idle";
+    return item.delivery === "steer" ? "Steering · awaiting delivery" : "Queued · waiting for response";
+  }
+
+  function chatInboxNotice(pending) {
+    if (cstate.inboxState === "stale" || (cstate.inboxState === "fresh" && !chatInboxFresh())) return "Pending follow-ups are out of date. Showing last-known items; delivery status is unconfirmed.";
+    if (cstate.inboxState === "unavailable") return "Pending follow-ups are unavailable. Delivery status cannot be confirmed.";
+    if (cstate.inboxState === "unsupported") return "This OpenCode service cannot list pending follow-ups.";
+    pending = pending || cstate.inbox;
+    if (!pending.length) return "";
+    var state = chatExecutionState();
+    if (state === "unknown") return "Execution state is unavailable. Refreshing before messages can be resumed.";
+    if (cstate.lifecycleError) return "Session controls are unavailable. Refreshing before messages can be resumed.";
+    if (state === "working") return "";
+    var cap = cstate.lifecycle && cstate.lifecycle.capabilities || {};
+    if (!cap.inboxDelivery) return "Pending follow-ups are paused. Resume is unavailable on this OpenCode service.";
+    var root = document.querySelector("#chat-transcript .chat-snapshot");
+    if (root.dataset.degraded === "true") return "Some session state is unavailable. Recovery is disabled until refresh succeeds.";
+    if (!pending.some(function (item) { return item.known && item.type === "user"; })) return "Pending work is paused. Only user messages can be resumed here.";
+    if (state === "idle") return "The session is idle with pending follow-ups. Select a message and Resume to request delivery.";
+    return "Pending follow-ups are paused" + (state === "failed" ? " after a failed response" : " after Stop") +
+      ". Select a message and Resume to continue. Nothing is retried automatically.";
+  }
+
   function renderChatInbox(preserveScroll) {
     var transcript = document.getElementById("chat-transcript");
     if (!transcript) return;
@@ -1706,13 +1789,14 @@
     var focusedID = focused && focused.dataset.inboxId;
     var delivered = new Set(Array.prototype.map.call(transcript.querySelectorAll(".chat-snapshot [data-message]"), function (marker) { return marker.dataset.message; }));
     var pending = cstate.inbox.filter(function (item) { return !delivered.has(item.id); });
+    var notice = chatInboxNotice(pending);
     if (cstate.selectedPendingID && !pending.some(function (item) { return item.id === cstate.selectedPendingID; })) {
       cstate.selectedPendingID = null;
       updateChatActionButton();
     }
     var empty = transcript.querySelector(".chat-snapshot > .chat-empty");
     if (empty) empty.hidden = pending.length > 0;
-    if (!pending.length) {
+    if (!pending.length && !notice) {
       if (root) root.remove();
       if (nearBottom) transcript.scrollTop = transcript.scrollHeight;
       return;
@@ -1725,6 +1809,13 @@
       transcript.appendChild(root);
     }
     root.replaceChildren();
+    if (notice) {
+      var status = document.createElement("p");
+      status.className = "chat-pending-notice";
+      status.setAttribute("role", "status");
+      status.textContent = notice;
+      root.appendChild(status);
+    }
     pending.forEach(function (item) {
       var row = document.createElement("article");
       row.className = "chat-message chat-message-pending" + (item.type === "user" ? " chat-message-user" : "");
@@ -1733,11 +1824,11 @@
       row.tabIndex = 0;
       row.setAttribute("role", "button");
       row.setAttribute("aria-pressed", String(cstate.selectedPendingID === item.id));
-      row.title = cstate.selectedPendingID === item.id ? "Deselect pending message" : "Select pending message to cancel";
+      row.title = cstate.selectedPendingID === item.id ? "Deselect pending message" : "Select pending message to resume or cancel";
       var head = document.createElement("header");
       head.className = "chat-pending-head";
       var label = document.createElement("span");
-      label.textContent = (item.delivery === "steer" ? "Steering" : "Queued") + (item.type === "user" ? "" : " · " + inboxTypeLabel(item));
+      label.textContent = chatPendingLabel(item) + (item.type === "user" ? "" : " · " + inboxTypeLabel(item));
       head.appendChild(label);
       row.appendChild(head);
       var text = document.createElement("p");
@@ -1747,6 +1838,7 @@
       root.appendChild(row);
     });
     if (focusedID) focusChatPending(focusedID);
+    updateChatActionButton();
     if (nearBottom) transcript.scrollTop = transcript.scrollHeight;
   }
 
@@ -1764,59 +1856,105 @@
   }
 
   function loadChatInbox(reportError, propagateError) {
-    if (!cstate.session || cstate.inboxRequest) return Promise.resolve();
+    if (!cstate.session) return Promise.resolve(null);
+    if (cstate.inboxRequest) return cstate.inboxPromise;
     var cap = cstate.lifecycle && cstate.lifecycle.capabilities;
-    if (!cap || !cap.inboxList) {
-      cstate.inbox = [];
+    if (!cap) return Promise.resolve(null);
+    if (!cap.inboxList) {
+      cstate.inboxState = "unsupported";
       renderChatInbox();
-      return Promise.resolve();
+      return propagateError ? Promise.reject(new Error("Pending follow-ups are unavailable")) : Promise.resolve(null);
     }
     var sessionID = cstate.session;
     var controller = new AbortController();
     cstate.inboxRequest = controller;
-    return fetch(lifecycleURL("/inbox"), { headers: { Accept: "application/json" }, signal: controller.signal })
+    cstate.inboxPromise = fetch(lifecycleURL("/inbox"), { headers: { Accept: "application/json" }, signal: controller.signal })
       .then(lifecycleResponse)
       .then(function (data) {
-        if (cstate.session !== sessionID) return;
+        if (cstate.session !== sessionID || cstate.inboxRequest !== controller) return null;
         cstate.inbox = data.items || [];
+        if (data.capabilities && cstate.lifecycle) cstate.lifecycle.capabilities = data.capabilities;
+        cstate.inboxState = "fresh";
+        cstate.inboxLoaded = true;
+        cstate.inboxCheckedAt = Date.now();
         renderChatInbox();
         return data;
       })
       .catch(function (err) {
-        if (err.name !== "AbortError" && reportError && cstate.session === sessionID) setChatStatus("Pending follow-ups unavailable: " + err.message, true);
+        if (cstate.session !== sessionID || cstate.inboxRequest !== controller) return null;
+        if (err.name !== "AbortError") {
+          cstate.inboxState = cstate.inboxLoaded ? "stale" : "unavailable";
+          renderChatInbox();
+          if (reportError) setChatStatus("Pending follow-ups unavailable: " + err.message, true);
+        }
         if (propagateError && err.name !== "AbortError") throw err;
+        return null;
       })
-      .finally(function () { if (cstate.inboxRequest === controller) cstate.inboxRequest = null; });
+      .finally(function () {
+        if (cstate.inboxRequest === controller) {
+          cstate.inboxRequest = null;
+          cstate.inboxPromise = null;
+        }
+      });
+    return cstate.inboxPromise;
   }
 
-  function mutateChatInbox(itemID, control) {
+  function refreshChatInbox(reportError, propagateError) {
+    if (cstate.inboxRequest) cstate.inboxRequest.abort();
+    cstate.inboxRequest = null;
+    cstate.inboxPromise = null;
+    return loadChatInbox(reportError, propagateError);
+  }
+
+  function mutateChatInbox(itemID, control, delivery) {
     if (!cstate.session || cstate.mutation) return Promise.reject(new Error("A request is already in progress"));
+    if (delivery && !canResumeChatPending(itemID)) return Promise.reject(new Error("Refresh pending state before resuming this message"));
     var sessionID = cstate.session;
-    cstate.mutation = true;
+    var operation = {};
+    var accepted = false;
+    cstate.mutation = operation;
     control.disabled = true;
     updateChatActionButton();
     var options = { method: "DELETE", headers: { Accept: "application/json" } };
-    return fetch(lifecycleURL("/inbox/" + encodeURIComponent(itemID)), options)
-      .then(lifecycleResponse)
-      .then(function () {
-        if (cstate.inboxRequest) {
-          cstate.inboxRequest.abort();
-          cstate.inboxRequest = null;
-        }
-        return loadChatInbox(true, true);
+    if (delivery) {
+      options.method = "PATCH";
+      options.headers["Content-Type"] = "application/json";
+      options.body = JSON.stringify({ delivery: delivery });
+    }
+    var url = lifecycleURL("/inbox/" + encodeURIComponent(itemID));
+    setChatStatus(delivery ? "Requesting message resume…" : "Cancelling pending message…");
+    return refreshChatInbox(true, true)
+      .then(function (data) {
+        if (cstate.session !== sessionID || cstate.mutation !== operation || !data) return null;
+        if (!data.items.some(function (item) { return item.id === itemID; })) return data;
+        if (delivery && !canResumeChatPending(itemID)) throw new Error("Refresh pending state before resuming this message");
+        return fetch(url, options).then(lifecycleResponse).then(function () {
+          accepted = true;
+          if (cstate.session !== sessionID || cstate.mutation !== operation) return null;
+          return refreshChatInbox(true, true);
+        });
       })
       .then(function (data) {
-        if (cstate.session !== sessionID) return;
+        if (cstate.session !== sessionID || cstate.mutation !== operation || !data) return;
         var pending = (data.items || []).some(function (item) { return item.id === itemID; });
-        setChatStatus(pending ? "Cancellation was requested, but the item is still pending." : "Item is no longer pending. It may have been delivered or cancelled.", pending);
+        setChatStatus(pending ? (delivery ? "Resume requested. The message is still awaiting delivery." : "Cancellation was requested, but the item is still pending.") :
+          "Item is no longer pending. It may have been delivered or cancelled.", pending && !delivery);
         refreshChat();
       })
       .catch(function (err) {
-        if (cstate.session === sessionID) setChatStatus(err.message, true);
-        throw err;
+        if (cstate.session !== sessionID || cstate.mutation !== operation) return;
+        return refreshChatInbox(false).then(function (data) {
+          if (cstate.session !== sessionID || cstate.mutation !== operation) return;
+          if (err.status === 409 && data && !data.items.some(function (item) { return item.id === itemID; })) {
+            setChatStatus("Item is no longer pending. It may have been delivered or cancelled.");
+          } else {
+            setChatStatus(accepted ? "Request accepted, but pending status could not be confirmed. Refresh before trying again." : err.message, true);
+          }
+          refreshChat();
+        });
       })
       .finally(function () {
-        if (cstate.session === sessionID) {
+        if (cstate.session === sessionID && cstate.mutation === operation) {
           cstate.mutation = false;
           if (document.contains(control)) control.disabled = false;
           renderChatInbox();
@@ -2103,7 +2241,6 @@
     options.title = optionsOpen ? "Close chat options" : "Chat options. " + usageTitle;
     options.setAttribute("aria-label", optionsOpen ? "Close chat options" : "Chat options, " + usageTitle.toLowerCase());
     header.classList.toggle("unavailable", !available);
-    header.classList.toggle("warning", available && !!usage.warning);
 
     var usageEl = document.getElementById("chat-usage");
     if (!usageEl) return;
@@ -2111,7 +2248,6 @@
     if (available) usageText += " Active context: " + conciseTokens(usage.estimatedContext) + " / " + conciseTokens(usage.contextLimit) + " (" + usage.percent + "%).";
     else usageText += " Active context usage is unavailable.";
     usageEl.textContent = usageText;
-    usageEl.classList.toggle("warning", available && !!usage.warning);
     if (available && usage.warning) usageEl.textContent += " Context is at least 80% full; compaction may happen soon.";
   }
 
@@ -2429,10 +2565,13 @@
   function loadChatLifecycle() {
     if (!cstate.session) return Promise.resolve(null);
     var sessionID = cstate.session;
-    return fetch(lifecycleURL(), { headers: { Accept: "application/json" } })
+    if (cstate.lifecycleRequest) cstate.lifecycleRequest.abort();
+    var controller = new AbortController();
+    cstate.lifecycleRequest = controller;
+    return fetch(lifecycleURL(), { headers: { Accept: "application/json" }, signal: controller.signal })
       .then(lifecycleResponse)
       .then(function (data) {
-        if (cstate.session !== sessionID) return null;
+        if (cstate.session !== sessionID || cstate.lifecycleRequest !== controller) return null;
         cstate.lifecycle = data;
         cstate.lifecycleError = "";
         renderChatLifecycle();
@@ -2443,13 +2582,16 @@
         return data;
       })
       .catch(function (err) {
-        if (cstate.session === sessionID) {
+        if (err.name !== "AbortError" && cstate.session === sessionID && cstate.lifecycleRequest === controller) {
           cstate.lifecycleError = err.message;
+          cstate.inboxState = cstate.inboxLoaded ? "stale" : "unavailable";
+          renderChatInbox();
           renderChatLifecycle();
           renderChatManagement();
         }
         return null;
-      });
+      })
+      .finally(function () { if (cstate.lifecycleRequest === controller) cstate.lifecycleRequest = null; });
   }
 
   function appendRevertFiles(parent, files) {
@@ -3114,6 +3256,8 @@
         wtEl.innerHTML = "";
         wtEl.hidden = !wt;
         if (wtRemoveBtn) wtRemoveBtn.hidden = !wt;
+        var commitBtn = document.getElementById("chat-change-commit-btn");
+        if (commitBtn) commitBtn.hidden = !wt || wt.State === "missing";
         if (!wt) return;
         var branch = document.createElement("span");
         branch.className = "pill wt-branch";
@@ -3320,6 +3464,7 @@
     var cancel = document.getElementById("chat-cancel-btn");
     var steer = document.getElementById("chat-steer-btn");
     var queue = document.getElementById("chat-queue-btn");
+    var resume = document.getElementById("chat-resume-btn");
     var fileInput = document.getElementById("chat-file-input");
     var moreButton = document.getElementById("chat-more-btn");
     var moreMenu = document.getElementById("chat-more-menu");
@@ -3440,9 +3585,17 @@
       mutateChatInbox(cstate.selectedPendingID, cancel).catch(function () { loadChatInbox(false); });
     });
     send.addEventListener("click", function (e) {
+      if (send.dataset.action === "resume") {
+        e.preventDefault();
+        mutateChatInbox(cstate.selectedPendingID, send, "steer").catch(function (err) { setChatStatus(err.message, true); });
+        return;
+      }
       if (send.dataset.action !== "stop") return;
       e.preventDefault();
       chatMutation("interrupt", undefined, send).catch(function () {}).finally(updateChatActionButton);
+    });
+    resume.addEventListener("click", function () {
+      mutateChatInbox(cstate.selectedPendingID, resume, "steer").catch(function (err) { setChatStatus(err.message, true); });
     });
     fileInput.addEventListener("change", function () { addChatFiles(fileInput.files); fileInput.value = ""; });
     document.getElementById("chat-draft-files").addEventListener("click", function (e) {

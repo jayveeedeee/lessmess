@@ -1,35 +1,45 @@
-# RP-00: Replace memory-based compaction watch with transcript-based evaluation
+# RP-00: Inject the compaction re-prime as a synthetic message
 
 ## Why
 
-The re-prime fires spuriously: restart amnesia re-arms compensated compactions,
-failed compactions arm a wrapper for a compaction that never happened, and a
-prompt racing an in-flight compaction double-fires. Root cause is memory-only
-bookkeeping (`compactionWatch`) that cannot distinguish "already compensated"
-from "not seen yet" across restarts.
+The restoration currently rides the user's prompt text: `maybeReprime`
+rewrites the next send or queued follow-up into "Context restoration: …
+[ledger] ----- *user text*". The queue renders that verbatim, so users see
+their message appended to a compaction wall; and because queued prompts never
+land in the transcript, the rule re-wraps every queue submission (cancelled
+items mean it never stops). The service publishes the right vehicle —
+`POST /api/session/{sessionID}/synthetic` with `resume: false` (admitted to
+context, no model turn) — the same mechanism it uses for AGENTS.md updates.
 
 ## What
 
-Rewrite `maybeReprime` detection as a stateless transcript rule: a bound
-session needs a re-prime iff its newest completed compaction message is
-strictly newer than its newest user message. Evaluate with one descending
-`ListMessagesPage` fetch (small limit; user message found first → no re-prime;
-completed compaction first → re-prime; equal timestamps → no re-prime; page
-exhausted with a completed compaction and no user message → re-prime). Delete
-`compactionWatch`, `markPending`, the `s.compacts` wiring in `server.go`, the
-`markPending` call in `sessionlifecycle.go`, and the compaction-observation
-block in `chat.go`'s snapshot walk. Keep `maybeReprime`'s signature, the
-unbound-session guard, the ledger-snapshot preamble, and fail-open behavior.
+- `internal/opencode/lifecycle.go`: `AddSynthetic(ctx, cap, sessionID, text)`
+  posting the strict body (`text`, `resume:false`) with body/variants pinned
+  by `lifecycle_test.go`; extend `LifecycleCapabilities` to detect the exact
+  method+path from the OpenAPI document (`Synthetic`).
+- `internal/server/reprime.go`: replace `maybeReprime` with
+  `ensureReprime(ctx, sessionID)` — bound-session guard, transcript rule
+  (newest completed compaction strictly newer than the newest user message
+  *or* marker-bearing synthetic), then `AddSynthetic` with the restoration
+  text (marker prefix "Context restoration:", binding line, ledger snapshot,
+  skills pointer). Capability absent or any failure → log and return
+  (fail-open to no restoration, never to rewriting text).
+- `internal/server/chat.go` (`chatPrompt`) and
+  `internal/server/sessionlifecycle.go` (`sessionDeliver`): run
+  `ensureReprime` before the prompt/deliver call and pass the user's text
+  through **verbatim**.
 
 ## Files affected
 
+- `internal/opencode/lifecycle.go`
+- `internal/opencode/lifecycle_test.go`
 - `internal/server/reprime.go`
-- `internal/server/server.go`
-- `internal/server/sessionlifecycle.go`
 - `internal/server/chat.go`
+- `internal/server/sessionlifecycle.go`
 
 ## Verification
 
-- `go vet ./...` and `go test ./...` clean (reprime tests are rewritten in
-  RP-01; existing suites must not regress).
-- Manual trace of the four target-behavior cases against the new evaluator.
+- `go vet ./...`, `go test ./...` clean after RP-02's matrix lands; interim:
+  package builds and existing suites stay green.
+- Manual trace: compaction → next send verbatim + synthetic injected once;
+  queue submissions after the first see the synthetic and skip.

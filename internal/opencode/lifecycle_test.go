@@ -16,7 +16,7 @@ func TestLifecyclePublishedContracts(t *testing.T) {
 		seen[r.Method+" "+r.URL.RequestURI()] = readTestBody(r)
 		switch r.URL.Path {
 		case "/openapi.json":
-			w.Write([]byte(`{"paths":{"/api/session/{sessionID}/fork":{"post":{"requestBody":{"content":{"application/json":{"schema":{"properties":{"before":{"type":"string"}}}}}}}},"/api/session/{sessionID}/revert/stage":{"post":{}},"/api/session/{sessionID}/revert/commit":{"post":{}},"/api/session/{sessionID}/revert":{"delete":{}},"/api/session/{sessionID}/compact":{"post":{}},"/api/session/{sessionID}/prompt":{"post":{"requestBody":{"content":{"application/json":{"schema":{"properties":{"id":{},"text":{},"files":{},"skills":{},"delivery":{}}}}}}}},"/api/session/{sessionID}/inbox":{"get":{}},"/api/session/{sessionID}/inbox/{inboxID}":{"patch":{},"delete":{}},"/api/session/{sessionID}":{"patch":{},"delete":{}},"/api/experimental/session/{sessionID}/export":{"get":{}}}}`))
+			w.Write([]byte(`{"paths":{"/api/session/{sessionID}/fork":{"post":{"requestBody":{"content":{"application/json":{"schema":{"properties":{"before":{"type":"string"}}}}}}}},"/api/session/{sessionID}/revert/stage":{"post":{}},"/api/session/{sessionID}/revert/commit":{"post":{}},"/api/session/{sessionID}/revert":{"delete":{}},"/api/session/{sessionID}/compact":{"post":{}},"/api/session/{sessionID}/prompt":{"post":{"requestBody":{"content":{"application/json":{"schema":{"properties":{"id":{},"text":{},"files":{},"skills":{},"delivery":{}}}}}}}},"/api/session/{sessionID}/inbox":{"get":{}},"/api/session/{sessionID}/inbox/{inboxID}":{"patch":{},"delete":{}},"/api/session/{sessionID}/synthetic":{"post":{}},"/api/session/{sessionID}":{"patch":{},"delete":{}},"/api/experimental/session/{sessionID}/export":{"get":{}}}}`))
 		case "/api/session/ses_1/compact":
 			compactBodies = append(compactBodies, seen[r.Method+" "+r.URL.RequestURI()])
 			w.Write([]byte(`{"data":{"id":"msg_cp","sessionID":"ses_1","timeCreated":9,"type":"compaction","payload":{},"delivery":"queue"}}`))
@@ -24,6 +24,8 @@ func TestLifecyclePublishedContracts(t *testing.T) {
 			w.Write([]byte(`{"data":{"id":"ses_child","time":{"created":1,"updated":2},"location":{"directory":"/repo"}}}`))
 		case "/api/session/ses_1/prompt":
 			w.Write([]byte(`{"data":{"id":"msg_in","sessionID":"ses_1","type":"user","delivery":"steer","payload":{"text":"go"},"time":{"created":3}}}`))
+		case "/api/session/ses_1/synthetic":
+			w.Write([]byte(`{"data":{"id":"msg_sy","sessionID":"ses_1","timeCreated":9,"type":"synthetic","payload":{"text":"restore"},"delivery":"steer"}}`))
 		case "/api/session/ses_1/inbox":
 			w.Write([]byte(`{"data":[{"id":"msg_in","sessionID":"ses_1","type":"future","delivery":"queue","payload":{"text":"must not survive","secret":"must not survive"}}]}`))
 		case "/api/experimental/session/ses_1/export":
@@ -34,7 +36,7 @@ func TestLifecyclePublishedContracts(t *testing.T) {
 	})
 	ctx := context.Background()
 	cap, err := c.LifecycleCapabilities(ctx)
-	if err != nil || !cap.RevertClear || cap.RevertClearMethod != http.MethodDelete || !cap.InboxDelivery || cap.InboxDeliveryMethod != http.MethodPatch || !cap.Export || !cap.Rename {
+	if err != nil || !cap.RevertClear || cap.RevertClearMethod != http.MethodDelete || !cap.InboxDelivery || cap.InboxDeliveryMethod != http.MethodPatch || !cap.Export || !cap.Rename || !cap.Synthetic {
 		t.Fatalf("capabilities = %#v, %v", cap, err)
 	}
 	if _, err := c.ForkSession(ctx, cap, "ses_1", "msg_1"); err != nil {
@@ -54,6 +56,10 @@ func TestLifecyclePublishedContracts(t *testing.T) {
 	items, err := c.ListInbox(ctx, cap, "ses_1")
 	if err != nil || len(items) != 1 || items[0].Known || items[0].Text != "" || items[0].Description != "" {
 		t.Fatalf("unknown inbox = %#v, %v", items, err)
+	}
+	synthetic, err := c.AddSynthetic(ctx, cap, "ses_1", "Context restoration: probe")
+	if err != nil || synthetic.ID != "msg_sy" || !synthetic.Known || synthetic.Text != "restore" {
+		t.Fatalf("synthetic = %#v, %v", synthetic, err)
 	}
 	if err := c.ChangeInboxDelivery(ctx, cap, "ses_1", "msg_in", DeliveryQueue); err != nil {
 		t.Fatal(err)
@@ -75,6 +81,9 @@ func TestLifecyclePublishedContracts(t *testing.T) {
 	}
 	if len(compactBodies) != 2 || compactBodies[0] != `{"delivery":"queue"}` || compactBodies[1] != `{"delivery":"queue","id":"msg_anchor"}` {
 		t.Errorf("compact bodies = %q", compactBodies)
+	}
+	if got := seen["POST /api/session/ses_1/synthetic"]; got != `{"resume":false,"text":"Context restoration: probe"}` {
+		t.Errorf("synthetic body = %s", got)
 	}
 	if _, ok := seen["DELETE /api/session/ses_1/revert"]; !ok {
 		t.Error("published revert clear not used")
@@ -99,7 +108,7 @@ func TestLifecycleInstalledVariants(t *testing.T) {
 		w.WriteHeader(http.StatusNoContent)
 	})
 	cap, err := c.LifecycleCapabilities(context.Background())
-	if err != nil || !cap.ForkBoundary || cap.RevertClearMethod != http.MethodPost || cap.InboxDeliveryPath == "" || cap.Export || !cap.Rename {
+	if err != nil || !cap.ForkBoundary || cap.RevertClearMethod != http.MethodPost || cap.InboxDeliveryPath == "" || cap.Export || !cap.Rename || cap.Synthetic {
 		t.Fatalf("cap = %#v, %v", cap, err)
 	}
 	if _, err := c.ForkSession(context.Background(), cap, "ses_1", "msg_1"); err != nil {

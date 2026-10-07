@@ -173,8 +173,8 @@ Setup API (for the wizard and other clients): `GET /setup`,
   `/changes/<id>` links redirect into this flow.
 - **Sessions sheet** — the composer's options open a change-scoped sheet:
   switch/new/unlink the change's sessions, spawn a new change from a
-  handoff artifact, and the change-level actions (Commit, Close change /
-  Reopen, worktree info and removal).
+  handoff artifact, and the change-level actions (Commit — worktree-backed
+  changes only, Close change / Reopen, worktree info and removal).
 - **New change session**: creates the change (state + prose skeleton) and a
   primed planning session; tasks are created through the API by the session's
   agent.
@@ -313,7 +313,11 @@ isolated from the main tree and from other changes:
   task subagents, commit sessions) works inside the
   worktree. The chat Sessions sheet shows the branch, worktree health
   (active / uncommitted / missing), PR link, and review state for the
-  change.
+  change. The sheet's per-change **Commit** (and
+  `POST /changes/{id}/commit`) exists only for changes with a live
+  worktree: elsewhere the endpoint refuses (409 with the feature off, 404
+  without a registered worktree) and the button stays hidden — main-tree
+  commits go through Commit all.
 - **Close is gated**: it refuses while the worktree has uncommitted *code*
   (the change's own `changes/<id>/` metadata — status flips, the review file
   — is exempt), then pushes the branch, opens a PR with the plan as its body,
@@ -403,8 +407,11 @@ calls are made server-side).
   confirmation modal listing the uncommitted files plus a diffstat (fetched
   live from `GET /api/git/status`); confirming spawns an opencode session
   (`POST /api/git/commit`) that writes the commit message and commits — the
-  same rails as the Sessions sheet's per-change Commit: commit only, never push. The
-  session appears under Discussions as "repo — git commit".
+  same rails as the Sessions sheet's per-change Commit, which exists only
+  for worktree-backed changes (in the main tree this Commit all is the way:
+  a per-change commit there would sweep every in-flight change's work, so
+  `POST /changes/{id}/commit` refuses with 409/404). Commit only, never
+  push. The session appears under Discussions as "repo — git commit".
 
 ### Mobile Chat capability matrix
 
@@ -441,6 +448,21 @@ Change and task session lists contain workflow sessions only: sessions created
 for that change and descendants explicitly associated with a valid task.
 Temporary explore, review, and other unbound child agents remain available in
 Chat's Agents hierarchy without being promoted into the workflow session list.
+
+Queued follow-ups distinguish waiting behind active work from pending work
+while the session is idle, failed, or stopped. Select a pending user message:
+**Resume** is the primary composer action when idle; **Send now** appears beside
+Stop and Cancel while working. Recovery changes the existing inbox item's
+delivery mode, preserving its text and attachments without posting a duplicate
+prompt. It is capability-gated and disabled while session or inbox state is
+unavailable or stale. Last-known items remain visible with an unconfirmed-status
+warning until a successful refresh; disappearing from the inbox alone does not
+prove cancellation or model consumption. lessmess never automatically resumes
+pending messages after a failure, Stop, or reconnect.
+
+Client queue regressions run with `node --test web/chat_queue_test.mjs` (no
+dependencies or client build step). `go test ./...` also runs them when Node is
+on PATH, otherwise it skips that client check explicitly.
 
 In particular, lessmess does not claim atomic revert previews, editable queued
 prompt text, authoritative inbox-cancellation outcomes, provider health pings,

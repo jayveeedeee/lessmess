@@ -283,6 +283,61 @@ func TestInboxOrderingUnionRedactionAndBusyCancellation(t *testing.T) {
 	}
 }
 
+func TestInboxRecoveryUpdatesExistingItemOnly(t *testing.T) {
+	for _, mode := range []string{"published", "beta", "unavailable", "already delivered"} {
+		t.Run(mode, func(t *testing.T) {
+			updates := 0
+			s := mappingServer(t, func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/openapi.json" {
+					switch mode {
+					case "beta":
+						w.Write([]byte(`{"paths":{"/api/session/{sessionID}/inbox/{inboxID}/queue":{"post":{}},"/api/session/{sessionID}/inbox/{inboxID}/steer":{"post":{}}}}`))
+					case "unavailable":
+						w.Write([]byte(`{"paths":{}}`))
+					default:
+						w.Write([]byte(`{"paths":{"/api/session/{sessionID}/inbox/{inboxID}":{"patch":{}}}}`))
+					}
+					return
+				}
+				if mode == "beta" {
+					if r.Method != "POST" || r.URL.Path != "/api/session/ses_life/inbox/msg_existing/steer" {
+						t.Fatalf("recovery must update existing item, got %s %s", r.Method, r.URL.Path)
+					}
+				} else {
+					if r.Method != "PATCH" || r.URL.Path != "/api/session/ses_life/inbox/msg_existing" {
+						t.Fatalf("recovery must update existing item, got %s %s", r.Method, r.URL.Path)
+					}
+					var body map[string]string
+					if err := json.NewDecoder(r.Body).Decode(&body); err != nil || len(body) != 1 || body["delivery"] != "steer" {
+						t.Fatalf("recovery body = %#v, %v", body, err)
+					}
+				}
+				updates++
+				if mode == "already delivered" {
+					w.WriteHeader(409)
+					return
+				}
+				w.WriteHeader(204)
+			})
+			for range 2 {
+				w := do(t, s.Handler(), "PATCH", "/api/sessions/ses_life/inbox/msg_existing", `{"delivery":"steer"}`)
+				want := 204
+				if mode == "unavailable" {
+					want = 503
+				} else if mode == "already delivered" {
+					want = 409
+				}
+				if w.Code != want {
+					t.Fatalf("recovery = %d %s, want %d", w.Code, w.Body.String(), want)
+				}
+			}
+			if mode == "unavailable" && updates != 0 || mode != "unavailable" && updates != 2 {
+				t.Fatalf("same-item updates = %d", updates)
+			}
+		})
+	}
+}
+
 func TestLifecycleDeleteCleansParentAndDescendantMappings(t *testing.T) {
 	deleted := false
 	s := mappingServer(t, func(w http.ResponseWriter, r *http.Request) {

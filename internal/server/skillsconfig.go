@@ -6,9 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"slices"
 	"strings"
+	"time"
 
 	"lessmess/internal/model"
 )
@@ -25,6 +27,14 @@ import (
 // and returns — the catalog itself keeps serving either way. Called
 // from the boot closure once PublicBase is known (hub slots patch their
 // own project file with the prefixed URL).
+//
+// The service watches opencode.json: every write fires its
+// config-updated location re-init, degrading all running sessions in
+// the location. So before replacing a differing lessmess-managed entry,
+// the old URL is probed — while it still serves a live catalog, the
+// rewrite is skipped and the entry heals on a later boot once that
+// server is gone. (A boot-time self-probe cannot see this server's own
+// listener, which is not up yet; the guard covers cross-instance URLs.)
 func (s *Server) EnsureSkillsCatalog() {
 	url := s.apiBase() + "/skills/"
 	path := opencodeConfigPath(s.st.Dir)
@@ -50,11 +60,62 @@ func (s *Server) EnsureSkillsCatalog() {
 	if !changed {
 		return
 	}
+	if old := existingSkillsCatalogURL(data); old != "" && old != url {
+		if catalogAlive(old) {
+			slog.Info("skills catalog: existing entry still live; leaving opencode.json untouched to avoid a service re-init", "existing", old, "computed", url)
+			return
+		}
+	}
 	if werr := model.WriteFileAtomic(path, patched, 0o644); werr != nil {
 		slog.Warn("skills catalog: cannot write opencode.json", "err", werr)
 		return
 	}
 	slog.Info("opencode.json skills catalog entry written", "url", url)
+}
+
+// skillsProbeClient bounds catalog liveness probes: short by design, so
+// a dead URL never stalls boot.
+var skillsProbeClient = &http.Client{Timeout: 3 * time.Second}
+
+// catalogAlive reports whether base serves a lessmess skills catalog:
+// its index.json answers 200 with a non-empty skills array. Best-effort
+// — any error reads as dead, which heals the entry.
+func catalogAlive(base string) bool {
+	req, err := http.NewRequest(http.MethodGet, strings.TrimSuffix(base, "/")+"/index.json", nil)
+	if err != nil {
+		return false
+	}
+	resp, err := skillsProbeClient.Do(req)
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return false
+	}
+	var idx struct {
+		Skills []struct {
+			Name string `json:"name"`
+		} `json:"skills"`
+	}
+	return json.NewDecoder(resp.Body).Decode(&idx) == nil && len(idx.Skills) > 0
+}
+
+// existingSkillsCatalogURL returns the first lessmess-managed catalog
+// URL (any entry ending in /skills/) in data, or "".
+func existingSkillsCatalogURL(data []byte) string {
+	var cfg struct {
+		Skills []string `json:"skills"`
+	}
+	if json.Unmarshal(data, &cfg) != nil {
+		return ""
+	}
+	for _, e := range cfg.Skills {
+		if strings.HasSuffix(e, "/skills/") {
+			return e
+		}
+	}
+	return ""
 }
 
 // patchSkillsCatalog ensures data's top-level `skills` array contains

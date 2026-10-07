@@ -2,6 +2,8 @@ package server
 
 import (
 	"bytes"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -132,6 +134,60 @@ func TestEnsureSkillsCatalog(t *testing.T) {
 		b, _ := os.ReadFile(path)
 		if string(b) != jsonc {
 			t.Errorf("JSONC file was rewritten:\n%s", b)
+		}
+	})
+	t.Run("skips the rewrite while the old entry is still live", func(t *testing.T) {
+		old := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if strings.HasSuffix(r.URL.Path, "/index.json") {
+				w.Write([]byte(`{"skills":[{"name":"lessmess-scaffold","version":"x","files":["lessmess-scaffold.md"]}]}`))
+				return
+			}
+			w.Write([]byte("# skill body"))
+		}))
+		t.Cleanup(old.Close)
+		s := mappingServer(t, nil)
+		s.PublicBase = "127.0.0.1:9090"
+		path := filepath.Join(s.st.Dir, "opencode.json")
+		seed := "{\n  \"skills\": [\"" + old.URL + "/skills/\"]\n}\n"
+		if err := os.WriteFile(path, []byte(seed), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		s.EnsureSkillsCatalog()
+		b, _ := os.ReadFile(path)
+		if string(b) != seed {
+			t.Fatalf("live old entry was rewritten:\nwant=%s\ngot=%s", seed, b)
+		}
+	})
+	t.Run("heals when the old entry is dead", func(t *testing.T) {
+		s := mappingServer(t, nil)
+		s.PublicBase = "127.0.0.1:9090"
+		path := filepath.Join(s.st.Dir, "opencode.json")
+		seed := "{\n  \"skills\": [\"http://127.0.0.1:1/skills/\"]\n}\n" // nothing listens there
+		if err := os.WriteFile(path, []byte(seed), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		s.EnsureSkillsCatalog()
+		b, _ := os.ReadFile(path)
+		if !strings.Contains(string(b), "http://127.0.0.1:9090/skills/") {
+			t.Fatalf("dead old entry not healed: %s", b)
+		}
+	})
+	t.Run("heals when the old entry serves garbage", func(t *testing.T) {
+		junk := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Write([]byte("not json"))
+		}))
+		t.Cleanup(junk.Close)
+		s := mappingServer(t, nil)
+		s.PublicBase = "127.0.0.1:9090"
+		path := filepath.Join(s.st.Dir, "opencode.json")
+		seed := "{\n  \"skills\": [\"" + junk.URL + "/skills/\"]\n}\n"
+		if err := os.WriteFile(path, []byte(seed), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		s.EnsureSkillsCatalog()
+		b, _ := os.ReadFile(path)
+		if !strings.Contains(string(b), "http://127.0.0.1:9090/skills/") {
+			t.Fatalf("garbage old entry not healed: %s", b)
 		}
 	})
 }

@@ -5,8 +5,8 @@
   "prefix": "CR",
   "branch": "main",
   "status": {
-    "value": "In progress",
-    "derived": true
+    "value": "Done",
+    "derived": false
   },
   "created": "2026-10-02",
   "updated": "2026-10-02",

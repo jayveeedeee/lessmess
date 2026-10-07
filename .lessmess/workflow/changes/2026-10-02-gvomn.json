@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "id": "2026-10-02-gvomn",
+  "title": "Gate per-change commits to worktree-backed changes",
+  "prefix": "CMG",
+  "branch": "main",
+  "status": {
+    "value": "Done",
+    "derived": false
+  },
+  "created": "2026-10-02",
+  "updated": "2026-10-02",
+  "tasks": [
+    {
+      "id": "CMG-00",
+      "seq": 0,
+      "title": "Server guard: refuse per-change commits without a live worktree",
+      "file": "tasks/00-server-guard-refuse-per-change-commits-w.md",
+      "status": "Test",
+      "updated": "2026-10-02",
+      "notes": "go test ./internal/server/ -run TestCommit -v: TestCommitRequiresLiveWorktree PASS (409 exact message with session-off assertion; 404 exact message on gitFixtureServer(true,true) with zero creates/prompts); TestCommitNoService still 503 (gate sits behind service guards); TestCommitAllEndpoint unaffected. TestChangeSessionsSpawnIntoWorktree PASS with the moved 5-fragment commit-prompt pin."
+    },
+    {
+      "id": "CMG-01",
+      "seq": 1,
+      "title": "UI gate: hide the sessions-panel Commit button off-worktree",
+      "file": "tasks/01-ui-gate-hide-the-sessions-panel-commit-b.md",
+      "status": "Test",
+      "updated": "2026-10-02",
+      "notes": "layout.html ships #chat-change-commit-btn hidden; app.js refreshSessionsSheetChangeInfo sets commitBtn.hidden = !wt || wt.State === \"missing\" beside the existing wtRemoveBtn gate (fail-safe: fetch failure leaves it hidden). render/layout tests pass (id assertions presence-only). No other site touches the button visibility (grep: gate + wiring + poll only)."
+    },
+    {
+      "id": "CMG-02",
+      "seq": 2,
+      "title": "Verify: vet, tests, validate, README check",
+      "file": "tasks/02-verify-vet-tests-validate-readme-check.md",
+      "status": "Test",
+      "updated": "2026-10-02",
+      "notes": "go vet ./... clean; go test ./... all packages ok (internal/server 20.9s incl. the new gate tests); lessmess validate reports zero violations (only pre-existing docs-queue staleness warnings + the known registry $XDG_CONFIG_HOME lint, both unrelated). README updated at three touch points: Sessions-sheet action list (Commit — worktree-backed only), Commit all section (per-change commit refuses 409/404 off-worktree), worktree pipeline section (gate + Commit all as the main-tree path)."
+    }
+  ]
+}

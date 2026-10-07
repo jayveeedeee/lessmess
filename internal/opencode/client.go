@@ -26,6 +26,9 @@ type Client struct {
 	base     string
 	password string
 	hc       *http.Client
+
+	waitMu   sync.Mutex
+	waitPath string // capability-detected session wait route; "" until resolved
 }
 
 // New builds a client for base (e.g. http://127.0.0.1:49374) using HTTP
@@ -76,23 +79,64 @@ var serviceURLRe = regexp.MustCompile(`https?://[^\s"']+`)
 var discoverService = Discover
 var readServicePassword = func() (string, error) { return PasswordFromFile(DefaultPasswordPath()) }
 
-// parseServiceURL extracts the first URL from `opencode2 service status` output.
+// discoverCommands lists the service-status CLIs to try, in order: the
+// historical opencode2 first, then the opencode name the CLI renamed to.
+// A CLI that cannot see the current registration prints no URL (e.g.
+// "stopped") and is skipped, not fatal.
+var discoverCommands = []string{"opencode2", "opencode"}
+
+// parseServiceURL extracts the first URL from `service status` output.
 func parseServiceURL(out string) string {
 	return serviceURLRe.FindString(out)
 }
 
-// Discover runs `opencode2 service status` and returns the service base URL.
-func Discover(ctx context.Context) (string, error) {
-	cmd := exec.CommandContext(ctx, "opencode2", "service", "status")
-	out, err := cmd.Output()
+// registrationURL reads the shared service registration file
+// (~/.local/state/opencode/service.json) and returns its url field.
+// Empty when absent or unreadable — a last-resort fallback, never an
+// error: it answers even when no service-status CLI is on PATH.
+func registrationURL() string {
+	home, err := os.UserHomeDir()
 	if err != nil {
-		return "", fmt.Errorf("opencode2 service status: %w", err)
+		return ""
 	}
-	u := parseServiceURL(string(out))
-	if u == "" {
-		return "", fmt.Errorf("no URL found in service status output: %q", strings.TrimSpace(string(out)))
+	b, err := os.ReadFile(filepath.Join(home, ".local", "state", "opencode", "service.json"))
+	if err != nil {
+		return ""
 	}
-	return u, nil
+	var reg struct {
+		URL string `json:"url"`
+	}
+	if json.Unmarshal(b, &reg) != nil {
+		return ""
+	}
+	return reg.URL
+}
+
+// Discover runs `<cli> service status` across the known CLI names and
+// returns the service base URL from the first that reports one; when no
+// CLI answers, the shared registration file's url is the fallback. It
+// fails only when every source is unusable, naming what was tried.
+func Discover(ctx context.Context) (string, error) {
+	var errs []error
+	for _, name := range discoverCommands {
+		out, err := exec.CommandContext(ctx, name, "service", "status").Output()
+		if err != nil {
+			errs = append(errs, fmt.Errorf("%s service status: %w", name, err))
+			continue
+		}
+		if u := parseServiceURL(string(out)); u != "" {
+			return u, nil
+		}
+		// Ran but reported no URL (stopped or unregistered): try the
+		// next name before giving up.
+	}
+	if u := registrationURL(); u != "" {
+		return u, nil
+	}
+	if len(errs) == len(discoverCommands) {
+		return "", errors.Join(errs...)
+	}
+	return "", fmt.Errorf("no service URL from any of %v", discoverCommands)
 }
 
 // DefaultPasswordPath is the service credentials file location.
@@ -255,6 +299,7 @@ type Message struct {
 	Finish      string           `json:"finish,omitempty"`
 	Retry       *MessageRetry    `json:"retry,omitempty"`
 	Status      string           `json:"status,omitempty"`
+	Outcome     string           `json:"outcome,omitempty"`
 	Reason      string           `json:"reason,omitempty"`
 	Summary     string           `json:"summary,omitempty"`
 	ShellID     string           `json:"shellID,omitempty"`
@@ -423,6 +468,9 @@ func (m *Message) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	*m = Message(wire.plain)
+	if m.Outcome != "" {
+		m.Outcome = knownEnum(m.Outcome, "succeeded", "failed", "interrupted")
+	}
 	m.Raw = append(m.Raw[:0], data...)
 	for _, raw := range wire.Content {
 		var discriminator struct {
@@ -982,13 +1030,76 @@ func (c *Client) ReplyForm(ctx context.Context, sessionID, formID string, answer
 	return c.do(ctx, http.MethodPost, "/api/session/"+sessionID+"/form/"+formID+"/reply", body, nil)
 }
 
+// waitRouteCandidates lists the session wait routes in preference order:
+// the plain route first (older services), then the experimental one the
+// current service publishes.
+var waitRouteCandidates = []string{
+	"/api/session/{sessionID}/wait",
+	"/api/experimental/session/{sessionID}/wait",
+}
+
+// sessionWaitRoute returns the wait path for one session, resolving the
+// service's published route once from its OpenAPI document (exact
+// method + path, never a version string). A detection failure leaves
+// the cache unset so a later call retries; the plain route is the
+// fallback, preserving the behavior older services expect.
+func (c *Client) sessionWaitRoute(ctx context.Context, sessionID string) string {
+	c.waitMu.Lock()
+	cached := c.waitPath
+	c.waitMu.Unlock()
+	if cached != "" {
+		return strings.Replace(cached, "{sessionID}", sessionID, 1)
+	}
+	route := c.detectWaitRoute(ctx)
+	if route == "" {
+		return strings.Replace(waitRouteCandidates[0], "{sessionID}", sessionID, 1)
+	}
+	c.waitMu.Lock()
+	c.waitPath = route
+	c.waitMu.Unlock()
+	return strings.Replace(route, "{sessionID}", sessionID, 1)
+}
+
+// detectWaitRoute fetches the OpenAPI document and returns the first
+// candidate the service declares for POST. Empty when the document is
+// unreadable or declares neither — the caller falls back, never errors:
+// waiting is best-effort capability use.
+func (c *Client) detectWaitRoute(ctx context.Context) string {
+	base, password := c.connection()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"/openapi.json", nil)
+	if err != nil {
+		return ""
+	}
+	req.SetBasicAuth("opencode", password)
+	resp, err := c.hc.Do(req)
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return ""
+	}
+	var spec struct {
+		Paths map[string]map[string]json.RawMessage `json:"paths"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&spec); err != nil {
+		return ""
+	}
+	for _, route := range waitRouteCandidates {
+		if methods := spec.Paths[route]; methods != nil && methods[strings.ToLower(http.MethodPost)] != nil {
+			return route
+		}
+	}
+	return ""
+}
+
 // WaitDone blocks until the session is idle (POST wait returns 204) or
 // ctx expires. A nil return means the session is done/idle. The service's
 // wait endpoint blocks server-side, often longer than the HTTP client's own
 // 30s cap; those transport-level timeouts are retried until ctx expires.
 func (c *Client) WaitDone(ctx context.Context, id string) error {
 	for {
-		err := c.do(ctx, http.MethodPost, "/api/session/"+id+"/wait", nil, nil)
+		err := c.do(ctx, http.MethodPost, c.sessionWaitRoute(ctx, id), nil, nil)
 		if err == nil {
 			return nil
 		}

@@ -1,5 +1,5 @@
 {{define "chatSnapshot"}}
-<div class="chat-snapshot" data-session="{{.SessionID}}" data-busy="{{.Busy}}" data-page="{{if .History}}history{{else}}latest{{end}}">
+<div class="chat-snapshot" data-session="{{.SessionID}}" data-busy="{{.Busy}}" data-degraded="{{.Degraded}}" data-page="{{if .History}}history{{else}}latest{{end}}"{{if not .History}} data-busy-known="{{.BusyKnown}}" data-outcome="{{.Outcome}}"{{end}}>
   {{if .OlderCursor}}<div class="chat-history-control"><button type="button" class="btn-ghost" data-chat-load-older data-cursor="{{.OlderCursor}}">Load older messages</button></div>{{end}}
   {{if and (not .History) (not .Blocks)}}<p class="chat-empty">No messages yet.</p>{{end}}
   {{range .Blocks}}

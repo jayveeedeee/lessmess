@@ -43,6 +43,13 @@ type Server struct {
 	docsQ    *docsQueue       // nil unless docs.enabled and agentsdocs.json were valid at startup
 	docsW    *docsWatcher     // nil when docs are disabled or the watcher failed
 	git      *gitops.Client   // nil in setup mode; worktree mechanics + state
+
+	// Poll-path read collapse (chatcache.go): the global busy-map cache,
+	// the per-session snapshot single-flight, and the last-good
+	// transcript memo that keeps chats visible through read failures.
+	chatActive  *activeCache
+	chatFlights *snapshotFlight
+	chatMemo    *snapshotMemo
 }
 
 // New builds the route table.
@@ -51,6 +58,9 @@ func New(st *store.Store) *Server {
 		slog.Warn("state dir migration skipped", "err", err)
 	}
 	s := &Server{st: st, rend: newRenderer()}
+	s.chatActive = &activeCache{}
+	s.chatFlights = &snapshotFlight{calls: map[string]*snapshotCall{}}
+	s.chatMemo = &snapshotMemo{}
 	s.git = gitops.New(st.Dir, filepath.Join(st.Dir, store.StateDirName))
 	s.st.SetChangeRoot(s.worktreeChangeRoot())
 	m, err := loadMapping(filepath.Join(st.Dir, store.StateDirName, "sessions.json"))

@@ -487,7 +487,11 @@ func (s *Server) sessionDeliver(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	item, err := s.oc.DeliverPrompt(r.Context(), cap, id, req.ID, s.maybeReprime(r.Context(), id, req.Text), files, skills, req.Delivery)
+	// Compensate an uncompensated compaction (bound sessions only) by
+	// injecting the restoration synthetic; the delivered text is never
+	// rewritten.
+	s.ensureReprime(r.Context(), id)
+	item, err := s.oc.DeliverPrompt(r.Context(), cap, id, req.ID, req.Text, files, skills, req.Delivery)
 	if err != nil {
 		writeLifecycleError(w, err)
 		return
@@ -510,9 +514,16 @@ func (s *Server) sessionInbox(w http.ResponseWriter, r *http.Request) {
 	}
 	filtered := items[:0]
 	for _, item := range items {
-		if item.SessionID == id && validChatID(item.ID, "msg_") {
-			filtered = append(filtered, item)
+		if item.SessionID != id || !validChatID(item.ID, "msg_") {
+			continue
 		}
+		// The re-prime restoration is internal plumbing while it waits
+		// for delivery: it must not surface as a pending row (the queue
+		// shows only the user's own messages).
+		if item.Type == "synthetic" && strings.HasPrefix(item.Text, reprimeMarker) {
+			continue
+		}
+		filtered = append(filtered, item)
 	}
 	writeJSON(w, 200, map[string]any{"items": filtered, "capabilities": cap})
 }
@@ -534,6 +545,12 @@ func (s *Server) sessionInboxDelivery(w http.ResponseWriter, r *http.Request) {
 	cap, ok := s.lifecycleCapabilities(w, r)
 	if !ok {
 		return
+	}
+	// Resuming an already-enqueued prompt is also a new execution boundary:
+	// a compaction may have happened since admission. Restore binding/state
+	// before waking the existing item, without rewriting or resubmitting it.
+	if cap.InboxDelivery && req.Delivery == opencode.DeliverySteer {
+		s.ensureReprime(r.Context(), id)
 	}
 	if err := s.oc.ChangeInboxDelivery(r.Context(), cap, id, iid, req.Delivery); err != nil {
 		writeLifecycleError(w, err)

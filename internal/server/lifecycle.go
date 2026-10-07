@@ -78,6 +78,20 @@ func (s *Server) commitChange(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "session mapping unreadable: " + s.mapErr.Error()})
 		return
 	}
+	// A per-change commit only exists where the change owns an isolated
+	// tree: in the main tree, git add -A would sweep every in-flight
+	// change's work into this commit. Main-tree commits go through the
+	// repo-wide Commit all. The probe is the same self-healing one
+	// changeSessionDir uses, so refusal and the session's actual working
+	// directory can never disagree.
+	if !s.worktreesEnabled() {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "the worktree pipeline is disabled"})
+		return
+	}
+	if _, ok := s.worktreeEntry(id); !ok {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "no live worktree registered for change " + id})
+		return
+	}
 
 	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
 	defer cancel()

@@ -97,6 +97,21 @@ service-watched config files are exactly two: the boot skills patch
 empirically fire no `config.updated` cascade (root `AGENTS.md` edited
 2026-09-29T20:10Z with no config event in the service log).
 
+## 2026-10-03 addendum: the sticky "Loading conversation…" placeholder
+
+Post-deployment report: with multiple sessions running, opening a chat
+sometimes left the UI's loading placeholder stuck. Diagnosis: the
+placeholder is only replaced by a *successful* snapshot, and the 8s
+budget (CHAT-02) failed polls faster than the old 30s window ever did
+under the slow-but-alive service regime — the original complaint — so
+every retry kept failing and the placeholder never cleared. CHAT-07
+adds a last-good transcript memo (stale-but-marked render instead of
+failure, ~10 min TTL, latest pages only), retunes the budget to 15s,
+and logs transcript-read failures server-side (they were invisible).
+(A separate red herring ruled out: 172 paramless `/message` 400s in the
+service log were an older binary's calls, gone since the Oct 2 19:09
+restart.)
+
 ## Scope
 
 - `internal/server/chat.go` — `chatSnapshot` fan-out, degradation policy,

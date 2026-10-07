@@ -5,30 +5,47 @@
   "prefix": "RP",
   "branch": "main",
   "status": {
-    "value": "Planned",
+    "value": "In progress",
     "derived": true
   },
   "created": "2026-09-30",
-  "updated": "2026-09-30",
+  "updated": "2026-10-03",
+  "decisionLog": [
+    {
+      "date": "2026-10-03",
+      "decision": "Redesign the compaction re-prime vehicle (user decision, Oct 3): inject the restoration as a service synthetic message (POST /api/session/{id}/synthetic, resume:false) instead of rewriting the user prompt; prompts and queued follow-ups pass verbatim; the marker-bearing synthetic counts as compensation in the transcript rule, closing the queue-blindness loop. Supersedes this change's original piggyback design; builds on 2026-10-02-s4p21's stateless detection. Also: usage panel ceiling switches to model.Limit.Input (fallback Context) per measured service compaction behavior (~88-91% of input limit)."
+    }
+  ],
   "tasks": [
     {
       "id": "RP-00",
       "seq": 0,
-      "title": "Replace memory-based compaction watch with transcript-based evaluation",
+      "title": "Inject the compaction re-prime as a synthetic message",
       "file": "tasks/00-replace-memory-based-compaction-watch-wi.md",
-      "status": "Not started",
-      "updated": "2026-09-30"
+      "status": "Test",
+      "updated": "2026-10-03",
+      "notes": "Core: opencode AddSynthetic client + capability; reprime.go ensureReprime replacing maybeReprime; verbatim call sites; marker recognition in the rule. AddSynthetic client with body {\"resume\":false,\"text\":…} pinned by lifecycle_test (published contract asserts exact body; installed-variant asserts capability absent). reprime.go rewritten: ensureReprime injects the marker restoration synthetic; chatPrompt and sessionDeliver pass user text verbatim. reprime_test matrix green: injects-once-after-compaction, pending-inbox suppression (queue-blindness regression), stale/failed/tie not injected, racing injects once, unbound/fail-open, capability-absent skips, injection-500 fails open, deliver path injects + verbatim."
     },
     {
       "id": "RP-01",
       "seq": 1,
-      "title": "Cover the re-prime rule with regression tests and verify the suite",
+      "title": "Render the restoration row and fix the usage ceiling",
       "file": "tasks/01-cover-the-re-prime-rule-with-regression.md",
-      "status": "Not started",
+      "status": "Test",
       "dependsOn": [
         "RP-00"
       ],
-      "updated": "2026-09-30"
+      "updated": "2026-10-03",
+      "notes": "One-line transcript row for the marker synthetic; queue needs no change (verbatim text). chatUsage ContextLimit = input limit with context fallback. Unit test pins the marker synthetic rendering as a slim one-line row with service synthetics hidden and the ledger snapshot never rendered; no template/CSS change needed (generic muted-row styling covers it). Usage ceiling switched to model.Limit.Input with context fallback — test: input 1000/context 2000 yields 85% + warning. Live: tevr session ses_f0bf90fe now reports contextLimit 272000, 233728 estimated, 85%, warning true — previously 400k/~58%/no warning against a measured compaction trigger of 240-248k. Slim one-line transcript row (unit-pinned), input-limit usage ceiling (live-verified: 272000/233728/85%/warning). Fixup after live feedback: the pending restoration synthetic surfaced in the inbox feed as a Steering row — sessionInbox now filters marker synthetics server-side (test: restoration hidden, user follow-up and service synthetics kept); rebuilt, redeployed 02:19, validator clean. Slim one-line transcript row (unit-pinned); input-limit usage ceiling (live-verified 272000/233728/85%/warning); pending-restoration hidden from the inbox feed (test-pinned). Correction per user feedback: removed the dormant-then-woken warning recolor entirely — .chat-context-usage.warning and .chat-usage.warning CSS plus their classList toggles deleted; the meter now keeps its accent color at every percentage, keeping only the informational 80% text note and the muted unavailable state. Rebuilt and redeployed."
+    },
+    {
+      "id": "RP-02",
+      "seq": 2,
+      "title": "Regression matrix and full verification",
+      "file": "tasks/02-regression-matrix-and-full-verification.md",
+      "status": "Test",
+      "updated": "2026-10-03",
+      "notes": "go vet ./... clean; go test ./... all packages ok; CGO_ENABLED=0 go build -o lessmess ./cmd/lessmess succeeds; lessmess validate violations []. Deployed: rebuilt binary + launchd restart (fresh PID, hub and project 200); binary contains the new code path; live usage endpoint verified on a real 272k-input session."
     }
   ]
 }

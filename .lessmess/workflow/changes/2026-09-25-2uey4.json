@@ -5,59 +5,83 @@
   "prefix": "CHAT",
   "branch": "main",
   "status": {
-    "value": "Planned",
+    "value": "In progress",
     "derived": true
   },
   "created": "2026-09-25",
-  "updated": "2026-09-29",
+  "updated": "2026-10-03",
   "tasks": [
     {
       "id": "CHAT-00",
       "seq": 0,
       "title": "Parallel chat snapshot fan-out",
       "file": "tasks/00-parallel-chat-snapshot-fan-out.md",
-      "status": "Not started",
-      "updated": "2026-09-25"
+      "status": "Test",
+      "updated": "2026-10-02",
+      "notes": "TestChatSnapshotFanOutOverlaps: four 300ms-delayed upstream reads complete in 0.32s (\u003c600ms pin; sequential would be ~1.2s) — overlap proven. All 8 existing TestChatSnapshot* tests pass unchanged; go vet clean."
     },
     {
       "id": "CHAT-01",
       "seq": 1,
       "title": "Degrade gracefully when auxiliary chat reads fail",
       "file": "tasks/01-degrade-gracefully-when-auxiliary-chat-r.md",
-      "status": "Not started",
-      "updated": "2026-09-25"
+      "status": "Test",
+      "updated": "2026-10-02",
+      "notes": "TestChatSnapshotDegradesWhenAuxReadFails pins all three aux failures (active/permission/form → 200 with transcript + data-degraded marker); TestChatSnapshotStillFailsWhenTranscriptReadFails pins transcript failure keeping the upstream error shape. Full go test ./... green — no existing error-shape pin regressed."
     },
     {
       "id": "CHAT-02",
       "seq": 2,
       "title": "Bound poll-path upstream latency",
       "file": "tasks/02-bound-poll-path-upstream-latency.md",
-      "status": "Not started",
-      "updated": "2026-09-25"
+      "status": "Test",
+      "updated": "2026-10-02",
+      "notes": "TestChatSnapshotBoundedWhenServiceStalls: stalled service (2s handlers) + 150ms test budget returns the error shape in 0.18s, far under the 30s client cap; healthy-path tests unaffected; go vet + full internal/server suite green."
     },
     {
       "id": "CHAT-03",
       "seq": 3,
       "title": "Collapse redundant upstream reads",
       "file": "tasks/03-collapse-redundant-upstream-reads.md",
-      "status": "Not started",
-      "updated": "2026-09-25"
+      "status": "Test",
+      "updated": "2026-10-02",
+      "notes": "TestChatSnapshotConcurrentPollsShareOneFetch: 5 concurrent polls → exactly 1 transcript + 1 active upstream fetch (atomic counters); TestChatActiveCacheServesWithinTTL: sequential polls → 1 active fetch (cached) but 2 transcript fetches (only concurrent polls collapse); TestChatActiveCacheDoesNotMemoizeFailure: failed fetch retried next poll, degraded marker clears. go vet + suite green."
     },
     {
       "id": "CHAT-04",
       "seq": 4,
       "title": "Quiet boot-time opencode.json skills patch",
       "file": "tasks/04-quiet-boot-time-opencode-json-skills-pat.md",
-      "status": "Not started",
-      "updated": "2026-09-29"
+      "status": "Test",
+      "updated": "2026-10-02",
+      "notes": "TestEnsureSkillsCatalog pins: live old entry → file byte-identical (skip), dead old entry → healed, garbage old entry → healed, plus existing create/idempotent/JSONC-refusal pins. Live boot after rebuild: zero skills-catalog writes (URL unchanged → no service re-init fired). Full go vet + go test ./... green."
     },
     {
       "id": "CHAT-05",
       "seq": 5,
       "title": "Capability-detect the session wait route",
       "file": "tasks/05-capability-detect-the-session-wait-route.md",
-      "status": "Not started",
-      "updated": "2026-09-29"
+      "status": "Test",
+      "updated": "2026-10-02",
+      "notes": "5 unit tests pin route selection (experimental-only, both→plain, plain-only, openapi-failure→plain fallback, cached-once) + go vet/test clean. Live: after rebuild+restart, docs jobs no longer die instantly on wait 404 — both chunks enqueued at 22:37:45 and their gardener sessions run with blocking waits; queue drain to be confirmed end-to-end."
+    },
+    {
+      "id": "CHAT-06",
+      "seq": 6,
+      "title": "Tolerate CLI rename in service discovery",
+      "file": "tasks/06-tolerate-cli-rename-in-service-discovery.md",
+      "status": "Test",
+      "updated": "2026-10-02",
+      "notes": "5 unit tests pin CLI fallback order, stopped-output skip, short-circuit, all-fail error, and registration-file fallback + go vet/test clean. Live: server restarted with hostile PATH (opencode2→stopped, npm opencode lacking the subcommand) boots with zero integration-disabled warnings via ~/.local/state/opencode/service.json url fallback; docs refresh accepted jobs."
+    },
+    {
+      "id": "CHAT-07",
+      "seq": 7,
+      "title": "Keep the transcript visible when reads fail under load",
+      "file": "tasks/07-keep-the-transcript-visible-when-reads-f.md",
+      "status": "Test",
+      "updated": "2026-10-03",
+      "notes": "TestChatSnapshotServesLastGoodWhenTranscriptReadFails: after a good poll, breaking the transcript read yields 200 with the old transcript body + data-degraded=true; recovery clears the marker. TestChatSnapshotLastGoodExpires: expired memo fails honestly (502 shape). Budget retuned 8s→15s; transcript failures now logged server-side (previously silent). Full go vet + go test ./... green; deployed and live-verified (snapshot 200/16ms, clean)."
     }
   ]
 }

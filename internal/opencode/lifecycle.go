@@ -96,6 +96,7 @@ type LifecycleCapabilities struct {
 	Rename                                 bool   `json:"rename"`
 	Export                                 bool   `json:"export"`
 	Delete                                 bool   `json:"delete"`
+	Synthetic                              bool   `json:"synthetic"`
 	ForkBoundary                           bool   `json:"-"`
 	RevertClearMethod, RevertClearPath     string `json:"-"`
 	InboxDeliveryMethod, InboxDeliveryPath string `json:"-"`
@@ -147,6 +148,7 @@ func (c *Client) LifecycleCapabilities(ctx context.Context) (LifecycleCapabiliti
 		Compact:      has(http.MethodPost, "/api/session/{sessionID}/compact"),
 		InboxList:    has(http.MethodGet, "/api/session/{sessionID}/inbox"),
 		InboxCancel:  has(http.MethodDelete, "/api/session/{sessionID}/inbox/{inboxID}"),
+		Synthetic:    has(http.MethodPost, "/api/session/{sessionID}/synthetic"),
 		Export:       has(http.MethodGet, "/api/experimental/session/{sessionID}/export"),
 		Delete:       has(http.MethodDelete, "/api/session/{sessionID}"),
 	}
@@ -233,6 +235,21 @@ func (c *Client) CompactSession(ctx context.Context, cap LifecycleCapabilities, 
 	}
 	var item InboxItem
 	if err := c.do(ctx, http.MethodPost, "/api/session/"+id+"/compact", body, &item); err != nil {
+		return nil, err
+	}
+	return &item, nil
+}
+// AddSynthetic durably admits a synthetic message into the session without
+// scheduling an execution (resume false). The service folds pending
+// synthetic input into the session's next run — admitted first, it lands in
+// context ahead of the input that triggers the run, and no model turn is
+// spent on the message itself.
+func (c *Client) AddSynthetic(ctx context.Context, cap LifecycleCapabilities, id, text string) (*InboxItem, error) {
+	if err := unavailable(cap.Synthetic, "synthetic message injection"); err != nil {
+		return nil, err
+	}
+	var item InboxItem
+	if err := c.do(ctx, http.MethodPost, "/api/session/"+id+"/synthetic", map[string]any{"text": text, "resume": false}, &item); err != nil {
 		return nil, err
 	}
 	return &item, nil

@@ -270,6 +270,16 @@ func TestChangeSessionsSpawnIntoWorktree(t *testing.T) {
 	if len(cap.creates) < 2 || createDirectory(t, cap.creates[len(cap.creates)-1]) != wt {
 		t.Errorf("commit session create = %v, want directory %q", cap.creates, wt)
 	}
+	// Its prompt pins the commit-message rules (moved from the old
+	// main-tree commit endpoint test, which now refuses).
+	if len(cap.prompts) != 2 {
+		t.Fatalf("prompts = %d, want change prime + commit prompt", len(cap.prompts))
+	}
+	for _, want := range []string{"git status", "git diff", "commit message", "git add -A", "NEVER push"} {
+		if !strings.Contains(cap.prompts[1], want) {
+			t.Errorf("commit prompt missing %q", want)
+		}
+	}
 }
 
 func TestChangeSessionMainTreeWithoutWorktree(t *testing.T) {

@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "id": "2026-10-03-m603h",
+  "title": "Recover queued chat messages",
+  "prefix": "QM",
+  "branch": "main",
+  "status": {
+    "value": "In progress",
+    "derived": true
+  },
+  "created": "2026-10-03",
+  "updated": "2026-10-03",
+  "decisionLog": [
+    {
+      "date": "2026-10-03",
+      "decision": "Option A approved: expose pending/failure/freshness state and offer explicit same-item Resume/Send now. No automatic retries or resumption after errors, Stop, or reconnect."
+    },
+    {
+      "date": "2026-10-03",
+      "decision": "Same-item Resume must run existing compaction restoration before steering the queued item. Normal idle gaps are labelled Pending/session idle rather than failed/paused. Verification leaves the pre-existing WaitDone test-fixture race untouched; no live server restart or reported ARC-session mutation is part of this change."
+    }
+  ],
+  "tasks": [
+    {
+      "id": "QM-00",
+      "seq": 0,
+      "title": "Expose reliable chat execution outcomes",
+      "file": "tasks/00-expose-reliable-chat-execution-outcomes.md",
+      "status": "Test",
+      "updated": "2026-10-03",
+      "notes": "New outcome, snapshot availability, last-good, and history regressions now pass along with existing re-prime checks: go test ./internal/opencode ./internal/server -run TestMessageIdleOutcomes|TestChatSnapshot|Test.*Reprime."
+    },
+    {
+      "id": "QM-01",
+      "seq": 1,
+      "title": "Add explicit pending-message recovery and freshness states",
+      "file": "tasks/01-add-explicit-pending-message-recovery-an.md",
+      "status": "Test",
+      "dependsOn": [
+        "QM-00"
+      ],
+      "updated": "2026-10-03",
+      "notes": "20 executable client regressions pass (node --test web/chat_queue_test.mjs), including fresh/stale/expired state, duplicate clicks, disappearance/lost-response races, session switches, Stop, and read-only reconnect. Go recovery endpoint, UI contracts, and compaction restoration ordering pass; Resume only updates the existing inbox item and restores binding before waking it. JavaScript syntax and gofmt checks clean."
+    },
+    {
+      "id": "QM-02",
+      "seq": 2,
+      "title": "Verify queue recovery regressions and document the contract",
+      "file": "tasks/02-verify-queue-recovery-regressions-and-do.md",
+      "status": "Test",
+      "dependsOn": [
+        "QM-00",
+        "QM-01"
+      ],
+      "updated": "2026-10-03",
+      "notes": "Full go test ./... and go vet ./... pass, including 20 executable Node client regressions. Temporary CGO-free build and its workflow validation pass; no violations, only docs-refresh warnings. Focused race checks pass; broader race run exposes an unchanged WaitDone test-counter race outside this change. JS syntax, gofmt, and diff checks clean. README and task evidence updated. Live server and reported ARC session untouched; rebuild/restart required for UI acceptance."
+    }
+  ]
+}

@@ -445,6 +445,24 @@ func TestListMessagesDecodesCommonAndUnknownParts(t *testing.T) {
 	}
 }
 
+func TestMessageIdleOutcomes(t *testing.T) {
+	for _, outcome := range []string{"succeeded", "failed", "interrupted", "future-outcome"} {
+		t.Run(outcome, func(t *testing.T) {
+			var message Message
+			if err := json.Unmarshal([]byte(`{"id":"msg_idle","type":"idle","outcome":"`+outcome+`","time":{"created":2}}`), &message); err != nil {
+				t.Fatal(err)
+			}
+			want := outcome
+			if outcome == "future-outcome" {
+				want = "unknown"
+			}
+			if message.Outcome != want {
+				t.Fatalf("outcome = %q, want %q", message.Outcome, want)
+			}
+		})
+	}
+}
+
 func TestListMessagesEmpty(t *testing.T) {
 	c, _ := fakeServer(t, "opencode", "pw", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(`{"data":[],"cursor":{}}`))
@@ -727,6 +745,89 @@ func TestParseServiceURL(t *testing.T) {
 	}
 }
 
+// fakeStatusCLI writes an executable script that ignores its arguments
+// and prints body (or exits with fail set) — a stand-in service-status
+// CLI bound to the discoverCommands seam.
+func fakeStatusCLI(t *testing.T, body string, fail bool) string {
+	t.Helper()
+	dir := t.TempDir()
+	p := filepath.Join(dir, "fakecli")
+	script := "#!/bin/sh\nexit 0\n"
+	if fail {
+		script = "#!/bin/sh\nexit 1\n"
+	} else {
+		script = "#!/bin/sh\ncat <<'EOF'\n" + body + "\nEOF\n"
+	}
+	if err := os.WriteFile(p, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+func withDiscoverCommands(t *testing.T, cmds ...string) {
+	t.Helper()
+	old := discoverCommands
+	discoverCommands = cmds
+	t.Cleanup(func() { discoverCommands = old })
+}
+
+func TestDiscoverFallsBackWhenFirstCLIFails(t *testing.T) {
+	withDiscoverCommands(t,
+		fakeStatusCLI(t, "", true),
+		fakeStatusCLI(t, "http://127.0.0.1:49374", false),
+	)
+	u, err := Discover(context.Background())
+	if err != nil || u != "http://127.0.0.1:49374" {
+		t.Fatalf("Discover = %q, %v; want the fallback URL", u, err)
+	}
+}
+
+func TestDiscoverSkipsStoppedOutput(t *testing.T) {
+	withDiscoverCommands(t,
+		fakeStatusCLI(t, "stopped", false), // old registration: no URL
+		fakeStatusCLI(t, "http://127.0.0.1:49374", false),
+	)
+	u, err := Discover(context.Background())
+	if err != nil || u != "http://127.0.0.1:49374" {
+		t.Fatalf("Discover = %q, %v; want the URL from the renamed CLI", u, err)
+	}
+}
+
+func TestDiscoverFirstWinnerShortCircuits(t *testing.T) {
+	first := fakeStatusCLI(t, "http://127.0.0.1:1111", false)
+	withDiscoverCommands(t, first, first)
+	u, err := Discover(context.Background())
+	if err != nil || u != "http://127.0.0.1:1111" {
+		t.Fatalf("Discover = %q, %v; want first candidate's URL", u, err)
+	}
+}
+
+func TestDiscoverAllCandidatesFail(t *testing.T) {
+	withDiscoverCommands(t, fakeStatusCLI(t, "", true), fakeStatusCLI(t, "", true))
+	t.Setenv("HOME", t.TempDir()) // no registration file either
+	if _, err := Discover(context.Background()); err == nil {
+		t.Fatal("expected error when every candidate fails")
+	}
+}
+
+func TestDiscoverFallsBackToRegistrationFile(t *testing.T) {
+	withDiscoverCommands(t, fakeStatusCLI(t, "", true), fakeStatusCLI(t, "", true))
+	home := t.TempDir()
+	regDir := filepath.Join(home, ".local", "state", "opencode")
+	if err := os.MkdirAll(regDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	reg := `{"id":"x","version":"2.0.17","url":"http://127.0.0.1:49374","pid":1530}`
+	if err := os.WriteFile(filepath.Join(regDir, "service.json"), []byte(reg), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", home)
+	u, err := Discover(context.Background())
+	if err != nil || u != "http://127.0.0.1:49374" {
+		t.Fatalf("Discover = %q, %v; want the registration file URL", u, err)
+	}
+}
+
 func TestPasswordFromFile(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "service.json")
@@ -800,5 +901,130 @@ func TestWaitDoneCtxExpiryReportsBusy(t *testing.T) {
 	defer cancel()
 	if err := c.WaitDone(ctx, "ses_x"); err == nil {
 		t.Fatal("expected error when ctx expires before the session idles")
+	}
+}
+
+// openapiHandler serves a minimal OpenAPI document declaring POST for
+// exactly the given paths.
+func openapiHandler(paths ...string) func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/openapi.json" {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		doc := map[string]any{"paths": map[string]any{}}
+		for _, p := range paths {
+			doc["paths"].(map[string]any)[p] = map[string]any{"post": map[string]any{}}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(doc)
+	}
+}
+
+func TestWaitDonePrefersExperimentalWhenPlainAbsent(t *testing.T) {
+	var waitPath string
+	c, _ := fakeServer(t, "opencode", "secret", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/openapi.json" {
+			openapiHandler("/api/experimental/session/{sessionID}/wait")(w, r)
+			return
+		}
+		if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/wait") {
+			waitPath = r.URL.Path
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+	if err := c.WaitDone(context.Background(), "ses_x"); err != nil {
+		t.Fatalf("WaitDone: %v", err)
+	}
+	if want := "/api/experimental/session/ses_x/wait"; waitPath != want {
+		t.Fatalf("wait path = %q, want %q", waitPath, want)
+	}
+}
+
+func TestWaitDonePrefersPlainWhenBothDeclared(t *testing.T) {
+	var waitPath string
+	c, _ := fakeServer(t, "opencode", "secret", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/openapi.json" {
+			openapiHandler("/api/session/{sessionID}/wait", "/api/experimental/session/{sessionID}/wait")(w, r)
+			return
+		}
+		if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/wait") {
+			waitPath = r.URL.Path
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+	if err := c.WaitDone(context.Background(), "ses_x"); err != nil {
+		t.Fatalf("WaitDone: %v", err)
+	}
+	if want := "/api/session/ses_x/wait"; waitPath != want {
+		t.Fatalf("wait path = %q, want %q", waitPath, want)
+	}
+}
+
+func TestWaitDonePlainDeclaredUsesPlain(t *testing.T) {
+	var waitPath string
+	c, _ := fakeServer(t, "opencode", "secret", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/openapi.json" {
+			openapiHandler("/api/session/{sessionID}/wait")(w, r)
+			return
+		}
+		if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/wait") {
+			waitPath = r.URL.Path
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+	if err := c.WaitDone(context.Background(), "ses_x"); err != nil {
+		t.Fatalf("WaitDone: %v", err)
+	}
+	if want := "/api/session/ses_x/wait"; waitPath != want {
+		t.Fatalf("wait path = %q, want %q", waitPath, want)
+	}
+}
+
+func TestWaitDoneOpenAPIFailureFallsBackToPlain(t *testing.T) {
+	var waitPath string
+	c, _ := fakeServer(t, "opencode", "secret", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/openapi.json" {
+			w.WriteHeader(http.StatusNotFound) // unreadable document
+			return
+		}
+		if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/wait") {
+			waitPath = r.URL.Path
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+	if err := c.WaitDone(context.Background(), "ses_x"); err != nil {
+		t.Fatalf("WaitDone: %v", err)
+	}
+	if want := "/api/session/ses_x/wait"; waitPath != want {
+		t.Fatalf("wait path = %q, want %q", waitPath, want)
+	}
+}
+
+func TestWaitDoneResolvedRouteIsCached(t *testing.T) {
+	var opens int
+	var waits int
+	c, _ := fakeServer(t, "opencode", "secret", func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/openapi.json":
+			opens++
+			openapiHandler("/api/experimental/session/{sessionID}/wait")(w, r)
+		case "/api/experimental/session/ses_x/wait":
+			waits++
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			w.WriteHeader(http.StatusNoContent)
+		}
+	})
+	for i := 0; i < 3; i++ {
+		if err := c.WaitDone(context.Background(), "ses_x"); err != nil {
+			t.Fatalf("WaitDone %d: %v", i, err)
+		}
+	}
+	if opens != 1 {
+		t.Fatalf("openapi.json fetched %d times, want 1 (cached route)", opens)
+	}
+	if waits != 3 {
+		t.Fatalf("experimental wait called %d times, want 3", waits)
 	}
 }

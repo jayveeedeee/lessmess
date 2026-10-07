@@ -7,96 +7,135 @@
 
 ## Objective and context
 
-The compaction re-prime (introduced 2026-09-27, commit `8efb17e`) wraps the next
-prompt to a bound session in a "Context restoration: the conversation above was
-compacted…" preamble plus a full state snapshot. Users returning to an old chat
-see this preamble fire spuriously — their message renders inside a stale
-compaction notice even though nothing was just compacted. It is regular because
-the trigger is server-restart frequency, not compaction events.
+The compaction re-prime restores a bound session's binding and state after its
+context is compacted. As shipped (2026-09-27, `8efb17e`) and reworked
+(2026-10-02, `7dab1fb` — change 2026-10-02-s4p21), the restoration **rides the
+user's own prompt**: lessmess rewrites the next prompt into
+"Context restoration: … [state ledger] ----- *user text**". Two consequences
+remain user-visible:
+
+1. **The user's message is merged with restoration text.** In the transcript —
+   and, worse, in the pending queue, which renders the item text verbatim
+   (`web/static/app.js`, `renderChatInbox`) — their message appears appended to
+   the bottom of a ~5k-character "this conversation was compacted" wall. Users
+   read this as the compaction message swallowing their message.
+2. **Queue blindness loops the wrap.** `needsReprime` recognizes compensation
+   only from *delivered transcript messages*. A queued follow-up does not land
+   in the transcript, so every queue submission after a compaction re-wraps,
+   and if queued items are cancelled the compaction is never compensated —
+   the preamble re-attaches on every send and queue, indefinitely.
+
+s4p21's stateless transcript rule is correct for delivered messages (verified
+against live data: no misfires post-deployment) and stays as the detection
+core. This change replaces the *delivery vehicle* and fixes one display lie.
 
 ## Current behavior
 
-`compactionWatch` (`internal/server/reprime.go`) tracks three memory-only maps:
-`pending` (lessmess queued a compaction), `lastSeen` (newest completed
-compaction observed in a snapshot walk), `primed` (newest compensated
-compaction). `needsReprime` = pending OR lastSeen ≠ primed. Three defects:
-
-1. **Restart amnesia** — after a restart `primed` is empty; opening any bound
-   session whose recent ~50 messages contain a completed compaction arms
-   `lastSeen` (the snapshot walk in `chat.go`), so the next prompt re-primes
-   even though that compaction was compensated by a previous process.
-2. **Failed compactions arm the wrapper** — `sessionCompact`
-   (`sessionlifecycle.go`) calls `markPending` unconditionally, even when the
-   service reports the compaction `failed`; the context was never compacted
-   yet the next prompt claims it was.
-3. **Double-fire** — a prompt sent while a compaction is still in flight
-   consumes `pending` before `lastSeen` is set, so `primed` stays empty; when
-   the snapshot later observes the completed compaction, the next prompt
-   re-primes a second time for the same compaction.
+- `maybeReprime` (`internal/server/reprime.go`) rewrites the prompt text at
+  both call sites (`chatPrompt` in `internal/server/chat.go`, `sessionDeliver`
+  in `internal/server/sessionlifecycle.go`).
+- `needsReprime` walks one descending `ListMessagesPage` (limit 50): re-prime
+  iff the newest completed compaction is strictly newer than the newest user
+  message. Queued-but-undelivered prompts are invisible to it.
+- The pending queue renders the full wrapped text; the transcript renders the
+  wrapped user message as one large bubble.
+- The usage panel (`chatUsage`) computes percent against
+  `model.Limit.Context` (400k on the affected models) and warns at 80% of it,
+  but the service auto-compacts at ~88–91% of `model.Limit.Input` (272k) —
+  measured 240,001 and 248,044 tokens before two live compactions. The panel
+  reads ~60% when compaction fires and its warning can never fire.
 
 ## Target behavior
 
-Re-prime detection becomes stateless and transcript-based: a bound session
-needs a re-prime iff its newest **completed** compaction message is strictly
-newer than its newest **user** message. Evaluated at prompt time from one
-small descending `ListMessagesPage` fetch:
-
-- scanning the desc page, if a user message is found before any completed
-  compaction → the conversation already continued past the compaction → no
-  re-prime;
-- if a completed compaction is found first → re-prime;
-- equal timestamps count as continued (no re-prime) to avoid spurious fires;
-- page exhausted with a completed compaction but no user message → re-prime
-  (conservative: compacted and no user turn since).
-
-Properties: restart-proof (no memory, nothing persisted), failure-proof
-(`failed` status never counts), self-healing across fork/revert, immune to the
-double-fire race, and correct for auto-compaction mid-turn (the service
-inserts the compaction after the triggering user message, so the *next*
-prompt compensates).
+- **Inject, don't rewrite.** When the rule detects an uncompensated
+  compaction on a bound session, lessmess calls the service's
+  `POST /api/session/{sessionID}/synthetic` ("Add synthetic message") with the
+  restoration text and `resume: false` (admitted to context, no model turn
+  scheduled). The user's prompt or queued follow-up then goes through
+  **verbatim** — no code path modifies user text anymore.
+- **Self-terminating.** The injected synthetic lands in the transcript
+  immediately, unlike queued prompts, so the very next rule evaluation sees it
+  as compensation. The queue loop is structurally impossible: nothing depends
+  on a user message landing.
+- **Recognition.** The restoration synthetic carries a stable marker prefix
+  ("Context restoration:"). `needsReprime` treats the newest user message *or*
+  newest marker-bearing synthetic as compensation; the rule remains otherwise
+  unchanged (strictly-newer completed compaction, ties count as continued,
+  read failures fail open).
+- **Slim presentation.** The transcript renders the marker-bearing synthetic
+  as a one-line system row ("Context restored after compaction · bound to
+  change X"); other synthetics stay skipped as today. Queue rows now show only
+  the user's text with no changes. The full state ledger keeps riding inside
+  the synthetic (invisible to the UI, ~1.3k tokens, useful to the agent).
+- **Honest usage ceiling.** `chatUsage` bases `ContextLimit` on
+  `model.Limit.Input` (falling back to `Limit.Context` when Input is absent),
+  so the percent and the 80% warning track the real compaction trigger.
+- **Fail-open to nothing, never to rewriting.** If a service build lacks the
+  synthetic endpoint (capability-gated), lessmess logs and skips the
+  restoration; it never falls back to modifying user text.
 
 ## Scope
 
-- `internal/server/reprime.go` — replace `compactionWatch` with a transcript
-  evaluator; `maybeReprime` keeps its signature and fail-open behavior
-  (unbound sessions never wrapped; ledger-read failures send the plain text).
-- `internal/server/server.go` — drop the `compacts` field and its wiring.
-- `internal/server/sessionlifecycle.go` — drop the `markPending` call.
-- `internal/server/chat.go` — drop the compaction-observation block from the
-  snapshot walk.
-- `internal/server/reprime_test.go` — rewrite the fixtures for the new rule.
+- `internal/opencode/lifecycle.go` — `AddSynthetic` client method plus its
+  `LifecycleCapabilities` entry (exact path+method detection from the OpenAPI
+  document, per the package's capability pattern); strict request body
+  (`{"text":…}` with `resume:false` omitted-or-false per the schema).
+- `internal/server/reprime.go` — `maybeReprime` replaced by an
+  `ensureReprime(ctx, sessionID)` pre-step; marker constant; recognition of
+  the marker synthetic in the rule.
+- `internal/server/chat.go`, `internal/server/sessionlifecycle.go` — call
+  sites: run `ensureReprime` before the prompt/deliver, pass user text
+  through untouched; transcript rendering of the marker synthetic.
+- `internal/server/chat.go` (`chatUsage`) — input-limit ceiling with context
+  fallback.
+- `web/templates/partials.html`, `web/static/app.css` — minimal styling for
+  the one-line restoration row (reuse system-message styling; no JS logic).
+- Tests: `internal/opencode/lifecycle_test.go` (body contract),
+  `internal/server/reprime_test.go` (rewrite), `internal/server/chat_test.go`
+  (usage ceiling, synthetic rendering).
 
 ## Non-goals
 
-- No change to the re-prime preamble content or the ledger snapshot it carries.
-- No collapsing of the preamble in transcript rendering (possible follow-up).
-- No persistence layer and no changes to `internal/opencode` beyond reuse of
-  the existing paginated message list.
-- No board/UI changes.
+- No change to when compactions fire (service behavior at the input limit) or
+  to the manual Compact action.
+- No service-side changes; lessmess only consumes the published synthetic
+  endpoint.
+- No revival of `compactionWatch` or any persisted re-prime state.
+- No change to the restoration's informational content beyond the marker.
 
 ## Design decisions
 
-- **Stateless transcript rule over persisted markers**: the rule needs only
-  data the transcript already holds, so a `.lessmess/reprime.json` marker
-  (option B) would add state that can go stale for no benefit; the rule also
-  fixes all three defects with one mechanism and deletes code.
-- **Strictly-newer comparison** on `Time.Created` (millisecond floats): ties
-  are treated as "already continued" — a missed re-prime in a tie is safer
-  than a spurious one.
-- **Fail-open preserved**: any fetch error or unreadable ledger sends the
-  user's text unwrapped; a user prompt is never blocked by this path.
+- **Synthetic message, not prompt piggyback** (user decision): the service's
+  own injection mechanism (same one it uses for AGENTS.md updates) is the
+  correct vehicle; user messages must never be rewritten. `resume: false`
+  lands the text without burning a model turn.
+- **Detection stays transcript-based** (s4p21): the rule is sound for
+  delivered messages; extending compensation to include the marker synthetic
+  closes the queue gap without new state.
+- **Injection at prompt/deliver submission time**: same trigger points as
+  today — when the user next acts on the session — keeping the change
+  minimal; proactive injection on snapshot observation is a possible
+  follow-up, not this change.
+- **Input-limit ceiling** for the usage panel: measured service behavior
+  (240–248k on a 272k input limit) vs the 400k context figure the panel used,
+  which no session can reach before compaction.
 
 ## Acceptance criteria
 
-- Reopen a bound, previously compacted session after a server restart and
-  prompt it: no re-prime preamble (compaction already continued past).
-- A completed compaction as the newest event in a bound session: the next
-  prompt carries the re-prime, and the prompt after it does not.
-- A failed manual compaction: the next prompt is never wrapped.
-- Prompt racing an in-flight compaction: exactly one re-prime, at the first
-  prompt after the compaction completes.
-- Unbound sessions and unreadable-ledger failures: text sent unwrapped.
-- `go vet ./...`, `go test ./...`, and `lessmess validate` clean.
+- After a completed compaction, the next send *or queued follow-up* goes
+  through verbatim; a synthetic "Context restoration:" message precedes it in
+  context; the transcript shows a one-line restoration row; the queue shows
+  only the user's text.
+- Multiple queued follow-ups after one compaction produce exactly one
+  restoration synthetic (submissions after the first see it and skip).
+- Cancelled queued items cannot cause repeated restoration.
+- A service without the synthetic endpoint: prompts still go verbatim,
+  restoration skipped with a logged warning, no user-visible failure.
+- Usage panel: percent and warning computed against the input limit (fallback
+  context when absent); the pre-compaction reading is ~88–91%, warning fires
+  beforehand.
+- `go vet ./...`, `go test ./...`, `CGO_ENABLED=0 go build`, and
+  `lessmess validate` clean.
 
 ## Tasks
 

@@ -912,7 +912,6 @@ button:disabled {
   pointer-events: none;
 }
 .chat-context-usage::before { content: ""; position: absolute; inset: 3px; border-radius: 50%; background: var(--surface-2); }
-.chat-context-usage.warning { --usage-color: var(--st-blocked-fg); }
 .chat-context-usage.unavailable { --usage-color: var(--muted); }
 .chat-session-state { display: none; }
 .chat-body { flex: 1; min-height: 0; display: flex; position: relative; }
@@ -1044,6 +1043,8 @@ button:disabled {
 }
 .chat-action-pill:hover { background: var(--accent-hover); }
 .chat-action-pill:not([data-mode="pending"]) .chat-pill-cancel,
+.chat-action-pill:not([data-mode="pending"]) .chat-pill-resume,
+.chat-action-pill:not([data-busy="true"]) .chat-pill-resume,
 .chat-action-pill:not([data-mode="compose"]) .chat-pill-compose,
 .chat-action-pill:not([data-mode="message"]) .chat-pill-message,
 .chat-action-pill[data-message-type="assistant"] .chat-pill-user { display: none; }
@@ -1057,6 +1058,7 @@ button:disabled {
 }
 .chat-action-pill .chat-action-button:hover { background: color-mix(in srgb, currentColor 12%, transparent); }
 .chat-action-pill .chat-action-button:focus-visible { outline: 2px solid currentColor; outline-offset: -4px; }
+.chat-action-button[data-action="resume"] .chat-action-icon { width: 0.8rem; height: 0.8rem; border: solid currentColor; border-width: 2px 2px 0 0; transform: rotate(45deg); }
 .chat-action-pill .chat-pill-extra {
   opacity: 0;
   visibility: hidden;
@@ -1332,7 +1334,6 @@ button:disabled {
 .chat-skill-row > span { overflow: hidden; text-overflow: ellipsis; }
 .chat-skill-row button { min-height: 36px; padding: 0.3rem 0.45rem; }
 .chat-usage { margin: 0.65rem 0; padding: 0.6rem; border-radius: 4px; background: var(--surface-2); color: var(--muted); font-size: 0.75rem; }
-.chat-usage.warning { color: var(--st-blocked-fg); border: 1px solid color-mix(in srgb, var(--st-blocked-fg) 45%, var(--border)); }
 
 /* The server snapshot is semantic HTML. These rules intentionally accept both
    chat-* names and common role names so unknown parts remain readable. */
@@ -1389,6 +1390,7 @@ button:disabled {
 .chat-transcript .chat-message-pending:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .chat-pending-head { display: flex; align-items: center; }
 .chat-pending-text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.chat-pending-notice { width: min(100%, 760px); margin: 0.65rem auto; padding: 0.5rem 0.7rem; color: var(--muted); font-size: 0.82rem; }
 .chat-transcript :where(.chat-message-assistant, .message-assistant, [data-role="assistant"]) { line-height: 1.6; }
 .chat-transcript :where(.chat-interaction, [data-permission], [data-request-id], [data-permission-id], form[data-form-id], form[data-chat-form]) {
   width: min(100%, 760px);

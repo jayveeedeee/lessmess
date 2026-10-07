@@ -3,11 +3,13 @@ package server
 import (
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
 	"lessmess/internal/model"
+	"lessmess/internal/opencode"
 )
 
 func TestCloseReopenEndpoints(t *testing.T) {
@@ -36,39 +38,47 @@ func TestCloseReopenEndpoints(t *testing.T) {
 	}
 }
 
-func TestCommitEndpoint(t *testing.T) {
-	var promptedText string
+func TestCommitRequiresLiveWorktree(t *testing.T) {
+	// Worktrees off: the gate refuses before any session is created, even
+	// with a live service — the prompt's git add -A would sweep the whole
+	// main tree.
+	var created bool
 	s := mappingServer(t, func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.Method == http.MethodPost && r.URL.Path == "/api/session":
-			w.Write([]byte(`{"data":{"id":"ses_commit","title":"t","location":{"directory":"/x"}}}`))
-		case strings.HasSuffix(r.URL.Path, "/prompt"):
-			var body map[string]string
-			json.NewDecoder(r.Body).Decode(&body)
-			promptedText = body["text"]
-			w.Write([]byte(`{"data":{}}`))
-		default:
-			w.WriteHeader(http.StatusNotFound)
+		if r.Method == http.MethodPost && r.URL.Path == "/api/session" {
+			created = true
 		}
+		w.Write([]byte(`{"data":{"id":"ses_commit","title":"t","location":{"directory":"/x"}}}`))
 	})
-
 	w := do(t, s.Handler(), "POST", "/changes/2026-09-10-0/commit", `{}`)
-	if w.Code != 201 {
-		t.Fatalf("code = %d body = %s", w.Code, w.Body)
+	if w.Code != http.StatusConflict {
+		t.Fatalf("worktrees off: code = %d body = %s", w.Code, w.Body)
 	}
 	var resp map[string]string
 	json.Unmarshal(w.Body.Bytes(), &resp)
-	if resp["session"] != "ses_commit" {
-		t.Fatalf("resp = %v", resp)
+	if resp["error"] != "the worktree pipeline is disabled" {
+		t.Errorf("error = %q", resp["error"])
 	}
-	entries := s.sessions.list("2026-09-10-0")
-	if len(entries) != 1 || entries[0].Session != "ses_commit" {
-		t.Fatalf("mapping = %+v", entries)
+	if created {
+		t.Error("session created despite the worktree gate")
 	}
-	for _, want := range []string{"git status", "git diff", "commit message", "git add -A", "NEVER push"} {
-		if !strings.Contains(promptedText, want) {
-			t.Errorf("commit prompt missing %q", want)
-		}
+
+	// Worktrees on, but the fixture change predates the feature: no
+	// registered worktree → 404, still nothing spawned.
+	ws := gitFixtureServer(t, true, true)
+	cap := &ocCapture{}
+	fake := httptest.NewServer(cap.handler())
+	t.Cleanup(fake.Close)
+	ws.SetOpencode(opencode.New(fake.URL, "pw"))
+	w = do(t, ws.Handler(), "POST", "/changes/2026-09-10-0/commit", `{}`)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("no worktree entry: code = %d body = %s", w.Code, w.Body)
+	}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp["error"] != "no live worktree registered for change 2026-09-10-0" {
+		t.Errorf("error = %q", resp["error"])
+	}
+	if len(cap.creates) != 0 || len(cap.prompts) != 0 {
+		t.Errorf("session spawned despite the gate: creates = %d, prompts = %d", len(cap.creates), len(cap.prompts))
 	}
 }
 

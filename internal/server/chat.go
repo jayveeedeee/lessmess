@@ -19,6 +19,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -41,10 +42,24 @@ const (
 	chatShellOutputMax = 32 << 10
 )
 
+// chatPollBudget caps the whole snapshot fan-out: a stalled service
+// returns a degraded/error response in bounded time instead of holding a
+// browser poll for the client's 30s transport cap. 15s covers the
+// slow-but-alive regime (reads that the old 30s window eventually
+// served) at half the cap; with the last-good memo absorbing failures,
+// a budget miss no longer blanks the chat. Var, not const, so tests can
+// shrink it.
+var chatPollBudget = 15 * time.Second
+
 type chatSnapshotView struct {
-	SessionID   string
-	Busy        bool
-	History     bool
+	SessionID string
+	Busy      bool
+	BusyKnown bool
+	Outcome   string
+	History   bool
+	// Degraded marks that an auxiliary read (active/permissions/forms)
+	// failed and its section was omitted: the transcript still rendered.
+	Degraded    bool
 	OlderCursor string
 	Blocks      []chatTranscriptBlockView
 	Permissions []opencode.PermissionRequest
@@ -248,51 +263,138 @@ func (s *Server) chatSnapshot(w http.ResponseWriter, r *http.Request) {
 	if cursor == "" {
 		opts.Order = "desc"
 	}
-	page, err := s.oc.ListMessagesPage(r.Context(), sessionID, opts)
-	if err != nil {
-		writeChatUpstreamError(w, err)
+
+	// The four upstream reads run concurrently: under a slow service the
+	// snapshot costs the slowest read, not the sum of all four (CHAT-00),
+	// auxiliary failures degrade instead of failing the poll (CHAT-01),
+	// the whole fan-out is budget-bounded (CHAT-02), and concurrent
+	// polls of this same session share one upstream fan-out (CHAT-03).
+	// The shared fetch runs on its own budget so no single requester's
+	// cancellation kills it for the others.
+	fetch := func(ctx context.Context) (d snapshotData) {
+		var wg sync.WaitGroup
+		if cursor == "" {
+			wg.Add(3)
+			go func() { defer wg.Done(); d.active, d.activeErr = s.chatActive.get(ctx, s.oc.ListActiveSessions) }()
+			go func() { defer wg.Done(); d.permissions, d.permErr = s.oc.ListPermissions(ctx, sessionID) }()
+			go func() { defer wg.Done(); d.forms, d.formErr = s.oc.ListForms(ctx, sessionID) }()
+		}
+		wg.Add(1)
+		go func() { defer wg.Done(); d.page, d.pageErr = s.oc.ListMessagesPage(ctx, sessionID, opts) }()
+		wg.Wait()
+		return d
+	}
+	data, ok := s.chatFlights.do(sessionID+"\x00"+cursor, r.Context(), fetch)
+	if !ok {
+		writeChatUpstreamError(w, r.Context().Err())
 		return
 	}
+	memoServed := false
+	if data.pageErr != nil {
+		// Last resort before failing: a fresh-enough last-good
+		// transcript renders stale (marked degraded) — a visible chat
+		// beats the UI's loading placeholder, and the poll retry keeps
+		// hunting for fresh content. Only latest pages are memoized.
+		if cursor == "" {
+			if memo, at, fresh := s.chatMemo.get(sessionID); fresh {
+				slog.Warn("chat snapshot transcript read failed; serving last-good", "session", sessionID, "age", time.Since(at).Round(time.Second), "err", data.pageErr)
+				data, memoServed = memo, true
+			} else {
+				slog.Warn("chat snapshot transcript read failed", "session", sessionID, "err", data.pageErr)
+				writeChatUpstreamError(w, data.pageErr)
+				return
+			}
+		} else {
+			slog.Warn("chat snapshot transcript read failed", "session", sessionID, "err", data.pageErr)
+			writeChatUpstreamError(w, data.pageErr)
+			return
+		}
+	} else if cursor == "" {
+		s.chatMemo.put(sessionID, data)
+	}
+	page := data.page
 	view := chatSnapshotView{
 		SessionID: sessionID,
 		History:   cursor != "",
 		// A descending timeline advances toward older messages with next.
 		OlderCursor: page.Cursor.Next,
 	}
+	if memoServed {
+		view.Degraded = true
+	}
 	var messages []chatMessageView
 	for i := len(page.Messages) - 1; i >= 0; i-- {
 		messages = append(messages, makeChatMessageView(s.Base, sessionID, page.Messages[i]))
 	}
 	// Re-prime detection is transcript-based and evaluated inside
-	// maybeReprime; the snapshot walk carries no compaction state.
+	// ensureReprime; the snapshot walk carries no compaction state.
 	view.Blocks = makeChatTranscriptBlocks(messages)
 	if cursor != "" {
 		s.rend.render(w, s.rend.partial, "chatSnapshot", view)
 		return
 	}
-	active, err := s.oc.ListActiveSessions(r.Context())
-	if err != nil {
-		writeChatUpstreamError(w, err)
-		return
+	var (
+		active      = data.active
+		permissions = data.permissions
+		forms       = data.forms
+	)
+	if data.activeErr != nil {
+		// Degrade, don't fail: busy state is cosmetic on a poll; the
+		// transcript below is what the user needs. The poll retry in
+		// ~1.2s is the recovery path.
+		view.Degraded = true
+		slog.Warn("chat snapshot degraded: active sessions read failed", "session", sessionID, "err", data.activeErr)
+		active = nil
 	}
-	permissions, err := s.oc.ListPermissions(r.Context(), sessionID)
-	if err != nil {
-		writeChatUpstreamError(w, err)
-		return
+	if data.permErr != nil {
+		view.Degraded = true
+		slog.Warn("chat snapshot degraded: permissions read failed", "session", sessionID, "err", data.permErr)
+		permissions = nil
 	}
-	forms, err := s.oc.ListForms(r.Context(), sessionID)
-	if err != nil {
-		writeChatUpstreamError(w, err)
-		return
+	if data.formErr != nil {
+		view.Degraded = true
+		slog.Warn("chat snapshot degraded: forms read failed", "session", sessionID, "err", data.formErr)
+		forms = nil
 	}
 
 	view.Permissions = permissions
 	view.Busy = active[sessionID].Type == "running"
+	view.BusyKnown = !memoServed && data.activeErr == nil
+	if memoServed {
+		view.Outcome = "unknown"
+	} else {
+		view.Outcome = chatExecutionOutcome(page.Messages)
+	}
 	for _, form := range forms {
 		view.Forms = append(view.Forms, makeChatFormView(form))
 	}
 	markRunningChatActivity(view.Blocks, view.Busy, len(view.Permissions) > 0 || len(view.Forms) > 0)
 	s.rend.render(w, s.rend.partial, "chatSnapshot", view)
+}
+
+// Messages arrive newest first. A newer user/assistant starts a new turn, so
+// an older failure must not describe it. Control messages (including
+// compaction/restoration) do not erase the most recent execution outcome.
+func chatExecutionOutcome(messages []opencode.Message) string {
+	for _, message := range messages {
+		switch message.Type {
+		case "idle":
+			switch message.Outcome {
+			case "succeeded", "failed", "interrupted":
+				return message.Outcome
+			default:
+				return "unknown"
+			}
+		case "assistant":
+			if message.Error != nil || message.Finish == "length" || message.Finish == "content-filter" {
+				return "failed"
+			}
+			return ""
+		case "user":
+			return ""
+		}
+	}
+	return ""
 }
 
 func markRunningChatActivity(blocks []chatTranscriptBlockView, busy, waitingForInput bool) {
@@ -342,6 +444,11 @@ func makeChatTranscriptBlocks(messages []chatMessageView) []chatTranscriptBlockV
 		emitted := false
 		switch message.Type {
 		case "synthetic":
+			// Only the re-prime restoration renders — as a slim one-line
+			// row; service synthetics (instruction updates) stay hidden.
+			if message.Label == "Context restoration" {
+				addMessage(message)
+			}
 			continue
 		case "assistant":
 			if message.Text != "" {
@@ -466,6 +573,11 @@ func makeChatMessageView(base, sessionID string, message opencode.Message) chatM
 			Command: command, Status: firstNonempty(message.Status, "unknown"),
 			Exit: formatShellExit(message.Exit), Output: output,
 			Truncated: len(command) < len(message.Command) || outputTruncated,
+		}
+	case "synthetic":
+		if strings.HasPrefix(message.Text, reprimeMarker) {
+			view.Label = "Context restoration"
+			view.Text = renderMarkdown("Conversation context compacted — session binding and state were restored for the next turn.")
 		}
 	case "system":
 		view.Label = "System"
@@ -942,7 +1054,11 @@ func (s *Server) chatPrompt(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "text, a file, or a skill is required"})
 		return
 	}
-	if err := s.oc.PromptWithFilesAndSkills(r.Context(), sessionID, s.maybeReprime(r.Context(), sessionID, req.Text), files, skills); err != nil {
+	// Compensate an uncompensated compaction (bound sessions only) by
+	// injecting the restoration synthetic; the prompt itself is never
+	// rewritten.
+	s.ensureReprime(r.Context(), sessionID)
+	if err := s.oc.PromptWithFilesAndSkills(r.Context(), sessionID, req.Text, files, skills); err != nil {
 		writeChatUpstreamError(w, err)
 		return
 	}
@@ -1383,7 +1499,15 @@ func (s *Server) chatUsage(ctx context.Context, sessionID string, session *openc
 	}
 	for _, model := range models {
 		if session.Model != nil && session.Model.ProviderID == model.ProviderID && session.Model.ID == model.ID {
+			// The service auto-compacts as the live context approaches the
+			// model's input limit (measured ~88–91% of it), which for
+			// output-heavy models sits far below the context figure —
+			// base the ceiling on the input limit so the percent and the
+			// warning track the real trigger.
 			usage.ContextLimit = model.Limit.Context
+			if model.Limit.Input > 0 {
+				usage.ContextLimit = model.Limit.Input
+			}
 			break
 		}
 	}

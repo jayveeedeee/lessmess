@@ -1,7 +1,7 @@
 <!-- tasktracker:begin -->
 # Structure: internal/server
 
-<!-- tasktracker-meta: refreshed=2026-09-29 source=2026-09-28-3zkr8 tree=ca5555d5dd10 -->
+<!-- tasktracker-meta: refreshed=2026-10-02 source=manual tree=e87b6fde957f -->
 
 HTTP server over the store: HTML pages, JSON endpoints, SSE updates, session mapping, PTY terminal, and the docs refresh queue
 
@@ -22,6 +22,7 @@ HTTP server over the store: HTML pages, JSON endpoints, SSE updates, session map
 | `changesession_test.go` | Tests for discussion and scaffold flows |
 | `chat.go` | Chat session surface: snapshot, tool detail, diffs, prompt send with attachments and references, controls, interrupt, and permission and form replies. |
 | `chat_test.go` | Tests for snapshot rendering, attachments and reference aliases, file limits, controls, mutations, and error mapping. |
+| `chatcache.go` | — |
 | `closepipeline.go` | Gated close pipeline for worktree-backed changes: clean gate, push, PR create-or-reuse, unattended reviewer session, and PR comment, with typed failures that block close. |
 | `docsqueue.go` | Serialized doc-gardener refresh queue and stale tracking |
 | `docsqueue_test.go` | Tests for docs queue, touched dirs, refresh |

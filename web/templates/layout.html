@@ -89,7 +89,8 @@ document.documentElement.dataset.theme = localStorage.getItem("tt-theme") || "da
                  <span class="chat-compose-spacer"></span>
                <div id="chat-action-pill" class="chat-action-pill" data-mode="send" data-segments="1" data-expanded="false">
                  <button id="chat-send-btn" type="submit" class="chat-action-button" data-action="send" aria-label="Send message" title="Send message"><span class="chat-action-icon" aria-hidden="true"></span></button>
-                 <button id="chat-cancel-btn" type="button" class="chat-action-button chat-pill-extra chat-pill-cancel" aria-label="Cancel selected message" title="Cancel selected message" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5l14 14M19 5 5 19"/></svg></button>
+                  <button id="chat-cancel-btn" type="button" class="chat-action-button chat-pill-extra chat-pill-cancel" aria-label="Cancel selected message" title="Cancel selected message" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5l14 14M19 5 5 19"/></svg></button>
+                  <button id="chat-resume-btn" type="button" class="chat-action-button chat-pill-extra chat-pill-resume" aria-label="Send selected message now" title="Send selected message now" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-5-5 5 5-5 5"/></svg></button>
                  <button id="chat-steer-btn" type="button" class="chat-action-button chat-pill-extra chat-pill-compose" aria-label="Steer response" title="Steer response" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19v-5a7 7 0 0 1 7-7h8m-4-4 4 4-4 4"/></svg></button>
                   <button id="chat-queue-btn" type="submit" class="chat-action-button chat-pill-extra chat-pill-compose" aria-label="Queue message" title="Queue message" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h15M4 11h12M4 17h15m-4-4 4 4-4 4"/></svg></button>
                   <button id="chat-copy-message-btn" type="button" class="chat-action-button chat-pill-extra chat-pill-message" aria-label="Copy selected message" title="Copy selected message" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg></button>
@@ -156,7 +157,7 @@ document.documentElement.dataset.theme = localStorage.getItem("tt-theme") || "da
           <div class="chat-control-group chat-sessions-actions">
             <strong>Change actions</strong>
             <span id="chat-sessions-overall" class="chat-sessions-overall"></span>
-            <button id="chat-change-commit-btn" type="button" class="btn-ghost">Commit</button>
+            <button id="chat-change-commit-btn" type="button" class="btn-ghost" hidden>Commit</button>
             <button id="chat-change-close-btn" type="button" class="btn-ghost">Close change</button>
             <button id="chat-change-reopen-btn" type="button" class="btn-ghost" hidden>Reopen</button>
             <button id="chat-change-worktree-remove" type="button" class="btn-ghost" hidden>Remove worktree</button>

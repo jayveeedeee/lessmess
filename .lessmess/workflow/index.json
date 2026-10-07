@@ -374,6 +374,20 @@
       "prefix": "CR",
       "branch": "main",
       "created": "2026-10-02"
+    },
+    {
+      "id": "2026-10-02-gvomn",
+      "title": "Gate per-change commits to worktree-backed changes",
+      "prefix": "CMG",
+      "branch": "main",
+      "created": "2026-10-02"
+    },
+    {
+      "id": "2026-10-03-m603h",
+      "title": "Recover queued chat messages",
+      "prefix": "QM",
+      "branch": "main",
+      "created": "2026-10-03"
     }
   ]
 }
