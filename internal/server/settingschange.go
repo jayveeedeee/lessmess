@@ -199,6 +199,7 @@ func (s *Server) settingsChange(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	entry := SessionEntry{Session: sess.ID, Title: title, Created: time.Now().Format(time.RFC3339)}
+	entry.Kind = "discussion"
 	if err := s.sessions.addUnassigned(entry); err != nil {
 		slog.Error("mapping add", "err", err)
 		_ = s.oc.DeleteSession(context.Background(), sess.ID)

@@ -109,6 +109,7 @@ function fixture() {
     chatDraftFiles: () => [], chatDraftReferences: () => [], chatDraftSkills: () => [],
     selectedChatMessage: () => null, renderChatLifecycle() {}, captureChatForms() {}, settlePendingUserBoundary() {},
     mountChatForm() {}, restoreChatForms() {}, syncChatMessageSelection() {}, renderChatManagement() {}, loadChatNavigation() {},
+    chatDisplayTitle: (title) => title, syncChatHeader() {},
     chatOpen: () => true, scheduleChatPoll() {}, refreshChat: () => { context.refreshes++; }, refreshes: 0,
   });
   vm.runInContext(client, context);
@@ -133,6 +134,30 @@ test("waiting, failed, Stop, idle, and unknown states never resume automatically
   f.state.inbox[0].delivery = "steer";
   f.transcript.snapshot.dataset.busy = "true";
   assert.equal(f.context.chatPendingLabel(f.state.inbox[0]), "Steering · awaiting delivery");
+});
+
+test("idle unchanged transcripts still refresh stale lifecycle metadata for automatic names", async () => {
+  const f = fixture();
+  const html = '<div class="chat-snapshot" data-busy="false" data-busy-known="true"></div>';
+  f.state.snapshot = html;
+  f.state.lifecycleCheckedAt = Date.now() - 6000;
+  let metadataReads = 0;
+  f.context.loadChatLifecycle = async () => { metadataReads++; };
+  f.context.reply = async () => ({ ok: true, text: async () => html });
+  f.context.pollChat(false);
+  await flush();
+  assert.equal(metadataReads, 1);
+  assert.equal(f.state.snapshot, html);
+  assert.equal(f.state.session, "ses_queue");
+});
+
+test("snapshot titles update an open chat even when lifecycle capabilities are unavailable", async () => {
+  const f = fixture();
+  f.context.reply = async () => ({ ok: true, text: async () => '<div class="chat-snapshot" data-title="Readable fallback title" data-busy="false" data-busy-known="true"></div>' });
+  f.context.pollChat(false);
+  await flush();
+  assert.equal(f.state.title, "Readable fallback title");
+  assert.equal(f.state.session, "ses_queue");
 });
 
 test("selected idle message offers Resume; busy message offers Stop and Send now", () => {

@@ -51,12 +51,19 @@ var templateFuncs = template.FuncMap{
 		}
 		return len(model.TaskStatusOrder)
 	},
-	"base":     filepath.Base,
+	"base": filepath.Base,
+	"chatDate": func(s string) string {
+		if len(s) >= 10 {
+			return s[:10]
+		}
+		return ""
+	},
 	"markdown": renderMarkdown,
 }
 
 type renderer struct {
 	index    *template.Template
+	chats    *template.Template
 	partial  *template.Template
 	explorer *template.Template
 	settings *template.Template
@@ -111,6 +118,7 @@ func assetsVersion() string {
 func newRenderer() *renderer {
 	r := &renderer{assetsV: assetsVersion()}
 	r.index = r.mustParseWithBase("templates/layout.html", "templates/index.html")
+	r.chats = r.mustParseWithBase("templates/layout.html", "templates/chats.html")
 	r.partial = r.mustParseWithBase("templates/partials.html", "templates/explorer.html")
 	r.explorer = r.mustParseWithBase("templates/layout.html", "templates/explorer.html")
 	r.settings = r.mustParseWithBase("templates/layout.html", "templates/settings.html")

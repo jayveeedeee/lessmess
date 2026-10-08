@@ -97,6 +97,7 @@ type LifecycleCapabilities struct {
 	Export                                 bool   `json:"export"`
 	Delete                                 bool   `json:"delete"`
 	Synthetic                              bool   `json:"synthetic"`
+	Generate                               bool   `json:"generate"`
 	ForkBoundary                           bool   `json:"-"`
 	RevertClearMethod, RevertClearPath     string `json:"-"`
 	InboxDeliveryMethod, InboxDeliveryPath string `json:"-"`
@@ -149,6 +150,7 @@ func (c *Client) LifecycleCapabilities(ctx context.Context) (LifecycleCapabiliti
 		InboxList:    has(http.MethodGet, "/api/session/{sessionID}/inbox"),
 		InboxCancel:  has(http.MethodDelete, "/api/session/{sessionID}/inbox/{inboxID}"),
 		Synthetic:    has(http.MethodPost, "/api/session/{sessionID}/synthetic"),
+		Generate:     has(http.MethodPost, "/api/experimental/generate"),
 		Export:       has(http.MethodGet, "/api/experimental/session/{sessionID}/export"),
 		Delete:       has(http.MethodDelete, "/api/session/{sessionID}"),
 	}
@@ -239,6 +241,7 @@ func (c *Client) CompactSession(ctx context.Context, cap LifecycleCapabilities, 
 	}
 	return &item, nil
 }
+
 // AddSynthetic durably admits a synthetic message into the session without
 // scheduling an execution (resume false). The service folds pending
 // synthetic input into the session's next run — admitted first, it lands in

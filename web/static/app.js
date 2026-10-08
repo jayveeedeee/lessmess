@@ -41,6 +41,10 @@
       // Single-project mode: no project level — the change list is the root.
       trail = [{ kind: "changes", label: "Changes", url: BASE + "/" }];
     }
+    if (page === "chats" && !sessionTasksChange) {
+      if (!BASE) trail = [];
+      trail.push({ kind: "chats", label: "Chats", url: BASE + "/chats" });
+    }
     // The change crumb exists only while a change-bound session is open —
     // it IS the current location then (no "Chat" crumb). Closing the chat
     // or returning to the list leaves just the base; re-entry is the cards.
@@ -123,7 +127,7 @@
     // of the base trail) is the current location, so no "Chat" crumb.
     // Unbound discussion chats hang off the bare Changes list.
     var bound = sessionTasksChange && trail[trail.length - 1].kind === "change";
-    if (!bound) trail.push({ kind: "chat", label: "Chat" });
+    if (!bound) trail.push({ kind: "chat", label: cstate.title || "Chat" });
     var view = activeChatLocationView();
     var labels = { work: "Work", agents: "Agents", controls: "Controls", sessions: "Sessions" };
     if (view !== "chat") trail.push({ kind: view, label: labels[view] });
@@ -186,6 +190,7 @@
     }
     if (index === locationTrail.length - 1) { closeLocationMenu(true); return; }
     closeLocationMenu(false);
+    if (item.kind === "chats") { closeChat(false); return; }
     // Plain URL crumbs: the trail's base levels — the change list root,
     // the projects landing, and a project's change list — navigate.
     if (item.kind === "changes" || item.kind === "projects" || item.kind === "project") {
@@ -326,8 +331,9 @@
     timer = setTimeout(function () {
       checkValidation();
       // Keep an open Chat attached when a discussion scaffolds a change.
-      if (page === "index" && sessionOverlayOpen() && activeSessionID()) followSession();
+      if ((page === "index" || page === "chats") && sessionOverlayOpen() && activeSessionID()) followSession();
       else if (page === "index") refreshChangeCards();
+      if (page === "chats") refreshChats();
       if (sessionOverlayOpen()) {
         if (sessionTasksChange) loadSessionTasks(sessionTasksChange, sessionTasksTask);
         else if (activeSessionID()) resolveSessionTasks(activeSessionID());
@@ -341,12 +347,17 @@
   // view. Until it binds, skip the refresh entirely.
   function followSession() {
     var sessionID = activeSessionID();
-    fetch(BASE + "/api/sessions/" + encodeURIComponent(sessionID) + "/change", { headers: { Accept: "application/json" } })
+    return fetch(BASE + "/api/sessions/" + encodeURIComponent(sessionID) + "/change", { headers: { Accept: "application/json" } })
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (j) {
         if (!j || !j.change) return;
         if (!sessionOverlayOpen() || activeSessionID() !== sessionID) return;
-        location.assign(BASE + "/?change=" + encodeURIComponent(j.change) + "&session=" + encodeURIComponent(sessionID));
+        cstate.followedChange = j.change;
+        if (sessionTasksChange !== j.change) loadSessionTasks(j.change);
+        if (page === "index" || page === "chats") history.replaceState(null, "", BASE + "/?change=" + encodeURIComponent(j.change) + "&session=" + encodeURIComponent(sessionID));
+        var promote = document.getElementById("chat-promote-btn");
+        if (promote) promote.hidden = true;
+        if (page === "chats") refreshChats();
       })
       .catch(function () {});
   }
@@ -448,7 +459,7 @@
   // a free agent, not bound to any change — and opens the Chat overlay.
   // A deliberate open of the newly created session.
   document.addEventListener("click", function (e) {
-    var btn = e.target.closest("#chat-btn");
+    var btn = e.target.closest("[data-new-chat]");
     if (!btn) return;
     btn.disabled = true;
     fetch(BASE + "/chat/session", {
@@ -667,53 +678,59 @@
   // --- index discussions list -------------------------------------------------
 
   function loadDiscussions() {
-    var ul = document.getElementById("discussions-list");
-    if (!ul) return;
-    fetch(BASE + "/api/discussions", { headers: { Accept: "application/json" } })
-      .then(function (r) { return r.json(); })
-      .then(function (j) {
-        ul.innerHTML = "";
-        var sessions = j.sessions || [];
-        if (!sessions.length) {
-          var empty = document.createElement("li");
-          empty.className = "session-empty";
-          empty.textContent = "No open discussions — start one with “New change session”.";
-          ul.appendChild(empty);
-          return;
-        }
-        sessions.forEach(function (s) {
-          var li = document.createElement("li");
-          li.className = "session-item";
+    refreshChats();
+  }
+
+  var chatsRefreshPending = false;
+  function refreshChats() {
+    var cards = document.getElementById("chat-cards");
+    if (!cards || chatsRefreshPending) return;
+    chatsRefreshPending = true;
+    return fetch(BASE + "/api/chats", { headers: { Accept: "application/json" } })
+      .then(lifecycleResponse)
+      .then(function (data) {
+        cards.replaceChildren();
+        (data.chats || []).forEach(function (chat) {
+          var card = document.createElement("a");
+          card.className = "change-card";
+          card.href = chat.url;
+          card.dataset.chat = chat.session;
+          card.dataset.title = chat.title;
           var title = document.createElement("span");
-          title.className = "session-title";
-          title.textContent = s.title;
-          var meta = document.createElement("span");
-          meta.className = "session-meta";
-          meta.textContent = (s.created || "").slice(0, 10);
-          var actions = document.createElement("span");
-          actions.className = "session-actions";
-          var chatBtn = document.createElement("button");
-          chatBtn.className = "btn-ghost";
-          chatBtn.textContent = "Chat";
-          chatBtn.addEventListener("click", function () { openChat(s.session, s.title); });
-          var unBtn = document.createElement("button");
-          unBtn.className = "btn-ghost";
-          unBtn.textContent = "✕";
-          unBtn.title = "Unlink (session stays in opencode)";
-          unBtn.addEventListener("click", function () {
-            fetch(BASE + "/api/discussions/" + s.session, { method: "DELETE" })
-              .then(function (r) { if (!r.ok) throw 0; loadDiscussions(); })
-              .catch(function () { alert("Unlink failed"); });
-          });
-          actions.appendChild(chatBtn);
-          actions.appendChild(unBtn);
-          li.appendChild(title);
-          li.appendChild(meta);
-          li.appendChild(actions);
-          ul.appendChild(li);
+          title.className = "change-card-name";
+          title.textContent = chat.title;
+          var date = document.createElement("span");
+          date.className = "change-card-date";
+          var at = new Date(chat.updated);
+          date.textContent = isNaN(at.getTime()) ? "" : at.toLocaleDateString();
+          card.appendChild(title);
+          card.appendChild(date);
+          cards.appendChild(card);
         });
+        document.getElementById("chats-empty").hidden = !!(data.chats || []).length;
+        document.getElementById("chats-status").textContent = "";
       })
-      .catch(function () {});
+      .catch(function () { document.getElementById("chats-status").textContent = "Could not refresh chats. Previously loaded conversations are still shown."; })
+      .finally(function () { chatsRefreshPending = false; });
+  }
+
+  document.addEventListener("click", function (e) {
+    var card = e.target.closest("[data-chat]");
+    if (!card || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    e.preventDefault();
+    openChat(card.dataset.chat, card.dataset.title);
+  });
+
+  function initChatDeepLink() {
+    if (page !== "chats") return;
+    function restore() {
+      var sid = new URLSearchParams(location.search).get("session");
+      if (sid && /^ses_[^/\\]+$/.test(sid)) openChat(sid, sid);
+      else if (chatOpen()) closeChat(false);
+    }
+    restore();
+    window.addEventListener("popstate", restore);
+    setInterval(function () { if (!document.hidden && !chatOpen()) refreshChats(); }, 5000);
   }
 
   // --- session resume helpers ------------------------------------------------
@@ -769,6 +786,9 @@
     snapshotFailed: false,
     snapshotCheckedAt: 0,
     lifecycleRequest: null,
+    lifecycleCheckedAt: 0,
+    followedChange: null,
+    promotionConfirmation: null,
     selectedPendingID: null,
     selectedMessageID: null,
     deliveryIDs: {},
@@ -1032,6 +1052,9 @@
     closeChat(true, true);
     cstate.opener = opener;
     cstate.session = sessionID;
+    if (page === "chats" && new URLSearchParams(location.search).get("session") !== sessionID) {
+      history.pushState(null, "", BASE + "/chats?session=" + encodeURIComponent(sessionID));
+    }
     cstate.title = chatDisplayTitle(title || sessionID);
     cstate.snapshot = null;
     cstate.pendingUserBoundary = null;
@@ -1048,6 +1071,8 @@
     cstate.selectedPendingID = null;
     cstate.selectedMessageID = null;
     cstate.lifecycle = null;
+    cstate.lifecycleCheckedAt = 0;
+    cstate.followedChange = null;
     cstate.navigation = null;
     cstate.deletePreview = null;
     cstate.lifecycleError = "";
@@ -1087,6 +1112,8 @@
 
   function closeChat(suppressRefresh, suppressFocus) {
     if (!cstate.session && !chatOpen()) return;
+    closeChatPromotion();
+    var wasChange = sessionTasksChange;
     var prompt = document.getElementById("chat-prompt");
     if (prompt && cstate.session) cstate.drafts[cstate.session] = prompt.value;
     var transcript = document.getElementById("chat-transcript");
@@ -1137,7 +1164,9 @@
       cstate.opener = null;
       if (opener && opener.isConnected) requestAnimationFrame(function () { opener.focus({ preventScroll: true }); });
     }
-    if (!suppressRefresh && page === "index") scheduleRefresh();
+    if (!suppressRefresh && page === "chats" && wasChange) { location.assign(BASE + "/"); return; }
+    if (!suppressRefresh && page === "chats") history.replaceState(null, "", BASE + "/chats");
+    if (!suppressRefresh && (page === "index" || page === "chats")) scheduleRefresh();
   }
 
   function syncChatViewport() {
@@ -1197,7 +1226,11 @@
           settlePendingUserBoundary(transcript, sessionID);
           mountChatForm();
           restoreChatForms();
-          var root = transcript.querySelector(".chat-snapshot");
+           var root = transcript.querySelector(".chat-snapshot");
+           if (root && root.dataset.title) {
+             cstate.title = chatDisplayTitle(root.dataset.title);
+             syncChatHeader();
+           }
           if (root && root.dataset.busyKnown === "true" && cstate.lifecycle) {
             var snapshotBusy = root.dataset.busy === "true";
            if (cstate.lifecycle.busy !== snapshotBusy) {
@@ -1274,7 +1307,7 @@
           cstate.request = null;
           transcript.setAttribute("aria-busy", "false");
            scheduleChatPoll(1200);
-            if (!cstate.lifecycle || cstate.lifecycleError) {
+            if (!cstate.lifecycle || cstate.lifecycleError || (cstate.lifecycleCheckedAt && Date.now() - cstate.lifecycleCheckedAt > 5000)) {
               if (!cstate.lifecycleRequest) loadChatLifecycle();
             } else loadChatInbox(false);
         }
@@ -2573,10 +2606,16 @@
       .then(function (data) {
         if (cstate.session !== sessionID || cstate.lifecycleRequest !== controller) return null;
         cstate.lifecycle = data;
+        cstate.lifecycleCheckedAt = Date.now();
+        if (data.session && data.session.title) {
+          cstate.title = chatDisplayTitle(data.session.title);
+          syncChatHeader();
+        }
         cstate.lifecycleError = "";
         renderChatLifecycle();
         renderChatManagement();
         updateChatDeliveryControls();
+        if (data.mapping && data.mapping.change && cstate.followedChange !== data.mapping.change) followSession();
         loadChatInbox(true);
         loadChatNavigation();
         return data;
@@ -2622,7 +2661,75 @@
     parent.appendChild(list);
   }
 
+  function syncChatPromotion() {
+    var button = document.getElementById("chat-promote-btn");
+    if (!button) return;
+    var data = cstate.lifecycle;
+    button.hidden = !data || !data.promotable || !!sessionTasksChange;
+    button.disabled = !!(data && data.busy) || cstate.lifecycleAction || !!cstate.lifecycleError;
+  }
+
+  function closeChatPromotion() {
+    var dialog = document.getElementById("chat-promote-dialog");
+    if (dialog && dialog.open) dialog.close();
+    cstate.promotionConfirmation = null;
+  }
+
+  function openChatPromotion() {
+    var sessionID = cstate.session;
+    closeChatMore(false);
+    return loadChatLifecycle().then(function (data) {
+      if (cstate.session !== sessionID) return;
+      if (!data || !data.promotable || data.busy) { setChatStatus("Promotion requires an idle standalone chat. Refresh session state and try again.", true); return; }
+      cstate.promotionConfirmation = { sessionID: sessionID, updated: data.session.updated };
+      var name = data.session.title || "New change";
+      document.getElementById("chat-promote-name").value = name;
+      var initials = name.split(/\s+/).map(function (word) { return word[0] || ""; }).join("").replace(/[^a-z0-9]/gi, "").toUpperCase();
+      document.getElementById("chat-promote-prefix").value = initials.length >= 2 ? initials.slice(0, 4) : "CH";
+      document.getElementById("chat-promote-error").textContent = "";
+      document.getElementById("chat-promote-confirm").disabled = false;
+      document.getElementById("chat-promote-dialog").showModal();
+      document.getElementById("chat-promote-name").focus();
+    });
+  }
+
+  function submitChatPromotion() {
+    var confirmation = cstate.promotionConfirmation;
+    var button = document.getElementById("chat-promote-confirm");
+    if (!confirmation || confirmation.sessionID !== cstate.session || button.disabled) return Promise.resolve();
+    var title = document.getElementById("chat-promote-name").value.trim();
+    var prefix = document.getElementById("chat-promote-prefix").value.trim().toUpperCase();
+    button.disabled = true;
+    document.getElementById("chat-promote-error").textContent = "";
+    return fetch(BASE + "/api/sessions/" + encodeURIComponent(confirmation.sessionID) + "/promote", {
+      method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ title: title, prefix: prefix, confirmation: confirmation }),
+    }).then(lifecycleResponse).then(function () {
+      if (cstate.session !== confirmation.sessionID) return;
+      closeChatPromotion();
+      setChatStatus("Scaffolding and planning this conversation as a change…");
+      refreshChat();
+    }).catch(function (err) {
+      if (cstate.session === confirmation.sessionID && cstate.promotionConfirmation === confirmation) {
+        document.getElementById("chat-promote-error").textContent = err.message + (err.status === 409 ? " Close and reopen this confirmation to refresh session state." : "");
+      }
+    }).finally(function () {
+      if (cstate.promotionConfirmation === confirmation) button.disabled = false;
+    });
+  }
+
+  function initChatPromotion() {
+    var form = document.getElementById("chat-promote-form");
+    if (!form) return;
+    document.getElementById("chat-promote-btn").addEventListener("click", openChatPromotion);
+    document.getElementById("chat-promote-cancel").addEventListener("click", closeChatPromotion);
+    document.getElementById("chat-promote-dialog").addEventListener("cancel", function () { cstate.promotionConfirmation = null; });
+    form.addEventListener("submit", function (e) { e.preventDefault(); submitChatPromotion(); });
+    document.getElementById("chat-promote-prefix").addEventListener("input", function (e) { e.target.value = e.target.value.toUpperCase(); });
+  }
+
   function renderChatLifecycle() {
+    syncChatPromotion();
     var root = document.getElementById("chat-lifecycle");
     if (!root) return;
     var state = document.getElementById("chat-lifecycle-state");
@@ -5109,7 +5216,7 @@
         body: JSON.stringify({ field: field, scope: scope }),
       })
         .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || r.statusText); return j; }); })
-        .then(function (j) { openPreferredSession(j.session, j.title); })
+      .then(function (j) { openPreferredSession(j.session, j.title); })
         .catch(function (err) { alert("Change request failed: " + err.message); })
         .finally(function () { btn.disabled = false; });
     });
@@ -5885,11 +5992,6 @@
     var message = document.getElementById("oc-status-message");
     var summary = document.getElementById("oc-status-summary");
     var rediscover = document.getElementById("oc-rediscover");
-    var returnChat = document.getElementById("oc-return-chat");
-    returnChat.addEventListener("click", function () {
-      var chat = document.getElementById("chat-btn");
-      if (chat) chat.click();
-    });
 
     function finding(section, finding) {
       var body = root.querySelector('[data-oc-section="' + section + '"] [data-oc-body]');
@@ -6625,6 +6727,8 @@
     initOnboardingBanner();
     if (page !== "projects") checkValidation();
     initChangeDeepLink();
+    initChatDeepLink();
+    initChatPromotion();
     if (page !== "projects") loadDiscussions();
   });
 })();

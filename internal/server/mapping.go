@@ -32,6 +32,10 @@ type SessionEntry struct {
 	Parent      string   `json:"parent,omitempty"`
 	SpawnedFrom string   `json:"spawnedFrom,omitempty"`
 	Modules     []string `json:"modules,omitempty"` // instruction modules injected at spawn (audit)
+	Kind        string   `json:"kind,omitempty"`
+	Updated     string   `json:"updated,omitempty"`
+	TitleState  string   `json:"titleState,omitempty"` // eligible, pending, auto, manual, change
+	Promotion   int64    `json:"promotion,omitempty"`  // confirmed upstream revision, for admission retries
 }
 
 // mapping is the .lessmess/sessions.json file (tooling state, gitignored).
@@ -96,7 +100,11 @@ func (m *mapping) add(change string, e SessionEntry) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.data[change] = append(m.data[change], e)
-	return m.save()
+	if err := m.save(); err != nil {
+		m.data[change] = m.data[change][:len(m.data[change])-1]
+		return err
+	}
+	return nil
 }
 
 // addAll appends entries under one change, skipping sessions already mapped
@@ -173,9 +181,12 @@ func (m *mapping) updateTitle(session, title string) error {
 				continue
 			}
 			old := entries[i].Title
+			oldState := entries[i].TitleState
 			m.data[change][i].Title = title
+			m.data[change][i].TitleState = "manual"
 			if err := m.save(); err != nil {
 				m.data[change][i].Title = old
+				m.data[change][i].TitleState = oldState
 				return err
 			}
 			return nil
@@ -290,10 +301,7 @@ const unassignedKey = "_unassigned"
 
 // addUnassigned links a discussion session that has no change yet.
 func (m *mapping) addUnassigned(e SessionEntry) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.data[unassignedKey] = append(m.data[unassignedKey], e)
-	return m.save()
+	return m.add(unassignedKey, e)
 }
 
 // listUnassigned returns the pre-scaffold discussion sessions.
@@ -301,18 +309,27 @@ func (m *mapping) listUnassigned() []SessionEntry { return m.list(unassignedKey)
 
 // moveToChange relocates a session from the unassigned bucket to a change.
 // Reports false when the session is not in the bucket (idempotent for retries).
-func (m *mapping) moveToChange(session, changeID string) (bool, error) {
+func (m *mapping) moveToChange(session, changeID string, edits ...func(*SessionEntry)) (bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	entries := m.data[unassignedKey]
 	for i, e := range entries {
 		if e.Session == session {
-			m.data[unassignedKey] = append(entries[:i], entries[i+1:]...)
+			for _, edit := range edits {
+				edit(&e)
+			}
+			original := append([]SessionEntry(nil), entries...)
+			bound := append([]SessionEntry(nil), m.data[changeID]...)
+			m.data[unassignedKey] = append(append([]SessionEntry(nil), entries[:i]...), entries[i+1:]...)
 			if len(m.data[unassignedKey]) == 0 {
 				delete(m.data, unassignedKey)
 			}
 			m.data[changeID] = append(m.data[changeID], e)
-			return true, m.save()
+			if err := m.save(); err != nil {
+				m.data[unassignedKey], m.data[changeID] = original, bound
+				return false, err
+			}
+			return true, nil
 		}
 	}
 	return false, nil

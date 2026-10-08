@@ -1,0 +1,15 @@
+{{define "content"}}
+<section class="changes" aria-label="Chats">
+  <div class="section-head"><h1>Chats</h1><button type="button" class="btn-accent" data-new-chat>New chat</button></div>
+  <p id="chats-status" class="muted" role="status">{{.Data.Error}}</p>
+  <div id="chat-cards" class="change-cards">
+    {{range .Data.Chats}}
+    <a class="change-card" href="{{.URL}}" data-chat="{{.Session}}" data-title="{{.Title}}">
+      <span class="change-card-name">{{.Title}}</span>
+      <span class="change-card-meta"><time class="change-card-date" datetime="{{.Updated}}">{{chatDate .Updated}}</time></span>
+    </a>
+    {{end}}
+  </div>
+  <p id="chats-empty" class="change-cards-empty"{{if or .Data.Chats .Data.Error}} hidden{{end}}>No chats yet — start one with New chat.</p>
+</section>
+{{end}}

@@ -166,6 +166,7 @@ func (s *Server) commitAll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	entry := SessionEntry{Session: sess.ID, Title: sess.Title, Created: time.Now().Format(time.RFC3339)}
+	entry.Kind = "helper"
 	if err := s.sessions.addUnassigned(entry); err != nil {
 		_ = s.oc.DeleteSession(context.Background(), sess.ID)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "persist mapping: " + err.Error()})

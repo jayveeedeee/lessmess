@@ -53,6 +53,7 @@ var chatPollBudget = 15 * time.Second
 
 type chatSnapshotView struct {
 	SessionID string
+	Title     string
 	Busy      bool
 	BusyKnown bool
 	Outcome   string
@@ -318,6 +319,11 @@ func (s *Server) chatSnapshot(w http.ResponseWriter, r *http.Request) {
 		History:   cursor != "",
 		// A descending timeline advances toward older messages with next.
 		OlderCursor: page.Cursor.Next,
+	}
+	if s.sessions != nil && s.mapErr == nil {
+		if _, entry, found := s.sessions.entry(sessionID); found {
+			view.Title = entry.Title
+		}
 	}
 	if memoServed {
 		view.Degraded = true
@@ -1062,6 +1068,11 @@ func (s *Server) chatPrompt(w http.ResponseWriter, r *http.Request) {
 		writeChatUpstreamError(w, err)
 		return
 	}
+	var names []string
+	for _, file := range req.Files {
+		names = append(names, file.Name)
+	}
+	s.afterChatInput(sessionID, req.Text, names)
 	writeJSON(w, http.StatusAccepted, map[string]bool{"ok": true})
 }
 
@@ -1790,6 +1801,7 @@ func (s *Server) chatSession(w http.ResponseWriter, r *http.Request) {
 	}
 	entry := SessionEntry{
 		Session: sess.ID, Title: title, Created: time.Now().Format(time.RFC3339), Modules: modules,
+		Kind: "chat", TitleState: "eligible",
 	}
 	if err := s.sessions.addUnassigned(entry); err != nil {
 		slog.Error("mapping add", "err", err)

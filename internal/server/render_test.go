@@ -71,7 +71,7 @@ func TestExpandableLocationBreadcrumbContract(t *testing.T) {
 		}
 	}
 	js := do(t, h, "GET", "/static/app.js", "").Body.String()
-	for _, want := range []string{`function locationBaseTrail()`, `function syncLocationFromChat()`, `function activateLocation(index)`, `function setDetailLocation(url, parentTrail)`, `current.textContent = locationTrail[locationTrail.length - 1].label`, `back.setAttribute("aria-label", parent ? "Back to " + parent.label`, `activateLocation(locationTrail.length - 2)`, `trail.push({ kind: "chat", label: "Chat" })`, `labels = { work: "Work", agents: "Agents", controls: "Controls", sessions: "Sessions" }`, `sibling.id !== "app-header"`, `child.id !== "app-header"`, `function resumeChangeSession(change)`, `if (chatOpen() && sessionTasksChange) {`, `markOpenedFor(change, s.session)`, `// Back from a doc: close the modal first so the conversation is`} {
+	for _, want := range []string{`function locationBaseTrail()`, `function syncLocationFromChat()`, `function activateLocation(index)`, `function setDetailLocation(url, parentTrail)`, `current.textContent = locationTrail[locationTrail.length - 1].label`, `back.setAttribute("aria-label", parent ? "Back to " + parent.label`, `activateLocation(locationTrail.length - 2)`, `trail.push({ kind: "chat", label: cstate.title || "Chat" })`, `labels = { work: "Work", agents: "Agents", controls: "Controls", sessions: "Sessions" }`, `sibling.id !== "app-header"`, `child.id !== "app-header"`, `function resumeChangeSession(change)`, `if (chatOpen() && sessionTasksChange) {`, `markOpenedFor(change, s.session)`, `// Back from a doc: close the modal first so the conversation is`} {
 		if !strings.Contains(js, want) {
 			t.Errorf("location breadcrumb controller missing %q", want)
 		}
@@ -215,12 +215,12 @@ func TestSettingsPageHTML(t *testing.T) {
 	if !strings.Contains(body, `class="topnav topnav-right"`) {
 		t.Error("topnav-right group missing")
 	}
-	if !strings.Contains(body, `<a href="/settings" class="active">Settings</a>`) {
+	if !strings.Contains(body, `<a href="/settings" class="topnav-icon active" aria-label="Settings" title="Settings" aria-current="page"><svg`) {
 		t.Error("active Settings nav link missing")
 	}
-	// The header Chat button sits beside Settings on app pages.
-	if !strings.Contains(body, `id="chat-btn"`) {
-		t.Error("header chat button missing")
+	// Creation belongs to Chats, not the shared header or Settings page.
+	if strings.Contains(body, `data-new-chat`) || strings.Contains(body, `id="chat-btn"`) {
+		t.Error("Settings must not offer New chat")
 	}
 }
 

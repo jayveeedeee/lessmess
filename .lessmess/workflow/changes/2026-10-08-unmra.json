@@ -1,0 +1,84 @@
+{
+  "version": 1,
+  "id": "2026-10-08-unmra",
+  "title": "First-class chats",
+  "prefix": "CHAT",
+  "branch": "main",
+  "status": {
+    "value": "In progress",
+    "derived": true
+  },
+  "created": "2026-10-08",
+  "updated": "2026-10-08",
+  "decisionLog": [
+    {
+      "date": "2026-10-08",
+      "decision": "Chats becomes a project-scoped destination separate from Changes. Reuse the original session and existing lessmess-scaffold flow for promotion so history is preserved. Confirmed promotion authorizes scaffolding and planning only; implementation still needs explicit user approval."
+    },
+    {
+      "date": "2026-10-08",
+      "decision": "Keep creation actions section-local: New chat appears only inside Chats and New change session only inside Changes. Replace the Settings navigation text with an accessible gear icon; service-management return navigation goes to Chats without spawning a conversation."
+    }
+  ],
+  "tasks": [
+    {
+      "id": "CHAT-00",
+      "seq": 0,
+      "title": "Model standalone chat metadata and compatible listing",
+      "file": "tasks/00-model-standalone-chat-metadata-and-compa.md",
+      "status": "Test",
+      "updated": "2026-10-08",
+      "notes": "Server tests and targeted race checks passed for legacy/fork compatibility, helper and bound-session filtering, prefixed exact-session links, live activity/offline fallback, and atomic metadata/title/mapping rollback."
+    },
+    {
+      "id": "CHAT-01",
+      "seq": 1,
+      "title": "Add the dedicated Chats page and navigation",
+      "file": "tasks/01-add-the-dedicated-chats-page-and-navigat.md",
+      "status": "Test",
+      "dependsOn": [
+        "CHAT-00"
+      ],
+      "updated": "2026-10-08",
+      "notes": "go test ./internal/server ./web passed. Renderer tests cover Chats/Changes separation, escaped titles, exact-session links, location/navigation, retained planning entry, and single-project/hub-prefixed paths. go test ./internal/server ./web, go vet ./..., the CGO_ENABLED=0 build, and git diff --check passed. Renderer regressions verify New chat only in Chats, New change session only in Changes, no shared-header creation action, accessible gear-only Settings navigation and active states, and non-spawning service-management return links with empty and hub-prefixed paths. Existing Chats navigation, naming, promotion, and browser-glue tests remain passing. Final go test ./... passed. Verified the rebuilt live service on port 9090: New chat appears only under Chats, New change session only under Changes, gear-only Settings navigation retains its accessible name and active state, and service management returns to Chats without spawning. Workflow validation reports no violations (existing documentation warnings remain). Right-aligned the Chats section New chat action with margin-left:auto, matching the Changes creation action. go test ./internal/server ./web, the CGO_ENABLED=0 rebuild, and git diff --check passed; a renderer regression pins the alignment rule. Restarted the approved direct-run service and verified that port 9090 serves the updated stylesheet."
+    },
+    {
+      "id": "CHAT-02",
+      "seq": 2,
+      "title": "Name chats once after the first real user message",
+      "file": "tasks/02-name-chats-once-after-the-first-real-use.md",
+      "status": "Test",
+      "dependsOn": [
+        "CHAT-00"
+      ],
+      "updated": "2026-10-08",
+      "notes": "go test ./internal/opencode ./internal/server ./web passed. Tests cover advertised generation contract/authentication/model shape, first accepted input only, rejected input, readable fallback and file-only naming, custom titles, bounded Unicode titles, repeated inputs, and late generation after manual naming/binding/unlink."
+    },
+    {
+      "id": "CHAT-03",
+      "seq": 3,
+      "title": "Safely promote the same chat through existing scaffolding",
+      "file": "tasks/03-safely-promote-the-same-chat-through-exi.md",
+      "status": "Test",
+      "dependsOn": [
+        "CHAT-00"
+      ],
+      "updated": "2026-10-08",
+      "notes": "go test ./internal/server ./internal/opencode ./web passed. Promotion tests verify one admission per confirmation, attached scaffold skill, planning-only approval, same-session durable binding/title/instruction refresh, repeated/concurrent scaffold refusal, and unknown/helper/bound/busy/stale/invalid confirmation guards."
+    },
+    {
+      "id": "CHAT-04",
+      "seq": 4,
+      "title": "Add promotion controls and verify the complete chat lifecycle",
+      "file": "tasks/04-add-promotion-controls-and-verify-the-co.md",
+      "status": "Test",
+      "dependsOn": [
+        "CHAT-01",
+        "CHAT-02",
+        "CHAT-03"
+      ],
+      "updated": "2026-10-08",
+      "notes": "go vet ./..., go test ./..., targeted race tests for all new Chat/Promote/Generate paths, CGO_ENABLED=0 build, and git diff --check passed. Isolated headless Chrome verified desktop/mobile creation, first-message naming, confirmation focus/cancel, same-session promotion, retained unsent draft, Chats/Changes reclassification, no mobile overflow, and reload/resume. Broader race run exposed an unchanged TestWaitDoneRetriesTransportTimeout fixture race; that unrelated test was left untouched."
+    }
+  ]
+}

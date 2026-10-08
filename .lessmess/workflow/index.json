@@ -388,6 +388,13 @@
       "prefix": "QM",
       "branch": "main",
       "created": "2026-10-03"
+    },
+    {
+      "id": "2026-10-08-unmra",
+      "title": "First-class chats",
+      "prefix": "CHAT",
+      "branch": "main",
+      "created": "2026-10-08"
     }
   ]
 }

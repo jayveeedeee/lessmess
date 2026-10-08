@@ -93,7 +93,12 @@ func (s *Server) sessionLifecycleInfo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var mapping any
+	promotable := false
 	if owner, entry, found := s.sessions.entry(id); found {
+		promotable = owner == unassignedKey && standaloneChat(entry)
+		if entry.TitleState != "" && entry.TitleState != "eligible" {
+			session.Title = entry.Title
+		}
 		mapping = mappedSessionOwner{Session: id, Change: owner, Task: entry.Task, Title: entry.Title}
 		if owner == unassignedKey {
 			mapping = mappedSessionOwner{Session: id, Task: entry.Task, Title: entry.Title}
@@ -102,6 +107,7 @@ func (s *Server) sessionLifecycleInfo(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"session": map[string]any{"id": session.ID, "title": session.Title, "parentID": session.ParentID, "updated": session.Time.Updated, "revert": session.Revert},
 		"busy":    active[id].Type == "running", "capabilities": cap, "mapping": mapping,
+		"promotable": promotable,
 	})
 }
 
@@ -120,6 +126,9 @@ type sessionNavigationItem struct {
 func (s *Server) navigationItem(ctx context.Context, session opencode.Session, depth int, active map[string]opencode.SessionActive) sessionNavigationItem {
 	item := sessionNavigationItem{Session: session.ID, Title: session.Title, ParentID: session.ParentID, Depth: depth, Busy: active[session.ID].Type == "running", Live: true}
 	if change, entry, ok := s.sessions.entry(session.ID); ok {
+		if entry.TitleState != "" && entry.TitleState != "eligible" {
+			item.Title = entry.Title
+		}
 		if change != unassignedKey {
 			item.Change = change
 		}
@@ -235,6 +244,7 @@ func (s *Server) sessionFork(w http.ResponseWriter, r *http.Request) {
 	}
 	if change, parent, found := s.sessions.entry(id); found {
 		entry := SessionEntry{Session: child.ID, Title: child.Title, Created: time.UnixMilli(child.Time.Created).UTC().Format(time.RFC3339), Task: parent.Task, Parent: id}
+		entry.Kind = "fork"
 		var mapErr error
 		if change == unassignedKey {
 			mapErr = s.sessions.addUnassigned(entry)
@@ -496,6 +506,11 @@ func (s *Server) sessionDeliver(w http.ResponseWriter, r *http.Request) {
 		writeLifecycleError(w, err)
 		return
 	}
+	var names []string
+	for _, file := range req.Files {
+		names = append(names, file.Name)
+	}
+	s.afterChatInput(id, req.Text, names)
 	writeJSON(w, http.StatusAccepted, map[string]any{"inbox": item})
 }
 func (s *Server) sessionInbox(w http.ResponseWriter, r *http.Request) {
@@ -604,6 +619,8 @@ func (s *Server) sessionChildren(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, page)
 }
 func (s *Server) sessionRename(w http.ResponseWriter, r *http.Request) {
+	s.sessionOps.Lock()
+	defer s.sessionOps.Unlock()
 	id := r.PathValue("sessionID")
 	if !s.lifecycleReady(w, id) {
 		return

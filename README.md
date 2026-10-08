@@ -146,14 +146,24 @@ Setup API (for the wizard and other clients): `GET /setup`,
 
 ### The web interface
 
-- **Top menu** — Changes and Explorer are always visible in the header; the
-  active route is highlighted. On the right, **Chat** spawns a general
+- **Top menu** — Changes, Chats, and Explorer are navigation destinations; the
+  active route is highlighted. Settings is a labelled gear icon.
+  **New chat**, available only in the Chats section, spawns a general
   codebase chat (`POST /chat/session`): a fresh opencode session in the
   repository root, primed as a free agent — it answers questions, explains
   code, and edits files when you explicitly ask, with no change binding or
   bookkeeping (edits land in the main tree as ordinary working-tree
-  changes). Every click opens a new session; chats are unassigned, appear in
-  the index Discussions list, and open in Chat.
+  changes). Every click opens a new session. Standalone conversations live on
+  **Chats** (`/chats`), separate from the Changes list, with recently active
+  conversations first and exact-session links for resuming them. Existing
+  discussions, settings discussions, explorer chats, and standalone forks stay
+  discoverable; known automated commit helpers and change/task sessions are not
+  top-level chat cards. The old discussion API remains compatible.
+  New general chats and placeholder planning discussions get a short descriptive
+  name after the first actual user message, not the setup prompt. Naming runs
+  without delaying the conversation, falls back to a readable first-message or
+  attachment title when generation is unavailable, and never overwrites a manual
+  name. Previously named conversations are not bulk-renamed.
   For directory-scoped, docs-grounded Q&A there is the explorer's per-
   directory chat (see below).
 - **`/`** — change cards, built from the workflow index plus each change's
@@ -175,9 +185,18 @@ Setup API (for the wizard and other clients): `GET /setup`,
   switch/new/unlink the change's sessions, spawn a new change from a
   handoff artifact, and the change-level actions (Commit — worktree-backed
   changes only, Close change / Reopen, worktree info and removal).
-- **New change session**: creates the change (state + prose skeleton) and a
-  primed planning session; tasks are created through the API by the session's
-  agent.
+- **New change session** starts a read-only planning discussion discoverable in
+  Chats. Only after explicit approval does its agent scaffold the change
+  (state + prose skeleton) and create tasks through the workflow API.
+- **Promote to change** — an idle standalone chat offers this in Chat options.
+  Confirm the suggested change title and task prefix (both editable), then
+  **Scaffold and plan** invokes the existing `lessmess-scaffold` skill in the
+  same conversation. It keeps all history, binds the session to the new change,
+  removes its standalone card, and makes the change available under Changes
+  with the usual Work and Sessions controls. Promotion approves scaffolding and
+  planning only; implementation still needs an explicit go-ahead. Cancelling
+  the confirmation creates nothing, and errors leave the conversation available.
+  The equivalent explicitly approved request typed in chat still works.
 - **Derived change status**: the status pill always mirrors the state —
   `Planned` while no task has started, `Blocked` when every open task is
   blocked, `In progress` otherwise. The server derives it from the task

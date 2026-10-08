@@ -104,6 +104,10 @@ func (s *Server) createDiscussionSession(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	entry := SessionEntry{Session: sess.ID, Title: title, Created: time.Now().Format(time.RFC3339)}
+	entry.Kind = "discussion"
+	if strings.TrimSpace(req.Title) == "" {
+		entry.TitleState = "eligible"
+	}
 	if err := s.sessions.addUnassigned(entry); err != nil {
 		slog.Error("mapping add", "err", err)
 		_ = s.oc.DeleteSession(context.Background(), sess.ID)
@@ -216,6 +220,8 @@ type scaffoldRequest struct {
 // scaffoldChange handles POST /changes/scaffold: build the change with the
 // agreed title/prefix, rename the session, and move it to the change.
 func (s *Server) scaffoldChange(w http.ResponseWriter, r *http.Request) {
+	s.sessionOps.Lock()
+	defer s.sessionOps.Unlock()
 	var req scaffoldRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad JSON body"})
@@ -251,6 +257,10 @@ func (s *Server) scaffoldChange(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	if existing := s.scaffolded[req.Session]; existing != "" {
+		writeJSON(w, http.StatusConflict, map[string]string{"change": existing, "error": "change already created; recover the session mapping for this change instead of scaffolding again"})
+		return
+	}
 
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
@@ -259,7 +269,16 @@ func (s *Server) scaffoldChange(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, err)
 		return
 	}
+	if s.scaffolded == nil {
+		s.scaffolded = map[string]string{}
+	}
+	s.scaffolded[req.Session] = id
 	slog.Info("change scaffolded via API trigger", "id", id, "title", req.Title, "prefix", req.Prefix, "session", req.Session, "branch", branch, "worktree", wtPath)
+	prime, modules := s.changePrime(id, req.Session)
+	// The retained session has not moved directories; unlike newly spawned
+	// change sessions it must target the worktree explicitly.
+	prime = strings.Replace(prime, "which is your working directory for all file edits and commits", "which you must target explicitly for all file edits and commits; this retained session may still be rooted in the main checkout", 1)
+	prime = reprimeMarker + " this session is now bound to the tracked change below. These instructions replace its unbound chat/planning role. Scaffolding authorizes planning only, not implementation; wait for explicit user approval to implement.\n\n" + prime
 
 	// Rename the session server-side (best effort) and move the mapping.
 	if s.oc != nil {
@@ -275,9 +294,17 @@ func (s *Server) scaffoldChange(w http.ResponseWriter, r *http.Request) {
 		if renameErr != nil {
 			slog.Warn("session rename failed", "session", req.Session, "err", renameErr)
 		}
+		if capErr == nil && cap.Synthetic {
+			if _, err := s.oc.AddSynthetic(ctx2, cap, req.Session, prime); err != nil {
+				slog.Warn("change binding synthetic failed; instructions returned with scaffold", "session", req.Session)
+			}
+		}
 		cancel2()
 	}
-	moved, err := s.sessions.moveToChange(req.Session, id)
+	moved, err := s.sessions.moveToChange(req.Session, id, func(e *SessionEntry) {
+		e.Title, e.TitleState, e.Modules = id+" — "+req.Title, "change", modules
+		e.Updated = time.Now().UTC().Format(time.RFC3339Nano)
+	})
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"change": id, "error": "persist mapping: " + err.Error()})
 		return
@@ -287,10 +314,14 @@ func (s *Server) scaffoldChange(w http.ResponseWriter, r *http.Request) {
 		slog.Warn("session not in unassigned bucket; linking directly", "session", req.Session, "change", id)
 		if s.oc != nil {
 			title := id + " — " + req.Title
-			_ = s.sessions.add(id, SessionEntry{Session: req.Session, Title: title, Created: time.Now().Format(time.RFC3339)})
+			if err := s.sessions.add(id, SessionEntry{Session: req.Session, Title: title, TitleState: "change", Modules: modules, Created: time.Now().Format(time.RFC3339)}); err != nil {
+				writeJSON(w, 500, map[string]string{"change": id, "error": "change created but session mapping could not be saved"})
+				return
+			}
 		}
 	}
 	resp := map[string]string{"change": id, "session": req.Session, "title": req.Title}
+	resp["instructions"] = prime
 	if branch != "" {
 		resp["branch"] = branch
 		resp["worktree"] = wtPath

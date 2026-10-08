@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"lessmess/internal/docs"
@@ -36,13 +37,16 @@ type Server struct {
 	// stays root-absolute. Server-emitted links must prefix through it.
 	Base string
 
-	oc       *opencode.Client // nil disables the opencode integration
-	sessions *mapping
-	mapErr   error
-	autos    *autosession     // once-only markers for auto-spawned task sessions
-	docsQ    *docsQueue       // nil unless docs.enabled and agentsdocs.json were valid at startup
-	docsW    *docsWatcher     // nil when docs are disabled or the watcher failed
-	git      *gitops.Client   // nil in setup mode; worktree mechanics + state
+	oc         *opencode.Client // nil disables the opencode integration
+	sessions   *mapping
+	mapErr     error
+	sessionOps sync.Mutex // serializes automatic/manual titles and scaffold admission
+	chatNaming sync.WaitGroup
+	scaffolded map[string]string // prevents duplicate creation after a mapping-save failure
+	autos      *autosession      // once-only markers for auto-spawned task sessions
+	docsQ      *docsQueue        // nil unless docs.enabled and agentsdocs.json were valid at startup
+	docsW      *docsWatcher      // nil when docs are disabled or the watcher failed
+	git        *gitops.Client    // nil in setup mode; worktree mechanics + state
 
 	// Poll-path read collapse (chatcache.go): the global busy-map cache,
 	// the per-session snapshot single-flight, and the last-good
@@ -152,6 +156,9 @@ func New(st *store.Store) *Server {
 	mux.HandleFunc("POST /changes/{id}/task-sessions", s.bindTaskSession)
 	mux.HandleFunc("DELETE /changes/{id}/sessions/{sessionID}", s.unlinkChangeSession)
 	mux.HandleFunc("GET /api/discussions", s.listDiscussions)
+	mux.HandleFunc("GET /api/chats", s.listChats)
+	mux.HandleFunc("POST /api/sessions/{sessionID}/promote", s.promoteChat)
+	mux.HandleFunc("GET /chats", s.chatsPage)
 	mux.HandleFunc("DELETE /api/discussions/{sessionID}", s.unlinkDiscussion)
 	mux.HandleFunc("GET /api/sessions/{sessionID}/change", s.sessionChange)
 	mux.HandleFunc("GET /api/git/status", s.gitStatusAPI)
